@@ -1,4 +1,5 @@
 import os
+import csv
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 
@@ -13,24 +14,35 @@ class CSVModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return ["pandas"]
+        return []
 
     def load_to_markdown(self, file_path: str) -> str:
-        """Extracts CSV table into clean Markdown table."""
-        import pandas as pd
-        # Read using utf-8-sig to preserve BOM and unicode text (e.g. Vietnamese)
-        df = pd.read_csv(file_path, encoding="utf-8-sig", keep_default_na=False)
-        if df.empty:
+        """Extracts CSV table into clean Markdown table using standard library csv."""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        rows = []
+        with open(file_path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                rows.append(row)
+
+        if not rows:
             return "*(Empty Table)*"
-        
+
+        header = rows[0]
+        data_rows = rows[1:]
+
         parts = []
-        # Generate Markdown Table representation
-        header = "| " + " | ".join(str(c) for c in df.columns) + " |"
-        sep    = "| " + " | ".join("---" for _ in df.columns) + " |"
-        parts.append(header)
-        parts.append(sep)
-        for _, row in df.iterrows():
-            parts.append("| " + " | ".join(str(v).replace("\n", " ") for v in row) + " |")
+        header_str = "| " + " | ".join(str(c).replace("\n", " ") for c in header) + " |"
+        sep_str    = "| " + " | ".join("---" for _ in header) + " |"
+        parts.append(header_str)
+        parts.append(sep_str)
+
+        for row in data_rows:
+            padded_row = row + [""] * max(0, len(header) - len(row))
+            parts.append("| " + " | ".join(str(v).replace("\n", " ") for v in padded_row) + " |")
+
         return "\n".join(parts)
 
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:

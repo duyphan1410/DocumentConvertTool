@@ -23,7 +23,17 @@ class BaseDocumentModule(ABC):
         """Checks if all required dependencies are installed. Returns a list of missing dependencies."""
         missing = []
         for dep in self.required_dependencies:
-            import_name = "docx" if dep == "python-docx" else ("markdown_pdf" if dep == "markdown-pdf" else dep)
+            dep_lower = dep.lower()
+            if dep_lower == "python-docx":
+                import_name = "docx"
+            elif dep_lower == "markdown-pdf":
+                import_name = "markdown_pdf"
+            elif dep_lower == "pymupdf":
+                import_name = "fitz"
+            elif dep_lower == "pillow":
+                import_name = "PIL"
+            else:
+                import_name = dep
             try:
                 importlib.import_module(import_name)
             except ImportError:

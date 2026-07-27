@@ -23,3 +23,16 @@ def setup_environment():
                 os.environ["TCL_LIBRARY"] = full
             if entry.startswith("tk") and os.path.isdir(full):
                 os.environ["TK_LIBRARY"] = full
+
+    # 3. Enable Windows High-DPI awareness at startup (Per-Monitor v2)
+    # Prevents blurry text on launch & eliminates dynamic DPI reload flickers when top-level windows open
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI Aware v2
+        except Exception:
+            try:
+                import ctypes
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass

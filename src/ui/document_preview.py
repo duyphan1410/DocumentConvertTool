@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 import tkinter as tk
 import customtkinter as ctk
 from PIL import Image
@@ -118,6 +119,8 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         self.style = None
         self._current_text = ""
         self._current_base_dir = None
+        self._last_rendered_hash = None
+        self._last_wrap_width = 0
         
         self._image_cache = {}
         self._lazy_images = []
@@ -137,11 +140,12 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         self.style = style
         self.configure(fg_color=palette["bg_pure_dark"], scrollbar_fg_color=palette["bg_pure_dark"])
         
-        # Invalidate the image cache on theme change to enforce a clean repaint
+        # Invalidate the image cache and content hash on theme change to enforce a clean repaint
         self._image_cache = {}
+        self._last_rendered_hash = None
         
         # Re-render current text with new theme
-        self.update_preview(self._current_text, base_dir=self._current_base_dir)
+        self.update_preview(self._current_text, base_dir=self._current_base_dir, force=True)
 
     def _setup_scroll_hook(self):
         try:
@@ -168,17 +172,22 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
                 except Exception:
                     pass
 
-            # Định nghĩa hàm callback chạy CẢ HAI tác vụ sau khi dừng kéo 150ms
+            # Định nghĩa hàm callback chạy các tác vụ sau khi dừng kéo (debounce 250ms)
             def debounced_resize_update():
                 self._update_wraplengths()
+                self._resize_lazy_images()
                 self._check_lazy_images()
 
-            self._resize_timer = self.after(150, debounced_resize_update)
+            self._resize_timer = self.after(250, debounced_resize_update)
 
     def _update_wraplengths(self):
         new_width = self._current_width - 45
         if new_width < 100:
             return
+
+        if abs(new_width - getattr(self, "_last_wrap_width", 0)) < 15:
+            return
+        self._last_wrap_width = new_width
         
         def update_widget(w, width):
             if isinstance(w, ctk.CTkLabel) and not getattr(w, "_is_image_label", False):
@@ -196,11 +205,50 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         except Exception:
             pass
 
-    def update_preview(self, markdown_text: str, base_dir: str = None):
-        self._current_text = markdown_text
+    def _resize_lazy_images(self):
+        if not hasattr(self, "_lazy_images") or not self._lazy_images:
+            return
+
+        new_target_w = max(100, self._current_width - 60)
+        for item in self._lazy_images:
+            item["target_width"] = new_target_w
+            widget = item.get("widget")
+            if not widget or not widget.winfo_exists():
+                continue
+            
+            orig_w = item.get("orig_w")
+            orig_h = item.get("orig_h")
+            
+            if orig_w and orig_h and orig_w > 0:
+                if orig_w > new_target_w:
+                    ratio = new_target_w / orig_w
+                    new_w = int(orig_w * ratio)
+                    new_h = int(orig_h * ratio)
+                else:
+                    new_w, new_h = orig_w, orig_h
+
+                try:
+                    widget.configure(width=new_target_w, height=new_h)
+                except Exception:
+                    pass
+
+                ctk_img = item.get("ctk_img")
+                if item.get("loaded") and ctk_img is not None:
+                    try:
+                        ctk_img.configure(size=(new_w, new_h))
+                    except Exception:
+                        pass
+
+    def update_preview(self, markdown_text: str, base_dir: str = None, force: bool = False):
         if base_dir is not None:
             self._current_base_dir = base_dir
-            
+
+        content_hash = hashlib.md5(f"{markdown_text}::{self._current_base_dir}".encode("utf-8")).hexdigest()
+        if not force and self._last_rendered_hash == content_hash:
+            return
+
+        self._last_rendered_hash = content_hash
+        self._current_text = markdown_text
         self._lazy_images = []
         self._active_loads = 0
 
@@ -609,12 +657,19 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         line_frame2 = ctk.CTkFrame(inner_placeholder, height=1, fg_color=border)
         line_frame2.pack(fill="x", padx=40, pady=(5, 25))
         
+        orig_w = self._dim_cache[img_path][0] if file_exists and img_path in self._dim_cache else None
+        orig_h = self._dim_cache[img_path][1] if file_exists and img_path in self._dim_cache else None
+
         self._lazy_images.append({
             "widget": placeholder,
             "img_path": img_path,
             "alt_text": alt_text,
             "target_width": target_w,
             "dimensions_str": dimensions_str,
+            "orig_w": orig_w,
+            "orig_h": orig_h,
+            "ctk_img": None,
+            "img_lbl": None,
             "loaded": False,
             "loading": False
         })
@@ -659,6 +714,8 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         
         item["loaded"] = False
         item["loading"] = False
+        item["ctk_img"] = None
+        item["img_lbl"] = None
         widget = item["widget"]
         img_path = item["img_path"]
         target_width = item["target_width"]
@@ -705,7 +762,7 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
         alt_text = item["alt_text"]
         target_width = item["target_width"]
         
-        def finish_load(ctk_img=None, error_msg=None):
+        def finish_load(ctk_img=None, error_msg=None, loaded_orig_w=None, loaded_orig_h=None):
             self._active_loads = max(0, self._active_loads - 1)
             item["loading"] = False
             
@@ -717,12 +774,18 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
 
             if ctk_img:
                 item["loaded"] = True
+                item["ctk_img"] = ctk_img
+                if loaded_orig_w and loaded_orig_h:
+                    item["orig_w"] = loaded_orig_w
+                    item["orig_h"] = loaded_orig_h
+
                 for child in widget.winfo_children():
                     child.destroy()
                 lbl = ctk.CTkLabel(widget, image=ctk_img, text="")
                 lbl._is_image_label = True  # Flag to bypass wraplength updates
                 lbl.image = ctk_img
                 lbl.pack(fill="both", expand=True)
+                item["img_lbl"] = lbl
             elif error_msg:
                 item["loaded"] = True
                 for child in widget.winfo_children():
@@ -745,6 +808,8 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
                 
                 if cache_key in self._image_cache:
                     ctk_img = self._image_cache[cache_key]
+                    orig_w = item.get("orig_w")
+                    orig_h = item.get("orig_h")
                 else:
                     pil_img = Image.open(img_path)
                     pil_img.load()
@@ -760,7 +825,7 @@ class DocumentPreviewFrame(ctk.CTkScrollableFrame):
                     ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(new_w, new_h))
                     self._image_cache[cache_key] = ctk_img
                 
-                self.after(0, lambda: finish_load(ctk_img=ctk_img))
+                self.after(0, lambda: finish_load(ctk_img=ctk_img, loaded_orig_w=orig_w, loaded_orig_h=orig_h))
             except Exception as e:
                 err = f"❌ Image Corrupt / Load Failed: {alt_text} ({os.path.basename(img_path)})"
                 self.after(0, lambda: finish_load(error_msg=err))

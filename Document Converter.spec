@@ -1,14 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/ui/theme.json', 'src/ui')]
+datas = []
 binaries = []
-hiddenimports = []
-tmp_ret = collect_all('customtkinter')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('tkinterdnd2')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = [
+    'src.ui_flet.app',
+    'src.ui_flet.native_dialogs',
+    'src.ui_flet.preview',
+    'src.ui_flet.theme',
+    'src.modules.word_module',
+    'src.modules.excel_module',
+    'src.modules.pdf_module',
+    'src.modules.csv_module',
+    'src.modules.html_module',
+]
 
+# Collect all binaries & data assets for Flet Desktop framework
+tmp_ret = collect_all('flet')
+datas += tmp_ret[0]
+binaries += tmp_ret[1]
+hiddenimports += tmp_ret[2]
+
+# PDF processing libraries — must collect data files (cmap, etc.)
+for pkg in ['fitz', 'pdfplumber', 'pdfminer', 'mammoth']:
+    tmp_ret = collect_all(pkg)
+    datas += tmp_ret[0]
+    binaries += tmp_ret[1]
+    hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['run.py'],
@@ -20,19 +38,23 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'onnxruntime',
-        'cryptography',
+        'pandas',
+        'numpy',
         'matplotlib',
         'scipy',
+        'onnxruntime',
+        'cryptography',
         'setuptools',
         'distutils',
         'unittest',
-        'tkinter.test',
         'pytest',
         'wheel',
         'pip',
         'pkg_resources',
         'pdb',
+        'flet.cli',
+        'flet.pytest_plugin',
+        'tkinter.test',
     ],
     noarchive=False,
     optimize=0,

@@ -13,7 +13,7 @@ class ExcelModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return ["openpyxl", "markitdown"]
+        return ["openpyxl"]
 
     def load_to_markdown(self, file_path: str) -> str:
         """Extracts Excel sheets into clean Markdown tables, preserving bold, italic, strike, underline, and hyperlinks."""

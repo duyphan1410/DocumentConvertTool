@@ -13,36 +13,51 @@ class HTMLModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return ["markdown2", "markitdown"]
+        return []
 
     def load_to_markdown(self, file_path: str) -> str:
-        """Loads physical HTML file and extracts it to Markdown text using markitdown."""
+        """Loads physical HTML file and extracts it to Markdown text."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         try:
-            from markitdown import MarkItDown
-            md = MarkItDown()
-            result = md.convert(file_path)
-            if not result or not result.text_content:
-                return "*(Empty HTML)*"
-            return result.text_content
+            try:
+                from markitdown import MarkItDown
+                md = MarkItDown()
+                result = md.convert(file_path)
+                if result and result.text_content:
+                    return result.text_content
+            except Exception:
+                pass
+
+            try:
+                from bs4 import BeautifulSoup
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    soup = BeautifulSoup(f.read(), "html.parser")
+                    return soup.get_text()
+            except Exception:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    return f.read()
         except Exception as e:
             raise RuntimeError(f"HTML Ingestion Error: Failed to extract text from HTML. Detail: {str(e)}")
 
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text and saves it to a styled HTML document."""
         try:
-            import markdown2
-            # Convert Markdown to HTML using markdown2 with extras
-            # - "fenced-code-blocks" enables GitHub-like code formatting blocks
-            # - "tables" enables rendering markdown tables
-            # - "strike" enables strikethroughs with ~~text~~
-            # - "underline" allows parsing <u> tags
-            html_body = markdown2.markdown(
-                markdown_content,
-                extras=["fenced-code-blocks", "tables", "strike", "underline"]
-            )
+            try:
+                import markdown2
+                html_body = markdown2.markdown(
+                    markdown_content,
+                    extras=["fenced-code-blocks", "tables", "strike", "underline"]
+                )
+            except ImportError:
+                try:
+                    import markdown
+                    html_body = markdown.markdown(markdown_content, extensions=["fenced_code", "tables"])
+                except ImportError:
+                    # Simple fallback when external markdown libraries are not installed
+                    lines = markdown_content.split("\n")
+                    html_body = "\n".join(f"<p>{l}</p>" if l.strip() else "<br/>" for l in lines)
 
             # HTML Template with beautiful modern CSS styles supporting both Light and Dark themes
             # using system preference (prefers-color-scheme)

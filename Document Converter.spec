@@ -21,6 +21,13 @@ datas += tmp_ret[0]
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
 
+# PDF processing libraries — must collect data files (cmap, etc.)
+for pkg in ['fitz', 'pdfplumber', 'pdfminer', 'mammoth']:
+    tmp_ret = collect_all(pkg)
+    datas += tmp_ret[0]
+    binaries += tmp_ret[1]
+    hiddenimports += tmp_ret[2]
+
 a = Analysis(
     ['run.py'],
     pathex=[],

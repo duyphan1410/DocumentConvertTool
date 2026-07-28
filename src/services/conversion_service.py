@@ -1,9 +1,13 @@
+from concurrent.futures import ThreadPoolExecutor
 import os
-from typing import List
+from typing import List, Callable, Any
 from src.core.converters import save_markdown_from_text, parse_md_tables
 from src.core.validator import validate_md_tables
 from src.core.registry import ModuleRegistry
 import src.modules  # noqa: F401
+
+# Shared pool for non-blocking conversion tasks
+_conversion_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="doc_converter_worker")
 
 
 def has_md_tables(content: str) -> bool:
@@ -40,3 +44,9 @@ def convert_content(mode: str, content: str, out_path: str) -> str:
         raise ValueError(f"No module found to convert Markdown to {dest_fmt}!")
         
     return module.save_from_markdown(content, out_path)
+
+
+def submit_async_task(fn: Callable[..., Any], *args, **kwargs):
+    """Submits a background task to the shared ThreadPoolExecutor."""
+    return _conversion_executor.submit(fn, *args, **kwargs)
+

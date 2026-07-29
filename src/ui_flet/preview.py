@@ -11,10 +11,12 @@ import flet as ft
 
 from src.services.media_asset_manager import MediaAssetManager
 
+import time
+
 _BASE64_CACHE: dict[str, str] = {}
 
 def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85) -> str:
-    """Converts a local image file path into a balanced 65-70% optimized base64 data URI, cached in memory."""
+    """Converts a local image file path into a fast base64 data URI, cached in memory."""
     if file_path in _BASE64_CACHE:
         return _BASE64_CACHE[file_path]
     try:
@@ -22,30 +24,18 @@ def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85
         if not mime_type:
             mime_type = "image/png"
 
-        # Scale down to 68% of full resolution for ideal balance between visual clarity and performance
-        try:
-            from PIL import Image
-            import io
-            with Image.open(file_path) as img:
-                target_width = min(max_width, int(img.width * 0.68))
-                if img.width > target_width:
-                    ratio = target_width / float(img.width)
-                    new_height = int(float(img.height) * ratio)
-                    resized_img = img.resize((target_width, new_height), Image.Resampling.LANCZOS)
-                else:
-                    resized_img = img
+        # Retry loop to handle temporary file locks during PDF image extraction
+        encoded_data = None
+        for attempt in range(3):
+            try:
+                with open(file_path, "rb") as f:
+                    encoded_data = base64.b64encode(f.read()).decode("utf-8")
+                break
+            except (PermissionError, OSError):
+                time.sleep(0.05)
 
-                buffer = io.BytesIO()
-                fmt = "PNG" if "png" in (mime_type or "").lower() else "JPEG"
-                if fmt == "JPEG" and resized_img.mode in ("RGBA", "P"):
-                    resized_img = resized_img.convert("RGB")
-
-                resized_img.save(buffer, format=fmt, optimize=True)
-                encoded_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        except Exception as ex:
-            print(f"[DEBUG] Failed PIL optimization for '{file_path}': {ex}")
-            with open(file_path, "rb") as f:
-                encoded_data = base64.b64encode(f.read()).decode("utf-8")
+        if not encoded_data:
+            return file_path
 
         uri = f"data:{mime_type};base64,{encoded_data}"
         _BASE64_CACHE[file_path] = uri
@@ -54,35 +44,45 @@ def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85
         print(f"[DEBUG] Failed to convert image '{file_path}' to base64: {e}")
         return file_path
 
-def process_markdown_media(content: str) -> str:
+import pathlib
+
+def process_markdown_media(content: str, base_dir: str = None) -> str:
     """
     Parses Markdown content, resolves virtual URIs (such as @media/image.png)
-    using MediaAssetManager, and converts local image files to base64 data URIs.
+    and local paths to fast base64 data URIs for Flet Markdown rendering.
     """
     if not content:
         return ""
 
+    t0 = time.time()
     asset_mgr = MediaAssetManager()
+    img_count = 0
 
     def replace_image_match(match):
+        nonlocal img_count
+        img_count += 1
         alt_text = match.group(1)
         uri = match.group(2)
 
-        # 1. Resolve URI via MediaAssetManager
+        if uri.startswith(("http://", "https://", "data:")):
+            return f"![{alt_text}]({uri})"
+
         resolved_path = asset_mgr.resolve_uri(uri)
+        if not os.path.exists(resolved_path) and base_dir:
+            candidate = os.path.join(base_dir, uri)
+            if os.path.exists(candidate):
+                resolved_path = candidate
 
-        # 2. Check if resolved_path points to an existing local file
         if os.path.exists(resolved_path):
-            final_uri = image_to_base64_uri(resolved_path)
-        else:
-            final_uri = uri
+            base64_uri = image_to_base64_uri(resolved_path)
+            return f"![{alt_text}]({base64_uri})"
+        return f"![{alt_text}]({uri})"
 
-        return f"![{alt_text}]({final_uri})"
-
-    # Match image syntax ![alt](url)
     image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
-    processed_content = re.sub(image_pattern, replace_image_match, content)
-    return processed_content
+    result = re.sub(image_pattern, replace_image_match, content)
+    t_elapsed = time.time() - t0
+    print(f"[BENCHMARK] Processed {img_count} preview image links to Base64 in {t_elapsed:.3f}s")
+    return result
 
 
 class MarkdownPreview(ft.Container):
@@ -109,7 +109,7 @@ class MarkdownPreview(ft.Container):
         )
         self.content = self.scroll_column
 
-    def set_content(self, markdown_text: str):
+    def set_content(self, markdown_text: str, base_dir: str = None):
         """Updates preview with processed markdown content, using cache if text hasn't changed."""
         if not markdown_text or not markdown_text.strip():
             self.markdown.value = "*No content to preview.*"
@@ -118,10 +118,14 @@ class MarkdownPreview(ft.Container):
         else:
             if markdown_text != self._last_raw_text:
                 self._last_raw_text = markdown_text
-                self._cached_processed_text = process_markdown_media(markdown_text)
+                self._cached_processed_text = process_markdown_media(markdown_text, base_dir=base_dir)
             self.markdown.value = self._cached_processed_text
 
         try:
             self.update()
         except Exception:
             pass
+
+    def update_preview(self, markdown_text: str, base_dir: str = None):
+        """Alias method for update_preview compatibility."""
+        self.set_content(markdown_text, base_dir=base_dir)

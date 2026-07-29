@@ -128,8 +128,10 @@ class MediaAssetManager:
 
         return rewritten_content
 
+    DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
+
     def cleanup_cache(self, max_age_days: int = 7):
-        """Removes session cache folders older than max_age_days."""
+        """Removes session cache folders older than max_age_days and enforces LRU size limits."""
         import time
         if not os.path.exists(self.cache_dir):
             return
@@ -144,7 +146,47 @@ class MediaAssetManager:
                         shutil.rmtree(item_path)
                 except Exception as e:
                     print(f"[DEBUG] MediaAssetManager: Failed to clean cache dir {item_path}: {e}")
+        self.enforce_lru_cache_limit()
+
+    def enforce_lru_cache_limit(self, max_bytes: int = DEFAULT_MAX_CACHE_BYTES):
+        """Purges oldest cached sessions until total cache size is under max_bytes."""
+        if not os.path.exists(self.cache_dir):
+            return
+
+        sessions = []
+        total_size = 0
+
+        for item in os.listdir(self.cache_dir):
+            item_path = os.path.join(self.cache_dir, item)
+            if os.path.isdir(item_path):
+                try:
+                    dir_size = sum(
+                        os.path.getsize(os.path.join(root, f))
+                        for root, _, files in os.walk(item_path)
+                        for f in files
+                    )
+                    atime = os.path.getmtime(item_path)
+                    sessions.append((item_path, dir_size, atime))
+                    total_size += dir_size
+                except Exception:
+                    pass
+
+        # Sort by access/modification time ascending (oldest first)
+        sessions.sort(key=lambda x: x[2])
+
+        for path, size, _ in sessions:
+            if total_size <= max_bytes:
+                break
+            # Skip removing currently active session
+            if self.current_session_dir and os.path.samefile(path, self.current_session_dir):
+                continue
+            try:
+                shutil.rmtree(path)
+                total_size -= size
+            except Exception as e:
+                print(f"[DEBUG] MediaAssetManager: LRU purge failed for {path}: {e}")
 
     def cleanup_old_sessions(self, max_age_days: int = 7):
         """Removes session cache folders older than max_age_days."""
         self.cleanup_cache(max_age_days=max_age_days)
+

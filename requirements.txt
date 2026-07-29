@@ -1,12 +1,13 @@
-customtkinter
-tkinterdnd2
-openpyxl
+# Core UI Framework
+flet>=0.80.0
+
+# Document Processing & Conversion Engines
 python-docx
 mammoth
-pyinstaller
-markitdown[pdf]
-markdown2
+openpyxl
 pdfplumber
-markdown-pdf
 pymupdf
+markdown2
+markdown-pdf
 Pillow
+beautifulsoup4

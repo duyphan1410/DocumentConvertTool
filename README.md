@@ -1,12 +1,13 @@
 # Document Converter Workspace
 
-![Python](<https://img.shields.io/badge/Python-3.12%20--%203.13-blue>)
-![Platform](<https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green>)
+![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
+![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop-purple)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-A modern desktop workspace for editing and converting documents between **Markdown**, **Excel**, and **Word** formats.
+A modern desktop workspace for editing and converting documents between **Markdown**, **Excel**, **Word**, **PDF**, **CSV**, and **HTML** formats built with **Flet (Flutter for Python)**.
 
-The application provides a unified Markdown-centric workflow, allowing users to extract content from Office documents, edit it in Markdown, and export it back into structured formats.
+The application provides a unified Markdown-centric workflow, allowing users to extract content from Office documents, edit it in Markdown, preview it live with optimized image resolution, and export it back into structured formats.
 
 ---
 
@@ -23,36 +24,40 @@ The application provides a unified Markdown-centric workflow, allowing users to 
 ### Document Conversion
 
 * **Markdown → Excel (.xlsx)**
-
   * Styled worksheet generation
   * Frozen header row
   * Auto-sized columns
   * Auto-filter support
 * **Markdown → Word (.docx)**
-
   * Heading support
   * Lists support
   * Bold text support
   * Table rendering
 * **Excel (.xlsx) → Markdown**
-
   * Multi-sheet extraction
   * Markdown table generation
 * **Word (.docx) → Markdown**
-
   * Clean document extraction
   * Markdown-friendly formatting
+* **PDF (.pdf) → Markdown**
+  * Layout-preserving extraction with page-break table stitching
+  * Multiline table cell continuation
+  * Slide image extraction & `@media/` virtual URI management
+* **CSV ↔ Markdown & HTML ↔ Markdown**
+  * Delimiter auto-detection, clean CSV & HTML table parsing
+  * GitHub-flavored CSS HTML styling
 
-### Workspace Features
+### Workspace Features (Flet UI Framework)
 
-* Unified Markdown editor
-* Drag & drop file support
-* Live content extraction on load
-* One-click document opening
-* Background-thread conversion pipeline
-* Responsive UI (auto-compact labels, 2-row toolbar, debounce resize)
-* High-DPI aware (Per-Monitor v2 on Windows)
-* Cross-platform support
+* Unified responsive split-pane Markdown editor & Live Document Preview.
+* Native Windows File Picker with 8-category filter selection (`Word`, `Excel`, `PDF`, `Markdown`, `CSV`, `HTML`, `All Files`).
+* Dynamic Mode Dropdown auto-filtering valid conversion options based on selected file extension.
+* Instant 0ms Theme Switching across 5 curated Palettes (Emerald Obsidian, Violet Cyber, Deep Ocean, Slate Minimal, Amber Gold) with zero-lag container updates.
+* Smart Hybrid Search & Replace with enter-key match cycling and editor focus highlighting.
+* Real-time Async Loading (`asyncio.to_thread`) with live status progress indicator text.
+* 1.5s Debounced Draft Autosave restoring buffer at `%APPDATA%\DocConvert\draft_autosave.md`.
+* High-DPI aware (Per-Monitor v2 on Windows) for sharp text rendering.
+* Cross-platform support (Windows, macOS, Linux).
 
 ---
 
@@ -81,13 +86,13 @@ graph LR
 
 ### Conversion Matrix
 
-| Format                                    | Import to Markdown (`➔ .md`) | Export from Markdown (`.md ➔`) |      Mode      |  Status  |
-| :---------------------------------------- | :-----------------------------: | :-------------------------------: | :------------: | :-------: |
-| **Word Document (`.docx`)**       |               ✅               |                ✅                |   ↔ Two-Way   | ✅ Ready |
-| **Excel Spreadsheet (`.xlsx`)**   |               ✅               |                ✅                |   ↔ Two-Way   | ✅ Ready |
-| **CSV File (`.csv`)**             |               ✅               |                ✅                |   ↔ Two-Way   | ✅ Ready |
-| **HTML Page (`.html`, `.htm`)** |               ✅               |                ✅                |   ↔ Two-Way   | ✅ Ready |
-| **PDF Document (`.pdf`)**         |               ✅               |         🔄 Planned (v2.0)         | ➔ Import Only | ⚡ Active |
+| Format | Import to Markdown (`➔ .md`) | Export from Markdown (`.md ➔`) | Mode | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **Word Document (`.docx`)** | ✅ | ✅ | ↔ Two-Way | ✅ Ready |
+| **Excel Spreadsheet (`.xlsx`)** | ✅ | ✅ | ↔ Two-Way | ✅ Ready |
+| **CSV File (`.csv`)** | ✅ | ✅ | ↔ Two-Way | ✅ Ready |
+| **HTML Page (`.html`, `.htm`)** | ✅ | ✅ | ↔ Two-Way | ✅ Ready |
+| **PDF Document (`.pdf`)** | ✅ | 🔄 Planned (v2.0) | ➔ Import Only | ⚡ Active |
 
 ---
 
@@ -98,88 +103,46 @@ graph LR
 
 ---
 
-## Quick Start
+## Installation & Running
 
-Clone the repository:
-
-```bash
-git clone https://github.com/duyphan1410/DocumentConvertTool
+```powershell
+# Clone the repository
+git clone https://github.com/duyphan1410/DocumentConvertTool.git
 cd DocumentConvertTool
-```
 
-Create, activate virtual environment, install dependencies, and run:
-
-### Windows (PowerShell)
-
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+# Install dependencies
 pip install -r requirements.txt
-python run.py
-```
 
-### macOS / Linux
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Run application
 python run.py
 ```
 
 ---
 
-## Drag & Drop
-
-The application supports drag-and-drop input files.
-
-### Supported Behaviors
-
-* Drop a `.md` file to edit it directly.
-* Drop a `.docx` file to extract its content into Markdown.
-* Drop a `.xlsx` file to extract worksheets into Markdown tables.
-* Paths containing spaces or Unicode characters are supported.
-
----
-
-## Build Executable
-
-### Install PyInstaller
-
-```bash
-pip install pyinstaller
-```
-
-### Windows (Recommended — using optimized .spec file)
+## Packaging to Executable (PyInstaller)
 
 ```powershell
-venv\Scripts\pyinstaller "Document Converter.spec"
+# Recommended fail-safe packaging command:
+python -m PyInstaller "Document Converter.spec"
 ```
+The `.spec` file excludes heavy unused packages (`onnxruntime`, `cryptography`, `matplotlib`, `scipy`, etc.) for faster build times.
 
-> The `.spec` file excludes heavy unused packages (`onnxruntime`, `cryptography`, `matplotlib`, `scipy`, etc.) for faster build times.
-
-### Windows (Manual — generates a new .spec from scratch)
+### Windows (Manual)
 
 ```cmd
-pyinstaller --onefile --windowed --name "Document Converter" --icon=favicon.ico --collect-all customtkinter --collect-all tkinterdnd2 --add-data "src/ui/theme.json;src/ui" run.py
+pyinstaller --onefile --windowed --name "Document Converter" --icon=favicon.ico run.py
 ```
 
 ### macOS
 
 ```bash
-pyinstaller --onefile --windowed --name "Document Converter" --collect-all customtkinter --collect-all tkinterdnd2 --add-data "src/ui/theme.json:src/ui" run.py
+pyinstaller --onefile --windowed --name "Document Converter" run.py
 ```
 
 ### Linux
 
 ```bash
-pyinstaller --onefile --name "Document Converter" --collect-all customtkinter --collect-all tkinterdnd2 --add-data "src/ui/theme.json:src/ui" run.py
-```
-
-Build output:
-
-```text
-dist/
+pyinstaller --onefile --name "Document Converter" run.py
 ```
 
 ---
@@ -209,12 +172,14 @@ DocumentConvertTool/
 │   │
 │   ├── services/
 │   │   ├── conversion_service.py
-│   │   └── file_loader.py
+│   │   ├── file_loader.py
+│   │   └── media_asset_manager.py
 │   │
-│   ├── ui/
+│   ├── ui_flet/
 │   │   ├── app.py
-│   │   ├── document_preview.py
-│   │   └── theme.json
+│   │   ├── native_dialogs.py
+│   │   ├── preview.py
+│   │   └── theme.py
 │   │
 │   └── utils/
 │       └── env.py
@@ -228,38 +193,37 @@ DocumentConvertTool/
 
 ### Directory Overview
 
-| Path                           | Purpose                                                      |
-| ------------------------------ | ------------------------------------------------------------ |
-| `src/__version__.py`         | SemVer version config                                        |
-| `src/main.py`                | Application entry point & initialization                     |
-| `src/core/base_module.py`    | Base abstract document module                                |
-| `src/core/registry.py`       | Document module registry                                     |
-| `src/core/converters.py`     | Markdown parsing utilities                                   |
-| `src/core/validator.py`      | Document structure validation                                |
-| `src/modules/`               | Document conversion plugins (Word, Excel, CSV, PDF, HTML)    |
-| `src/services/`              | Core conversion background services                          |
-| `src/ui/app.py`              | Main customtkinter GUI (responsive, debounce resize)         |
-| `src/ui/document_preview.py` | Visual Markdown document preview panel (debounce wraplength) |
-| `src/ui/theme.json`          | App CustomTkinter theme settings                             |
-| `src/utils/env.py`           | UTF-8 encoding, Tcl/Tk path & High-DPI configuration         |
-| `Document Converter.spec`    | Optimized PyInstaller build spec                             |
-| `run.py`                     | Launcher script                                              |
+| Path | Purpose |
+| :--- | :--- |
+| `src/__version__.py` | SemVer version config |
+| `src/main.py` | Application entry point & Flet initialization |
+| `src/core/base_module.py` | Base abstract document module |
+| `src/core/registry.py` | Document module registry |
+| `src/core/converters.py` | Markdown parsing utilities |
+| `src/core/validator.py` | Document structure validation |
+| `src/modules/` | Document conversion plugins (Word, Excel, CSV, PDF, HTML) |
+| `src/services/` | Core conversion background services & Media Asset Manager |
+| `src/ui_flet/app.py` | Main Flet UI Desktop Application (responsive split-pane) |
+| `src/ui_flet/native_dialogs.py` | Async Windows Native FileDialog helper (8 filter categories) |
+| `src/ui_flet/preview.py` | Real-time Markdown Live Document Preview (RAM cache & 68% image scale) |
+| `src/ui_flet/theme.py` | Flet UI 5-Palette Design Token & Theme Engine |
+| `src/utils/env.py` | UTF-8 encoding, Tcl/Tk path & High-DPI configuration |
+| `Document Converter.spec` | Optimized PyInstaller build spec |
+| `run.py` | Launcher script |
 
 ---
 
 ## Dependencies
 
-| Library       | Purpose                      |
-| ------------- | ---------------------------- |
-| customtkinter | Modern UI framework          |
-| tkinterdnd2   | Drag & drop support          |
-| pandas        | Data processing              |
-| openpyxl      | Excel export/import          |
-| python-docx   | Word document generation     |
-| mammoth       | Word document extraction     |
-| markdown2     | Markdown → HTML conversion  |
-| pdfplumber    | PDF layout table extraction  |
-| markitdown    | Fallback PDF text extraction |
+| Library | Purpose |
+| :--- | :--- |
+| flet | Modern Flutter-based UI framework for Python |
+| python-docx | Word document generation |
+| openpyxl | Excel export/import |
+| pdfplumber / pymupdf | PDF layout table extraction & slide image processing |
+| markdown2 / markdown-pdf | Markdown ↔ HTML / PDF conversion |
+| Pillow | Image processing & preview resolution scaling |
+| beautifulsoup4 | HTML document parsing & cleanup |
 
 ---
 
@@ -267,62 +231,46 @@ DocumentConvertTool/
 
 ### ✅ P0 — Stabilization (Completed)
 
-* [X] Fix drag & drop path parser
-* [X] File extension validation
-* [X] Overwrite confirmation
-* [X] Dependency fallback handling
-* [X] File size warning
-* [X] Progress indicator
-* [X] Unsaved changes warning
-* [X] Word → Markdown: images replaced with [image] placeholder
+* [x] Fix drag & drop path parser
+* [x] File extension validation
+* [x] Overwrite confirmation
+* [x] Dependency fallback handling
+* [x] Unsaved changes warning
 
 ### ✅ Phase 1 — UX & Format Improvements (Completed)
 
-* [X] CSV ↔ Markdown support
-* [X] Smart table validator (pipe escaping, table detection)
-* [X] Search & replace panel (integrated into editor)
-* [X] Formatting toolbar in editor (Bold, Italic, Strikethrough, Underline, Code, Link, Headings, Lists, Tables)
-* [X] Autosave draft (restore when reopening app)
-* [ ] Markdown syntax highlighting (in the raw text editor)
+* [x] CSV ↔ Markdown support
+* [x] Smart table validator (pipe escaping, table detection)
+* [x] Search & replace panel (integrated into editor with Smart Hybrid focus)
+* [x] Formatting toolbar in editor (Bold, Italic, Strikethrough, Code, Link, Headings, Lists, Tables)
+* [x] Autosave draft (restore when reopening app, 1.5s debounce)
 
-### 🔄 Phase 2 — Format Expansion
+### ✅ Phase 2 — Flet UI & Format Expansion (Completed)
 
-* [X] PDF → Markdown (using pdfplumber + markitdown layout extraction, preserving tables, fonts, bullets, and list numbering)
-* [X] HTML ↔ Markdown (HTML export with GitHub Markdown CSS styling & import fallback)
-* [X] Visual document preview in editor (renders formatting, tables, lists in-app)
-* [ ] Markdown → PDF (with embedded image & table rendering)
+* [x] Modern Flet UI migration (responsive split-pane, 5 Palette themes, Dark/Light mode)
+* [x] Async file loading (`asyncio.to_thread`) with real-time status feedback text
+* [x] Native Windows FileDialog integration with 8 individual filetype filter categories
+* [x] Dynamic Mode Dropdown option filtering according to selected file extension
+* [x] Real-time Markdown Live Document Preview with RAM Caching (`_BASE64_CACHE`) & 68% Pillow scale optimization
+* [x] PDF → Markdown (using pdfplumber + pymupdf layout extraction, preserving tables and slide images)
+* [x] HTML ↔ Markdown (HTML export with GitHub Markdown CSS styling & import fallback)
 
-### 🔄 Phase 3 — Polish & Release
+### 🔄 Phase 3–5 — v2.0 Roadmap (Planned)
 
-* [X] Resizable window support (adapts to varying screen sizes)
-* [X] Responsive UI (auto-compact labels, 2-row toolbar at narrow widths)
-* [X] High-DPI awareness (Per-Monitor v2 on Windows)
-* [X] Optimized PyInstaller build via `.spec` file (excludes unused heavy packages)
-* [X] Debounce resize events for smooth window dragging (150ms `after()` timer)
-* [X] v1.2.1 executable release (PyInstaller packaging with resource bundles)
-
-### 🔄 Phase 4–8 — v2.0 Roadmap (Planned)
-
-* [ ] Two-Way Image Pipeline (`MediaAssetManager`, Word/PDF/HTML 2-way image import & export)
+* [ ] Two-Way Image Pipeline (Word/PDF/HTML 2-way image import & export)
 * [ ] Multi-document tabs & global keyboard shortcuts
-* [ ] Markdown syntax highlighting in editor
-* [ ] Batch conversion & ZIP archive auto-extract/repack (`zipfile`)
-* [ ] GitHub Markdown CSS Theme Engine for HTML & PDF exports (with PDF engine POC)
-* [ ] Persistent Settings panel & conversion presets
+* [ ] Markdown syntax highlighting in raw editor
+* [ ] Markdown → PDF (with embedded image & table rendering)
 * [ ] Command-Line Interface (CLI mode)
-* [ ] Interactive User Guide Window Upgrade (`MD Guide ❔` with 6 detailed tabs)
 * [ ] Optimized `Document Converter.spec` build & Windows Setup Installer (`DocumentConverter_Setup_v2.0.0.exe` via Inno Setup)
 
 ---
 
 ## Known Limitations
 
-* **Large files:** File preview is truncated at 500KB to prevent UI lag. Full content will still be converted.
-* **Word documents with images:** In v1.2.x, images are replaced with `[image]` placeholders. Full two-way image extraction and embedding (Word, PDF, HTML export) is planned for v2.0 (Phase 4).
-* **Complex Word formatting:** Some advanced Word styles (columns, text boxes, etc.) may not be fully preserved in Markdown conversion.
-* **PDF support:** PDF import (v1.1.0+) supports layout-preserving extraction with page-break table stitching and cell continuation. Exporting Markdown to PDF is planned for v2.0 (Phase 6).
-* **CSV support:** CSV ↔ Markdown conversion is fully supported.
-* **Resize smoothness:** CustomTkinter redraws rounded-corner canvas polygons on every frame resize. Inner frames use reduced `corner_radius` (4px vs 12px) to minimize redraw cost. Some minor visual stutter may persist on complex layouts — this is a framework-level limitation of CustomTkinter.
+* **Large files:** File preview display is optimized for smooth performance; full content will always be converted completely.
+* **Complex Word formatting:** Advanced Word styles (columns, floating text boxes) are simplified into clean Markdown structure.
+* **PDF support:** PDF import supports layout-preserving extraction with page-break table stitching and slide image extraction. Exporting Markdown to PDF is planned for v2.0.
 
 ---
 
@@ -333,16 +281,15 @@ Recommended branch strategy:
 ```text
 main
 ├── fix/p0-stabilization
-├── feature/progress-api
-├── feature/html-export
+├── feature/flet-ui
 └── feature/plugin-system
 ```
 
 Commit example:
 
 ```bash
-git commit -m "feat: add html export engine"
-git commit -m "fix: improve drag drop parser"
+git commit -m "feat: migrate GUI to Flet UI with instant theme engine"
+git commit -m "fix: optimize preview image scaling to 68% LANCZOS"
 ```
 
 ---

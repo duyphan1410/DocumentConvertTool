@@ -1,13 +1,8 @@
-from src.utils.env import setup_environment
-
-# Initialize environment and configure Tcl/Tk system paths
-setup_environment()
-
-from src.ui.app import App
+import flet as ft
+from src.ui_flet.app import main as flet_main
 
 def main():
-    app = App()
-    app.mainloop()
+    ft.run(flet_main)
 
 if __name__ == "__main__":
     main()

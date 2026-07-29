@@ -16,3 +16,4 @@ ROADMAP.md
 .gitnexusignore
 /.agents/*
 scratch/
+.vscode

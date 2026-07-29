@@ -15,7 +15,7 @@ class WordModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return ["python-docx", "markitdown", "Pillow"]
+        return ["python-docx", "Pillow"]
 
     def load_to_markdown(self, file_path: str) -> str:
         """Extracts Word .docx to clean Markdown text, preserving tables, headings, bold/italic styles, and lists."""

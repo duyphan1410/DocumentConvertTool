@@ -1,13 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = []
+datas = [
+    ('assets', 'assets'),
+]
 binaries = []
 hiddenimports = [
     'src.ui_flet.app',
+    'src.ui_flet.state',
+    'src.ui_flet.constants',
     'src.ui_flet.native_dialogs',
-    'src.ui_flet.preview',
     'src.ui_flet.theme',
+    'src.ui_flet.layout.ribbon_bar',
+    'src.ui_flet.layout.header_bar',
+    'src.ui_flet.layout.footer_bar',
+    'src.ui_flet.components.file_path_bar',
+    'src.ui_flet.components.search_replace_bar',
+    'src.ui_flet.components.formatting_toolbar',
+    'src.ui_flet.views.editor_view',
+    'src.ui_flet.views.preview_view',
+    'src.utils.assets',
     'src.modules.word_module',
     'src.modules.excel_module',
     'src.modules.pdf_module',

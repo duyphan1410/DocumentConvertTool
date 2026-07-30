@@ -11,8 +11,6 @@ test.md
 venv/
 agent_instructions.md
 .gitnexus
-PROJECT_SUMMARY.md
-ROADMAP.md
 .gitnexusignore
 /.agents/*
 scratch/

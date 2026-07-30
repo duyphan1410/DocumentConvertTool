@@ -1,7 +1,5 @@
 """
-Main Flet UI Application for DocumentConvertTool (Milestone 1 - Desktop Skeleton).
-Provides responsive editor, file loader, conversion service integration,
-theme switcher, undo/redo stack, and search/replace panel.
+Main Flet UI Application Orchestrator for DocumentConvertTool.
 """
 import os
 import re
@@ -22,48 +20,26 @@ from src.services.conversion_service import (
     is_output_locked,
 )
 from src.__version__ import __version__
-from src.ui_flet.theme import PALETTES, STYLE, apply_theme
-from src.ui_flet.preview import MarkdownPreview
-from src.ui_flet.native_dialogs import pick_input_file_async, pick_output_file_async
-
-# ── AppData & Configuration Constants ───────────────────────────────────────
-appdata_dir = os.getenv('APPDATA')
-if not appdata_dir:
-    appdata_dir = os.path.join(os.path.expanduser("~"), ".config")
-
-DRAFT_PATH = os.path.join(appdata_dir, "DocConvert", "draft_autosave.md")
-EDITOR_DISPLAY_LIMIT = 500_000
-
-MODES = {
-    "MD -> Excel":  {"in_ext": ".md",   "out_ext": ".xlsx", "in_label": "File .md",   "out_label": "Save .xlsx"},
-    "MD -> Word":   {"in_ext": ".md",   "out_ext": ".docx", "in_label": "File .md",   "out_label": "Save .docx"},
-    "MD -> CSV":    {"in_ext": ".md",   "out_ext": ".csv",  "in_label": "File .md",   "out_label": "Save .csv"},
-    "MD -> PDF":    {"in_ext": ".md",   "out_ext": ".pdf",  "in_label": "File .md",   "out_label": "Save .pdf"},
-    "MD -> HTML":   {"in_ext": ".md",   "out_ext": ".html", "in_label": "File .md",   "out_label": "Save .html"},
-    "Excel -> MD":  {"in_ext": ".xlsx", "out_ext": ".md",   "in_label": "File .xlsx", "out_label": "Save .md"},
-    "Word -> MD":   {"in_ext": ".docx", "out_ext": ".md",   "in_label": "File .docx", "out_label": "Save .md"},
-    "CSV -> MD":    {"in_ext": ".csv",  "out_ext": ".md",   "in_label": "File .csv",  "out_label": "Save .md"},
-    "PDF -> MD":    {"in_ext": ".pdf",  "out_ext": ".md",   "in_label": "File .pdf",  "out_label": "Save .md"},
-    "HTML -> MD":   {"in_ext": ".html", "out_ext": ".md",   "in_label": "File .html", "out_label": "Save .md"},
-}
-
-IN_FILETYPES = {
-    ".md":   ["md"],
-    ".xlsx": ["xlsx", "xls"],
-    ".docx": ["docx"],
-    ".csv":  ["csv"],
-    ".pdf":  ["pdf"],
-    ".html": ["html", "htm"],
-}
-
-OUT_FILETYPES = {
-    ".xlsx": ["xlsx"],
-    ".docx": ["docx"],
-    ".md":   ["md"],
-    ".csv":  ["csv"],
-    ".pdf":  ["pdf"],
-    ".html": ["html", "htm"],
-}
+from src.ui_flet.constants import (
+    DRAFT_PATH,
+    EDITOR_DISPLAY_LIMIT,
+    MODES,
+    IN_FILETYPES,
+    OUT_FILETYPES,
+)
+from src.ui_flet.state import AppState
+from src.ui_flet.theme import PALETTES, STYLE, apply_theme, resolve_color, make_border
+from src.ui_flet.native_dialogs import (
+    pick_input_file_async,
+    pick_output_file_async,
+    pick_image_file_async,
+)
+from src.ui_flet.layout.footer_bar import FooterBar
+from src.ui_flet.layout.ribbon_bar import RibbonBar
+from src.ui_flet.components.file_path_bar import FilePathBar
+from src.ui_flet.components.search_replace_bar import SearchReplaceBar
+from src.ui_flet.views.editor_view import EditorView
+from src.ui_flet.views.preview_view import MarkdownPreview
 
 
 class DocumentConvertApp:
@@ -77,830 +53,621 @@ class DocumentConvertApp:
         self.page.padding = 12
         self.page.spacing = 10
 
-        # State variables
-        self.in_path = ""
-        self.out_path = ""
-        self.current_mode = "MD -> Excel"
-        self.current_palette = "Violet Cyberpunk"
-        self.current_theme_mode = "Dark"
-        self.full_content = ""
-        self.is_dirty = False
-        self.is_processing = False
+        # Application State
+        self.state = AppState()
 
-        # Undo/Redo stack state
-        self.undo_stack: list[str] = []
-        self.redo_stack: list[str] = []
-        self._is_undo_redo_op = False
-
-        # Search panel state
-        self.search_matches: list[tuple[int, int]] = []
-        self.current_match_idx = -1
-
-        # Debounce timer state
+        # Timers
         self._autosave_timer: threading.Timer | None = None
         self._undo_timer: threading.Timer | None = None
         self._preview_timer: threading.Timer | None = None
 
-        # File Pickers
+        # File Pickers for Web/Mobile fallback
         self.file_picker_in = ft.FilePicker()
         self.file_picker_out = ft.FilePicker()
         self.page.services.extend([self.file_picker_in, self.file_picker_out])
 
+        # Apply Theme
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
 
-
-        # Apply Initial Theme
-        apply_theme(self.page, self.current_palette, self.current_theme_mode)
-
-        # Build UI Controls
+        # Build UI Controls & Layout
         self._build_controls()
         self._load_draft_if_exists()
-        print(f"[DEBUG] App initialized successfully with Flet UI")
+        print(f"[DEBUG] App initialized successfully with Flet 3-tier Architecture")
 
     def _build_controls(self):
-        # ── Header Bar Controls ─────────────────────────────────────────────
-        self.mode_dropdown = ft.Dropdown(
-            label="Conversion Mode",
-            value=self.current_mode,
-            options=[ft.dropdown.Option(m) for m in MODES.keys()],
-            width=180,
-            dense=True
-        )
-        self.mode_dropdown.on_select = self._on_mode_changed
-        self.mode_dropdown.on_change = self._on_mode_changed
-
-        self.palette_dropdown = ft.Dropdown(
-            label="Palette",
-            value=self.current_palette,
-            options=[ft.dropdown.Option(p) for p in PALETTES.keys()],
-            width=160,
-            dense=True
-        )
-        self.palette_dropdown.on_select = self._on_palette_changed
-        self.palette_dropdown.on_change = self._on_palette_changed
-
-        self.theme_mode_dropdown = ft.Dropdown(
-            label="Theme",
-            value=self.current_theme_mode,
-            options=[
-                ft.dropdown.Option("Dark"),
-                ft.dropdown.Option("Light"),
-                ft.dropdown.Option("System"),
-            ],
-            width=120,
-            dense=True
-        )
-        self.theme_mode_dropdown.on_select = self._on_theme_mode_changed
-        self.theme_mode_dropdown.on_change = self._on_theme_mode_changed
-
-        self.header_container = ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Icon(ft.Icons.AUTO_AWESOME, color=ft.Colors.PRIMARY, size=24),
-                    ft.Text(
-                        f"DocConvert Workspace v{__version__}",
-                        weight=ft.FontWeight.BOLD,
-                        size=16
-                    ),
-                    ft.Container(expand=True),
-                    self.mode_dropdown,
-                    self.palette_dropdown,
-                    self.theme_mode_dropdown,
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER
-            ),
-            padding=ft.Padding(left=12, top=8, right=12, bottom=8),
-            border_radius=8,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST
+        # 1. Search & Replace Bar (created first — used by RibbonBar and EditorView)
+        self.search_replace_bar = SearchReplaceBar(
+            on_search_changed=self._on_search_changed,
+            on_find_next=self._find_next_via_button,
+            on_find_prev=self._find_prev_via_button,
+            on_replace=self._replace_current,
+            on_replace_all=self._replace_all,
+            on_match_click=self._on_search_match_clicked,
         )
 
-        # ── File Path Action Bar ────────────────────────────────────────────
-        self.in_path_text = ft.TextField(
-            label="Input File Path",
-            value="",
-            read_only=True,
-            expand=True,
-            dense=True
-        )
-        self.btn_browse_in = ft.ElevatedButton(
-            "Browse Input",
-            icon=ft.Icons.FOLDER_OPEN,
-            on_click=self._trigger_browse_input
-        )
-
-        self.out_path_text = ft.TextField(
-            label="Output Destination",
-            value="",
-            expand=True,
-            dense=True,
-            on_change=self._on_out_path_edited
-        )
-        self.btn_browse_out = ft.ElevatedButton(
-            "Select Output",
-            icon=ft.Icons.SAVE,
-            on_click=self._trigger_browse_output
+        # 2. Ribbon Bar (Root Top Navigation)
+        self.ribbon_bar = RibbonBar(
+            current_mode=self.state.current_mode,
+            current_palette=self.state.current_palette,
+            current_theme_mode=self.state.current_theme_mode,
+            on_mode_changed=self._on_mode_changed,
+            on_palette_changed=self._on_palette_changed,
+            on_theme_mode_changed=self._on_theme_mode_changed,
+            on_browse_in=self._trigger_browse_input,
+            on_browse_out=self._trigger_browse_output,
+            on_clear_editor=self._clear_editor,
+            on_format_action=self._on_format_action,
+            on_heading_change=self._on_heading_change,
+            on_toggle_search=self._toggle_search_panel,
+            on_convert_click=self._on_convert_clicked,
+            on_toggle_preview=self._toggle_preview_pane,
+            on_toggle_file_path_bar=self._toggle_file_path_bar,
+            on_toggle_editor=self._toggle_editor_panel,
+            on_toggle_status_bar=self._toggle_status_bar,
+            on_insert_image=self._trigger_insert_image,
+            on_ribbon_toggle=self._update_editor_dynamic_height,
+            search_replace_bar=self.search_replace_bar,
         )
 
-        file_bar = ft.Column(
-            controls=[
-                ft.Row(controls=[self.in_path_text, self.btn_browse_in]),
-                ft.Row(controls=[self.out_path_text, self.btn_browse_out]),
-            ],
-            spacing=6
+        # 3. File Path Bar
+        self.file_path_bar = FilePathBar(
+            on_browse_in=self._trigger_browse_input,
+            on_browse_out=self._trigger_browse_output,
+            on_out_path_changed=self._on_out_path_edited,
         )
 
-        # ── Search & Replace Panel ──────────────────────────────────────────
-        self.search_input = ft.TextField(
-            label="Find",
-            dense=True,
-            expand=True,
-            on_submit=self._find_next_via_enter,
-            on_change=self._on_search_changed
-        )
-        self.replace_input = ft.TextField(
-            label="Replace",
-            dense=True,
-            expand=True,
-            on_submit=self._replace_current
-        )
-        self.chk_regex = ft.Checkbox(label="Regex", value=False, on_change=self._on_search_changed)
-        self.chk_case = ft.Checkbox(label="Match Case", value=False, on_change=self._on_search_changed)
-        self.lbl_search_match = ft.Text("0 matches", size=12, color=ft.Colors.GREY_500)
-
-        self.search_panel = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Row(controls=[
-                        self.search_input,
-                        ft.IconButton(ft.Icons.NAVIGATE_BEFORE, tooltip="Find Previous", on_click=self._find_prev_via_button),
-                        ft.IconButton(ft.Icons.NAVIGATE_NEXT, tooltip="Find Next", on_click=self._find_next_via_button),
-                        self.chk_regex,
-                        self.chk_case,
-                        self.lbl_search_match,
-                    ]),
-                    ft.Row(controls=[
-                        self.replace_input,
-                        ft.ElevatedButton("Replace", on_click=self._replace_current),
-                        ft.ElevatedButton("Replace All", on_click=self._replace_all),
-                    ])
-                ],
-                spacing=6
-            ),
-            padding=8,
-            border_radius=6,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-            visible=False
+        # 4. Editor View
+        self.editor_view = EditorView(
+            search_replace_bar=self.search_replace_bar,
+            on_editor_changed=self._on_editor_changed,
+            on_toggle_search=self._toggle_search_panel,
+            on_undo=self._perform_undo,
+            on_redo=self._perform_redo,
+            on_clear=self._clear_editor,
         )
 
-        # ── Toolbar & Editor Controls ───────────────────────────────────────
-        self.btn_toggle_search = ft.IconButton(
-            ft.Icons.SEARCH,
-            tooltip="Toggle Search & Replace Panel",
-            on_click=self._toggle_search_panel
-        )
-        self.btn_undo = ft.IconButton(
-            ft.Icons.UNDO,
-            tooltip="Undo (Ctrl+Z)",
-            on_click=self._perform_undo
-        )
-        self.btn_redo = ft.IconButton(
-            ft.Icons.REDO,
-            tooltip="Redo (Ctrl+Y)",
-            on_click=self._perform_redo
-        )
-        self.btn_clear_editor = ft.IconButton(
-            ft.Icons.DELETE_SWEEP,
-            tooltip="Clear Editor",
-            on_click=self._clear_editor
-        )
-
-        toolbar = ft.Row(
-            controls=[
-                ft.Text("Editor Buffer", weight=ft.FontWeight.W_600),
-                ft.Container(expand=True),
-                self.btn_toggle_search,
-                self.btn_undo,
-                self.btn_redo,
-                self.btn_clear_editor
-            ],
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-        )
-
-        self.editor = ft.TextField(
-            multiline=True,
-            expand=True,
-            min_lines=18,
-            text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
-            text_size=13,
-            on_change=self._on_editor_changed,
-            hint_text="Document text content will appear here..."
-        )
-
-        self.left_pane = ft.Container(
-            content=ft.Column(
-                controls=[
-                    toolbar,
-                    self.search_panel,
-                    self.editor
-                ],
-                expand=True
-            ),
-            expand=True,
-            padding=10,
-            border_radius=8,
-            bgcolor=ft.Colors.SURFACE_CONTAINER
-        )
-
-        # ── Right Pane (M2 Live Markdown Preview) ───────────────────────────
-        self.doc_info_text = ft.Text("No document loaded.", size=12)
+        # 5. Right Pane (Preview) — header is owned by MarkdownPreview
         self.preview = MarkdownPreview()
 
+        # doc_info_text is owned by preview (accessible via self.preview.doc_info_text)
+        self.doc_info_text = self.preview.doc_info_text
+
         self.right_pane = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Icon(ft.Icons.PREVIEW, size=18),
-                            ft.Text("Live Document Preview", weight=ft.FontWeight.W_600),
-                            ft.Container(expand=True),
-                            self.doc_info_text,
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER
-                    ),
-                    ft.Divider(),
-                    self.preview
-                ],
-                expand=True
-            ),
+            content=self.preview,
             expand=True,
             padding=10,
             border_radius=8,
-            bgcolor=ft.Colors.SURFACE_CONTAINER
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
 
-        # ── Main 2-Pane Split ───────────────────────────────────────────────
         main_content = ft.Row(
-            controls=[self.left_pane, self.right_pane],
+            controls=[self.editor_view.container, self.right_pane],
             expand=True,
-            spacing=10
+            spacing=10,
         )
 
-        # ── Conversion Action Footer ────────────────────────────────────────
-        self.last_converted_path = ""
-        self.btn_convert = ft.ElevatedButton(
-            "CONVERT NOW",
-            icon=ft.Icons.TRANSFORM,
-            on_click=self._on_convert_clicked,
-            style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                padding=ft.Padding(left=24, top=16, right=24, bottom=16),
-                color=ft.Colors.WHITE
-            )
-        )
-        self.btn_open_file = ft.ElevatedButton(
-            "Open File",
-            icon=ft.Icons.OPEN_IN_NEW,
-            visible=False,
-            on_click=self._open_converted_file
-        )
-        self.btn_open_folder = ft.ElevatedButton(
-            "Open Folder",
-            icon=ft.Icons.FOLDER_OPEN,
-            visible=False,
-            on_click=self._open_converted_folder
-        )
-        self.progress_bar = ft.ProgressBar(visible=False, expand=True)
-        self.status_text = ft.Text("Ready", size=13)
-
-        self.footer_container = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            self.btn_convert,
-                            self.btn_open_file,
-                            self.btn_open_folder,
-                            self.status_text,
-                            self.progress_bar
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER
-                    )
-                ]
-            ),
-            padding=ft.Padding(left=12, top=8, right=12, bottom=8),
-            border_radius=8,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST
+        # 6. Footer Bar
+        self.footer_bar = FooterBar(
+            on_convert_clicked=self._on_convert_clicked,
+            on_open_file=self._open_converted_file,
+            on_open_folder=self._open_converted_folder,
         )
 
-        # Build Page Tree
+        # Assemble Page Tree (Clean unified layout with RibbonBar at the top)
         self.page.add(
-            self.header_container,
-            file_bar,
+            self.ribbon_bar,
+            self.file_path_bar.container,
             main_content,
-            self.footer_container
+            self.footer_bar.container,
         )
+        self._update_theme_colors()
+
+    def _on_format_action(self, prefix: str, suffix: str):
+        self.editor_view.apply_formatting(prefix, suffix)
+
+    def _on_heading_change(self, level: int):
+        self.editor_view.apply_heading(level)
+
+    def _update_editor_dynamic_height(self):
+        file_path_vis = self.file_path_bar.container.visible
+        status_vis = self.footer_bar.container.visible
+        ribbon_vis = self.ribbon_bar.is_expanded
+
+        lines = 20
+        if not file_path_vis:
+            lines += 4
+        if not status_vis:
+            lines += 3
+        if not ribbon_vis:
+            lines += 3
+
+        self.editor_view.set_min_lines(lines)
+
+    def _toggle_preview_pane(self, e=None):
+        self.right_pane.visible = not self.right_pane.visible
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _toggle_file_path_bar(self, e=None):
+        """Toggle visibility of the Input/Output file path bar."""
+        self.file_path_bar.container.visible = not self.file_path_bar.container.visible
+        self._update_editor_dynamic_height()
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _toggle_editor_panel(self, e=None):
+        """Toggle visibility of the editor text panel."""
+        self.editor_view.container.visible = not self.editor_view.container.visible
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _toggle_status_bar(self, e=None):
+        """Toggle visibility of the bottom status/action bar."""
+        self.footer_bar.container.visible = not self.footer_bar.container.visible
+        self._update_editor_dynamic_height()
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _toggle_theme_quick(self, e=None):
+        new_mode = "Dark" if self.state.current_theme_mode == "Light" else "Light"
+        self.state.current_theme_mode = new_mode
+        self.ribbon_bar.theme_mode_dropdown.value = new_mode
+        apply_theme(self.page, self.state.current_palette, new_mode)
         self._update_theme_colors()
 
     # ── Mode & Theme Handlers ────────────────────────────────────────────────
     def _on_mode_changed(self, e):
-        self.current_mode = self.mode_dropdown.value
-        mode_cfg = MODES[self.current_mode]
-        print(f"[DEBUG] Conversion mode changed to: {self.current_mode}")
-
-        # Update output extension if output path is specified
-        if self.out_path:
-            base, _ = os.path.splitext(self.out_path)
-            self.out_path = base + mode_cfg["out_ext"]
-            self.out_path_text.value = self.out_path
-
-        if self.in_path:
-            self.doc_info_text.value = (
-                f"Loaded: {os.path.basename(self.in_path)} | Size: {len(self.full_content)} chars\n"
-                f"Mode: {self.current_mode}"
-            )
-        else:
-            self.doc_info_text.value = f"Mode: {self.current_mode}"
-
-        self.page.update()
-
-    def _update_theme_colors(self):
-        from src.ui_flet.theme import get_palette_color
-        is_dark = self.current_theme_mode == "Dark" or (self.current_theme_mode == "System")
-        apply_theme(self.page, self.current_palette, self.current_theme_mode)
-        
-        header_bg = get_palette_color(self.current_palette, "bg_header", is_dark)
-        pane_bg = get_palette_color(self.current_palette, "bg_pane", is_dark)
-        comp_bg = get_palette_color(self.current_palette, "bg_component", is_dark)
-        convert_bg = get_palette_color(self.current_palette, "btn_convert_fg", is_dark)
-
-        self.page.bgcolor = pane_bg
-        if hasattr(self, 'header_container'):
-            self.header_container.bgcolor = header_bg
-            try: self.header_container.update()
-            except Exception: pass
-        if hasattr(self, 'left_pane'):
-            self.left_pane.bgcolor = comp_bg
-            try: self.left_pane.update()
-            except Exception: pass
-        if hasattr(self, 'right_pane'):
-            self.right_pane.bgcolor = comp_bg
-            try: self.right_pane.update()
-            except Exception: pass
-        if hasattr(self, 'footer_container'):
-            self.footer_container.bgcolor = header_bg
-            try: self.footer_container.update()
-            except Exception: pass
-        if hasattr(self, 'btn_convert'):
-            self.btn_convert.style = ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                padding=ft.Padding(left=24, top=16, right=24, bottom=16),
-                color=ft.Colors.WHITE,
-                bgcolor=convert_bg
-            )
-            try: self.btn_convert.update()
-            except Exception: pass
-        if hasattr(self, 'editor'):
-            self.editor.bgcolor = comp_bg
-            try: self.editor.update()
-            except Exception: pass
-        if hasattr(self, 'preview'):
-            self.preview.bgcolor = comp_bg
-            try: self.preview.update()
-            except Exception: pass
-        try: self.page.update()
-        except Exception: pass
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+        mode_cfg = MODES[self.state.current_mode]
+        self.file_path_bar.set_in_label(mode_cfg['in_label'])
+        self.file_path_bar.set_out_label(mode_cfg['out_label'])
+        if self.state.in_path:
+            in_base, _ = os.path.splitext(self.state.in_path)
+            self.state.out_path = f"{in_base}{mode_cfg['out_ext']}"
+            self.file_path_bar.set_out_path(self.state.out_path)
 
     def _on_palette_changed(self, e):
-        self.current_palette = self.palette_dropdown.value
+        self.state.current_palette = self.ribbon_bar.palette_dropdown.value
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
         self._update_theme_colors()
-        print(f"[DEBUG] Palette changed to: {self.current_palette}")
 
     def _on_theme_mode_changed(self, e):
-        self.current_theme_mode = self.theme_mode_dropdown.value
+        self.state.current_theme_mode = self.ribbon_bar.theme_mode_dropdown.value
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
         self._update_theme_colors()
-        print(f"[DEBUG] Theme mode changed to: {self.current_theme_mode}")
 
-    # ── File Dialog & Loader Handlers ───────────────────────────────────────
-    async def _trigger_browse_input(self, e):
-        selected_path = await pick_input_file_async()
-        if selected_path:
-            print(f"[DEBUG] Native filedialog selected input: {selected_path}")
-            await self._load_file_path(selected_path)
+    def _update_theme_colors(self):
+        palette = PALETTES.get(self.state.current_palette, PALETTES["Violet Cyberpunk"])
+        is_dark = (self.state.current_theme_mode != "Light")
+
+        # 1. Ribbon bar (header background + panel container)
+        self.ribbon_bar.apply_palette(palette, is_dark)
+
+        # 2. File path bar (bg_component background + border)
+        self.file_path_bar.apply_palette(palette, is_dark)
+
+        # 3. Editor view (bg_pure_dark + accent title color + border)
+        self.editor_view.apply_palette(palette, is_dark)
+
+        # 4. Right pane — bg_pure_dark + preview header palette
+        bg_pure_dark = resolve_color(palette, "bg_pure_dark", is_dark)
+        border = resolve_color(palette, "border_color", is_dark)
+        self.right_pane.bgcolor = bg_pure_dark
+        self.right_pane.border = make_border(1, border)
+        self.preview.apply_palette(palette, is_dark, self.state.current_palette)
+
+        # 5. Footer bar (bg_component, btn_convert, btn_open, progress bar)
+        self.footer_bar.apply_palette(palette, is_dark)
+
+        self.page.update()
+
+    # ── File Picking & Loading Handlers ──────────────────────────────────────
+    def _trigger_browse_input(self, e):
+        asyncio.create_task(self._async_browse_input())
+
+    async def _async_browse_input(self):
+        file_path = await pick_input_file_async(page=self.page, picker=self.file_picker_in)
+        if file_path:
+            filename = os.path.basename(file_path)
+            self.editor_view.set_loading(filename)
+            self.preview.set_content(f"*Loading {filename}...*")
+            self.doc_info_text.value = "Loading..."
+            self.doc_info_text.update()
+            self.footer_bar.set_status(f"Loading file: {filename}...", ft.Colors.AMBER_400)
+            self.footer_bar.set_processing(True)
             self.page.update()
 
-    async def _trigger_browse_output(self, e):
-        mode_cfg = MODES.get(self.current_mode, {})
-        out_ext = mode_cfg.get("out_ext", ".docx")
-        initial_filename = os.path.basename(self.out_path) if self.out_path else f"output{out_ext}"
+            t0 = time.time()
+            res = await asyncio.to_thread(load_document, file_path)
+            t_extract = time.time() - t0
 
-        save_path = await pick_output_file_async(default_ext=out_ext, initial_file=initial_filename)
-        if save_path:
-            print(f"[DEBUG] Native filedialog selected output: {save_path}")
-            self.out_path = save_path
-            self.out_path_text.value = save_path
+            if not res.success:
+                err_msg = res.error_short or "Failed to load document"
+                self.footer_bar.set_status(f"Load failed: {err_msg}", ft.Colors.RED_400)
+                self.footer_bar.set_processing(False)
+                self.page.update()
+                return
+
+            content = res.content
+            self.state.in_path = file_path
+            self.file_path_bar.set_in_path(file_path)
+
+            ext = os.path.splitext(file_path)[1].lower()
+            self.ribbon_bar.update_mode_options(ext)
+            self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+
+            out_ext = MODES[self.state.current_mode]["out_ext"]
+            base, _ = os.path.splitext(file_path)
+            self.state.out_path = f"{base}{out_ext}"
+            self.file_path_bar.set_out_path(self.state.out_path)
+
+            self.state.full_content = content
+            self.state.undo_stack.clear()
+            self.state.redo_stack.clear()
+
+            # Step 2: Synchronous main thread Editor & Preview update
+            if len(content) > EDITOR_DISPLAY_LIMIT:
+                self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+            else:
+                self.editor_view.set_text(content)
+
+            self.state.undo_stack.append(self.editor_view.get_text())
+            self.state.is_dirty = False
+
+            words = len(content.split())
+            chars = len(content)
+            self.doc_info_text.value = f"{words:,} words | {chars:,} chars"
+
+            self._update_markdown_preview(content)
+
+            t_total = time.time() - t0
+            bench_msg = f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s"
+            print(bench_msg)
+
+            if len(content) > EDITOR_DISPLAY_LIMIT:
+                self.footer_bar.set_status(f"File truncated (>{EDITOR_DISPLAY_LIMIT} chars) ({t_total:.2f}s)", ft.Colors.ORANGE_400)
+            else:
+                self.footer_bar.set_status(f"Loaded: {os.path.basename(file_path)} ({t_total:.2f}s)", ft.Colors.GREEN_400)
+
+            self.footer_bar.set_processing(False)
             self.page.update()
+
+    def _trigger_browse_output(self, e):
+        asyncio.create_task(self._async_browse_output())
+
+    async def _async_browse_output(self):
+        mode_cfg = MODES[self.state.current_mode]
+        def_ext = mode_cfg["out_ext"]
+        init_file = os.path.basename(self.state.out_path) if self.state.out_path else f"output{def_ext}"
+        file_path = await pick_output_file_async(
+            default_ext=def_ext, initial_file=init_file, page=self.page, picker=self.file_picker_out
+        )
+        if file_path:
+            self.state.out_path = file_path
+            self.file_path_bar.set_out_path(file_path)
 
     def _on_out_path_edited(self, e):
-        self.out_path = self.out_path_text.value
+        self.state.out_path = self.file_path_bar.out_path_text.value.strip()
 
-    async def _load_file_path(self, path: str):
-        print(f"[DEBUG] Loading file from path: {path}")
-        self.in_path = path
-        self.in_path_text.value = path
+    def _trigger_insert_image(self, e=None):
+        asyncio.create_task(self._async_insert_image())
 
-        # Auto-filter dropdown mode options based on file extension
-        _, ext = os.path.splitext(path)
-        ext = ext.lower()
+    async def _async_insert_image(self):
+        img_path = await pick_image_file_async(page=self.page, picker=self.file_picker_in)
+        if img_path:
+            img_name = os.path.basename(img_path)
+            alt_text = os.path.splitext(img_name)[0]
+            normalized_path = img_path.replace("\\", "/")
+            token = f"![{alt_text}](file:///{normalized_path})"
+            self.editor_view.apply_formatting(token, "")
 
-        valid_modes = [m for m, cfg in MODES.items() if cfg["in_ext"] == ext]
-        if not valid_modes:
-            valid_modes = list(MODES.keys())
-
-        # Update dropdown options dynamically to only show valid modes for selected file
-        self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
-
-        if self.current_mode not in valid_modes and valid_modes:
-            self.current_mode = valid_modes[0]
-
-        self.mode_dropdown.value = self.current_mode
-        print(f"[DEBUG] Filtered mode dropdown options for '{ext}': {valid_modes}, selected: {self.current_mode}")
-
-        # Set default output path
-        out_ext = MODES[self.current_mode]["out_ext"]
-        base_name = os.path.splitext(path)[0]
-        self.out_path = f"{base_name}_converted{out_ext}"
-        self.out_path_text.value = self.out_path
-
-        # 1. Visual loading status feedback - painted immediately to screen
-        self.status_text.value = f"Loading document '{os.path.basename(path)}'..."
-        self.status_text.color = ft.Colors.BLUE_400
-        self.page.update()
-
-        # 2. Asynchronously execute heavy load_document in background thread
-        res = await asyncio.to_thread(load_document, path)
-        if not res.success:
-            err_msg = res.error_detail or res.error_short or "Unknown error loading file."
-            print(f"[DEBUG] File load failed: {err_msg}")
-            self.status_text.value = f"Error loading file: {err_msg}"
-            self.status_text.color = ft.Colors.RED_400
-            self.page.update()
-            return
-
-        # Check missing dependencies if any
-        if getattr(res, 'missing_dependencies', None):
-            deps_str = ", ".join(res.missing_dependencies)
-            print(f"[DEBUG] Missing dependencies for file load: {deps_str}")
-            self.status_text.value = f"Warning: Missing optional dependencies ({deps_str})"
-            self.status_text.color = ft.Colors.ORANGE_400
-
-        self.full_content = res.content
-        self.editor.value = self.full_content[:EDITOR_DISPLAY_LIMIT]
-        self.editor.update()
-        if hasattr(self, 'preview'):
-            self.preview.set_content(self.full_content)
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-        self.undo_stack.append(self.editor.value)
-
-        self.doc_info_text.value = (
-            f"Loaded: {os.path.basename(path)} | Size: {len(self.full_content)} chars\n"
-            f"Mode: {self.current_mode}"
-        )
-        self.status_text.value = f"Loaded successfully ({len(self.full_content)} chars)"
-        self.status_text.color = ft.Colors.GREEN_400
-        print(f"[DEBUG] File loaded successfully ({len(self.full_content)} characters)")
-        self.page.update()
-
-    # ── Undo / Redo & Editor Handlers ───────────────────────────────────────
+    # ── Editor & Undo/Redo Handlers ──────────────────────────────────────────
     def _on_editor_changed(self, e):
-        if self._is_undo_redo_op:
-            return
+        if not self.state.is_undo_redo_op:
+            self.state.redo_stack.clear()
+            if self._undo_timer:
+                self._undo_timer.cancel()
+            self._undo_timer = threading.Timer(0.8, self._push_undo_state)
+            self._undo_timer.start()
 
-        self.is_dirty = True
+        self.state.is_dirty = True
+        current_text = self.editor_view.get_text()
+        self.state.full_content = current_text
 
-        # Instant live preview update
-        if hasattr(self, 'preview') and self.editor:
-            self.preview.set_content(self.editor.value or "")
+        words = len(current_text.split())
+        chars = len(current_text)
+        self.doc_info_text.value = f"{words:,} words | {chars:,} chars"
+        self.doc_info_text.update()
 
-        # Debounce undo snapshot (500ms pause)
-        if self._undo_timer:
-            self._undo_timer.cancel()
-        self._undo_timer = threading.Timer(0.5, self._snapshot_undo_state)
-        self._undo_timer.start()
+        # Synchronous preview update directly on Flet main UI loop for instant 0ms sync
+        self._update_markdown_preview(current_text)
 
-        # Debounce draft autosave (1.5s pause)
         if self._autosave_timer:
             self._autosave_timer.cancel()
-        self._autosave_timer = threading.Timer(1.5, self._trigger_draft_autosave)
+        self._autosave_timer = threading.Timer(2.0, self._perform_autosave)
         self._autosave_timer.start()
 
-    def _on_search_changed(self, e):
-        pass
+    def _push_undo_state(self):
+        txt = self.editor_view.get_text()
+        if not self.state.undo_stack or self.state.undo_stack[-1] != txt:
+            self.state.undo_stack.append(txt)
+            if len(self.state.undo_stack) > 100:
+                self.state.undo_stack.pop(0)
 
-    def _snapshot_undo_state(self):
-        val = self.editor.value
-        if not self.undo_stack or self.undo_stack[-1] != val:
-            self.undo_stack.append(val)
-            if len(self.undo_stack) > 50:
-                self.undo_stack.pop(0)
-            self.redo_stack.clear()
-            print(f"[DEBUG] Snapshot undo state (total: {len(self.undo_stack)})")
+    def _perform_undo(self, e=None):
+        if len(self.state.undo_stack) > 1:
+            self.state.is_undo_redo_op = True
+            current = self.state.undo_stack.pop()
+            self.state.redo_stack.append(current)
+            prev_text = self.state.undo_stack[-1]
+            self.editor_view.set_text(prev_text)
+            self.state.full_content = prev_text
+            self._update_markdown_preview(prev_text)
+            self.state.is_undo_redo_op = False
 
-    def _perform_undo(self, e):
-        if len(self.undo_stack) > 1:
-            self._is_undo_redo_op = True
-            current_state = self.undo_stack.pop()
-            self.redo_stack.append(current_state)
-            self.editor.value = self.undo_stack[-1]
-            if hasattr(self, 'preview'):
-                self.preview.set_content(self.editor.value or "")
-            self.page.update()
-            self._is_undo_redo_op = False
-            print("[DEBUG] Perform Undo")
+    def _perform_redo(self, e=None):
+        if self.state.redo_stack:
+            self.state.is_undo_redo_op = True
+            next_text = self.state.redo_stack.pop()
+            self.state.undo_stack.append(next_text)
+            self.editor_view.set_text(next_text)
+            self.state.full_content = next_text
+            self._update_markdown_preview(next_text)
+            self.state.is_undo_redo_op = False
 
-    def _perform_redo(self, e):
-        if self.redo_stack:
-            self._is_undo_redo_op = True
-            next_state = self.redo_stack.pop()
-            self.undo_stack.append(next_state)
-            self.editor.value = next_state
-            if hasattr(self, 'preview'):
-                self.preview.set_content(self.editor.value or "")
-            self.page.update()
-            self._is_undo_redo_op = False
-            print("[DEBUG] Perform Redo")
+    def _clear_editor(self, e=None):
+        self.editor_view.set_text("")
+        self.state.full_content = ""
+        self.state.undo_stack.clear()
+        self.state.redo_stack.clear()
+        self.state.undo_stack.append("")
+        self.doc_info_text.value = "0 words | 0 chars"
+        self.doc_info_text.update()
+        self.preview.update_preview("", base_dir=os.path.dirname(self.state.in_path) if self.state.in_path else None)
 
-    def _clear_editor(self, e):
-        self.editor.value = ""
-        self.undo_stack.append("")
-        if hasattr(self, 'preview'):
-            self.preview.set_content("")
-        self.page.update()
-
-    # ── Search & Replace Operations ─────────────────────────────────────────
-    async def _toggle_search_panel(self, e):
-        self.search_panel.visible = not self.search_panel.visible
-        self.page.update()
-        if self.search_panel.visible:
-            await self.search_input.focus()
-
-    def _find_matches(self) -> list[tuple[int, int]]:
-        query = self.search_input.value
-        content = self.editor.value
-        if not query or not content:
-            return []
-
-        is_regex = self.chk_regex.value
-        is_case = self.chk_case.value
-
-        flags = 0 if is_case else re.IGNORECASE
-        matches = []
-        try:
-            pattern = query if is_regex else re.escape(query)
-            for m in re.finditer(pattern, content, flags=flags):
-                matches.append((m.start(), m.end()))
-        except Exception as ex:
-            print(f"[DEBUG] Regex search error: {ex}")
-
-        return matches
-
-    async def _do_find_next(self):
-        self.search_matches = self._find_matches()
-        if not self.search_matches:
-            self.lbl_search_match.value = "0 matches"
-            self.page.update()
-            return
-        self.current_match_idx = (self.current_match_idx + 1) % len(self.search_matches)
-        start, end = self.search_matches[self.current_match_idx]
-        self.lbl_search_match.value = f"Match {self.current_match_idx + 1} of {len(self.search_matches)}"
-        self.editor.selection = ft.TextSelection(base_offset=start, extent_offset=end)
-        self.editor.update()
-        self.page.update()
-
-    async def _do_find_prev(self):
-        self.search_matches = self._find_matches()
-        if not self.search_matches:
-            self.lbl_search_match.value = "0 matches"
-            self.page.update()
-            return
-        self.current_match_idx = (self.current_match_idx - 1) % len(self.search_matches)
-        start, end = self.search_matches[self.current_match_idx]
-        self.lbl_search_match.value = f"Match {self.current_match_idx + 1} of {len(self.search_matches)}"
-        self.editor.selection = ft.TextSelection(base_offset=start, extent_offset=end)
-        self.editor.update()
-        self.page.update()
-
-    async def _find_next_via_enter(self, e):
-        await self._do_find_next()
-        await self.search_input.focus()
-
-    async def _find_prev_via_enter(self, e):
-        await self._do_find_prev()
-        await self.search_input.focus()
-
-    async def _find_next_via_button(self, e):
-        await self._do_find_next()
-        await self.editor.focus()
-
-    async def _find_prev_via_button(self, e):
-        await self._do_find_prev()
-        await self.editor.focus()
-
-    def _replace_current(self, e):
-        query = self.search_input.value
-        replacement = self.replace_input.value
-        if not query:
+    # ── Search & Replace Handlers ───────────────────────────────────────────
+    def _toggle_search_panel(self, e=None):
+        """Toggle search panel in Ribbon Edit Tab (Ctrl+F shortcut support or callback)."""
+        if isinstance(e, bool):
+            # Callback from RibbonBar indicating the new visibility state
+            if not e:
+                # Clear search matches and hide results container
+                self.state.search_matches.clear()
+                self.state.current_match_idx = -1
+                self.search_replace_bar.set_match_label("0 matches")
+                self.search_replace_bar.results_container.visible = False
+                self.search_replace_bar.update_results([])
+                # Clear selection highlight in Editor
+                self.editor_view.editor.selection = None
+                try:
+                    self.editor_view.editor.update()
+                except Exception:
+                    pass
+            else:
+                # Re-run search query to restore highlights/matches
+                self._on_search_changed(None)
             return
 
-        content = self.editor.value
-        is_regex = self.chk_regex.value
-        is_case = self.chk_case.value
-        flags = 0 if is_case else re.IGNORECASE
+        # Triggered programmatically or by shortcut
+        self.ribbon_bar.toggle_search()
 
-        pattern = query if is_regex else re.escape(query)
-        new_content, num_subs = re.subn(pattern, replacement, content, count=1, flags=flags)
-        if num_subs > 0:
-            self.editor.value = new_content
-            self._on_editor_changed(None)
-            self.search_matches = self._find_matches()
-            self.lbl_search_match.value = f"Replaced 1 match ({len(self.search_matches)} remaining)"
-            print(f"[DEBUG] Replaced match of '{query}'")
-            self.page.update()
-
-    def _replace_all(self, e):
-        query = self.search_input.value
-        replacement = self.replace_input.value
-        if not query:
+    def _highlight_current_match(self, focus: bool = False):
+        if not self.state.search_matches or self.state.current_match_idx < 0:
             return
+        if self.state.current_match_idx >= len(self.state.search_matches):
+            self.state.current_match_idx = 0
 
-        content = self.editor.value
-        is_regex = self.chk_regex.value
-        is_case = self.chk_case.value
-        flags = 0 if is_case else re.IGNORECASE
+        start, end = self.state.search_matches[self.state.current_match_idx]
+        self.editor_view.select_range(start, end, focus=focus)
 
-        pattern = query if is_regex else re.escape(query)
-        new_content, count = re.subn(pattern, replacement, content, flags=flags)
-        self.editor.value = new_content
+    def _on_search_match_clicked(self, start: int, end: int):
+        """Called when a user clicks a result in the Search Navigation Results List."""
+        if self.state.search_matches:
+            for idx, (s, e) in enumerate(self.state.search_matches):
+                if s == start and e == end:
+                    self.state.current_match_idx = idx
+                    break
+        self.search_replace_bar.set_match_label(f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}")
+        self._on_search_changed(None, keep_active_idx=True)
+        self.editor_view.select_range(start, end, focus=True)
+
+    def _on_search_changed(self, e=None, keep_active_idx: bool = False):
+        query = self.search_replace_bar.search_input.value
+        content = self.editor_view.get_text()
+        content_lf = content.replace("\r\n", "\n")
+
+        if not keep_active_idx:
+            self.state.search_matches.clear()
+            self.state.current_match_idx = -1
+
+        if query:
+            try:
+                flags = 0 if self.search_replace_bar.chk_case.value else re.IGNORECASE
+                pattern = query if self.search_replace_bar.chk_regex.value else re.escape(query)
+                matches = []
+                for match in re.finditer(pattern, content_lf, flags):
+                    matches.append(match.span())
+                self.state.search_matches = matches
+            except Exception:
+                pass
+
+        count = len(self.state.search_matches)
+        matches_data = []
+
+        if count > 0:
+            if self.state.current_match_idx < 0 or self.state.current_match_idx >= count:
+                self.state.current_match_idx = 0
+            self.search_replace_bar.set_match_label(f"{self.state.current_match_idx + 1} of {count}")
+
+            lines = content_lf.split("\n")
+            line_starts = []
+            curr = 0
+            for l in lines:
+                line_starts.append(curr)
+                curr += len(l) + 1
+
+            for start, end in self.state.search_matches:
+                line_num = 1
+                snippet = ""
+                for idx, l_start in enumerate(line_starts):
+                    l_end = l_start + len(lines[idx])
+                    if l_start <= start <= l_end or (idx == len(lines) - 1 and start >= l_start):
+                        line_num = idx + 1
+                        snippet = lines[idx]
+                        break
+                matches_data.append({
+                    "start": start,
+                    "end": end,
+                    "line": line_num,
+                    "snippet": f"L{line_num}: {snippet.strip()[:60]}"
+                })
+
+            self._highlight_current_match(focus=False)
+        else:
+            self.search_replace_bar.set_match_label("0 matches")
+
+        self.search_replace_bar.update_results(matches_data, self.state.current_match_idx)
+
+    def _find_next_via_button(self, e=None):
+        if self.state.search_matches:
+            self.state.current_match_idx = (self.state.current_match_idx + 1) % len(self.state.search_matches)
+            self.search_replace_bar.set_match_label(f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}")
+            start, end = self.state.search_matches[self.state.current_match_idx]
+            self._on_search_changed(None, keep_active_idx=True)
+            self.editor_view.select_range(start, end, focus=True)
+            self.search_replace_bar.focus_search_input()
+
+    def _find_prev_via_button(self, e=None):
+        if self.state.search_matches:
+            self.state.current_match_idx = (self.state.current_match_idx - 1) % len(self.state.search_matches)
+            self.search_replace_bar.set_match_label(f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}")
+            start, end = self.state.search_matches[self.state.current_match_idx]
+            self._on_search_changed(None, keep_active_idx=True)
+            self.editor_view.select_range(start, end, focus=True)
+            self.search_replace_bar.focus_search_input()
+
+
+
+
+
+    def _replace_current(self, e=None):
+        if not self.state.search_matches or self.state.current_match_idx < 0:
+            return
+        find_val = self.search_replace_bar.search_input.value
+        repl_val = self.search_replace_bar.replace_input.value or ""
+        content = self.editor_view.get_text()
+        start, end = self.state.search_matches[self.state.current_match_idx]
+
+        new_content = content[:start] + repl_val + content[end:]
+        self.editor_view.set_text(new_content)
         self._on_editor_changed(None)
-        self.search_matches = []
-        self.lbl_search_match.value = f"Replaced {count} matches"
-        print(f"[DEBUG] Replaced all {count} matches of '{query}'")
-        self.page.update()
+        self._on_search_changed(None)
 
-    # ── Draft Autosave Handler ──────────────────────────────────────────────
+    def _replace_all(self, e=None):
+        query = self.search_replace_bar.search_input.value
+        repl_val = self.search_replace_bar.replace_input.value or ""
+        content = self.editor_view.get_text()
+        if not query:
+            return
+        try:
+            flags = 0 if self.search_replace_bar.chk_case.value else re.IGNORECASE
+            pattern = query if self.search_replace_bar.chk_regex.value else re.escape(query)
+            new_content = re.sub(pattern, repl_val, content, flags=flags)
+            self.editor_view.set_text(new_content)
+            self._on_editor_changed(None)
+            self._on_search_changed(None)
+        except Exception as ex:
+            self.footer_bar.set_status(f"Replace All failed: {ex}", ft.Colors.RED_400)
+
+    # ── Markdown Preview & Autosave Helpers ──────────────────────────────────
+    def _update_markdown_preview(self, content: str):
+        base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+        self.preview.update_preview(content, base_dir=base_dir)
+
     def _load_draft_if_exists(self):
         if os.path.exists(DRAFT_PATH):
             try:
                 with open(DRAFT_PATH, "r", encoding="utf-8") as f:
-                    content = f.read()
-                if content.strip():
-                    self.editor.value = content
-                    self.undo_stack.append(content)
-                    if hasattr(self, 'preview'):
-                        self.preview.set_content(content)
-                    self.status_text.value = "Restored draft autosave."
-                    print(f"[DEBUG] Restored draft autosave from: {DRAFT_PATH}")
+                    draft = f.read()
+                if draft.strip():
+                    self.state.full_content = draft
+                    self.editor_view.set_text(draft)
+                    self.state.undo_stack.append(draft)
+                    self._update_markdown_preview(draft)
+                    self.footer_bar.set_status("Loaded autosaved draft", ft.Colors.GREEN_400)
             except Exception as e:
-                print(f"[DEBUG] Error restoring draft: {e}")
+                print(f"[DEBUG] Failed to load draft: {e}")
 
-    def _trigger_draft_autosave(self):
+    def _perform_autosave(self):
         try:
             os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
             with open(DRAFT_PATH, "w", encoding="utf-8") as f:
-                f.write(self.editor.value or "")
-            print(f"[DEBUG] Draft autosaved to: {DRAFT_PATH}")
+                f.write(self.editor_view.get_text())
         except Exception as e:
-            print(f"[DEBUG] Draft autosave failed: {e}")
+            print(f"[DEBUG] Autosave error: {e}")
 
-    # ── Conversion Background Task ──────────────────────────────────────────
+    # ── Conversion Execution ─────────────────────────────────────────────────
     def _on_convert_clicked(self, e):
-        if self.is_processing:
+        content = self.editor_view.get_text()
+        if not content or not content.strip():
+            self.footer_bar.set_status("Editor content is empty! Please type or load a document.", ft.Colors.RED_400)
             return
 
-        out_path = self.out_path_text.value.strip()
+        out_path = self.file_path_bar.out_path_text.value.strip()
         if not out_path:
-            self.status_text.value = "Error: Please specify output destination."
-            self.status_text.color = ft.Colors.RED_400
-            self.page.update()
+            self.footer_bar.set_status("Please specify output path", ft.Colors.RED_400)
             return
 
-        content = self.editor.value
-        if not content.strip():
-            self.status_text.value = "Error: Editor is empty."
-            self.status_text.color = ft.Colors.RED_400
-            self.page.update()
-            return
-
-        # Check if output file is locked by another program (Word/Excel/etc)
         if is_output_locked(out_path):
-            self.status_text.value = f"Error: File '{os.path.basename(out_path)}' is currently open in Microsoft Word/Excel. Please close it first."
-            self.status_text.color = ft.Colors.RED_400
-            self.page.update()
+            self.footer_bar.set_status("Output file locked! Close target file and try again.", ft.Colors.RED_400)
             return
 
-        # Check if output file already exists -> confirm overwrite
-        if os.path.exists(out_path):
-            self._confirm_overwrite_dialog(self.current_mode, content, out_path)
-        else:
-            self._start_conversion(self.current_mode, content, out_path)
+        self.state.is_processing = True
+        self.footer_bar.set_processing(True)
+        self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
 
-    def _confirm_overwrite_dialog(self, mode: str, content: str, out_path: str):
-        def on_overwrite(e):
-            dlg.open = False
-            self.page.update()
-            if is_output_locked(out_path):
-                self.status_text.value = f"Error: File '{os.path.basename(out_path)}' is open in another program (Word/Excel). Close it to overwrite."
-                self.status_text.color = ft.Colors.RED_400
-                self.page.update()
-                return
-            self._start_conversion(mode, content, out_path)
+        threading.Thread(target=self._run_conversion_worker, args=(out_path,), daemon=True).start()
 
-        def on_cancel(e):
-            dlg.open = False
-            self.page.update()
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Overwrite Output File?"),
-            content=ft.Text(f"File '{os.path.basename(out_path)}' already exists.\nDo you want to overwrite it?"),
-            actions=[
-                ft.TextButton("Cancel", on_click=on_cancel),
-                ft.ElevatedButton("Overwrite", on_click=on_overwrite),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        self.page.overlay.append(dlg)
-        dlg.open = True
-        self.page.update()
-
-    def _start_conversion(self, mode: str, content: str, out_path: str):
-        self.is_processing = True
-        self.progress_bar.visible = True
-        self.btn_convert.disabled = True
-        self.status_text.value = "Converting document..."
-        self.status_text.color = ft.Colors.BLUE_400
-        self.page.update()
-
-        # Execute conversion asynchronously in background thread
-        self.page.run_thread(self._background_conversion_worker, mode, content, out_path)
-
-    def _open_converted_file(self, e):
-        if self.last_converted_path and os.path.exists(self.last_converted_path):
-            path = os.path.normpath(self.last_converted_path)
-            print(f"[DEBUG] Opening converted file: {path}")
-            os.startfile(path)
-            snack = ft.SnackBar(
-                content=ft.Text(f"Opened {os.path.basename(path)} — check taskbar if window is obscured."),
-                duration=3000
-            )
-            self.page.overlay.append(snack)
-            snack.open = True
-            self.page.update()
-
-    def _open_converted_folder(self, e):
-        if self.last_converted_path and os.path.exists(self.last_converted_path):
-            path = os.path.normpath(self.last_converted_path)
-            print(f"[DEBUG] Opening destination folder with selection: {path}")
-            import subprocess
-            subprocess.Popen(f'explorer /select,"{path}"')
-            snack = ft.SnackBar(
-                content=ft.Text("Opened Explorer — check taskbar if window is obscured."),
-                duration=3000
-            )
-            self.page.overlay.append(snack)
-            snack.open = True
-            self.page.update()
-
-    def _background_conversion_worker(self, mode: str, content: str, out_path: str):
-        print(f"[DEBUG] Starting background conversion job: mode='{mode}', out_path='{out_path}'")
-        start_time = time.time()
+    def _run_conversion_worker(self, out_path: str):
+        t0 = time.time()
         try:
-            msg = convert_content(mode=mode, content=content, out_path=out_path)
-            duration = time.time() - start_time
-            print(f"[DEBUG] Conversion result: {msg} ({duration:.2f}s)")
+            content = self.editor_view.get_text()
+            msg = convert_content(self.state.current_mode, content, out_path)
+            duration = time.time() - t0
 
-            self.last_converted_path = out_path
-            self.is_processing = False
-            self.progress_bar.visible = False
-            self.btn_convert.disabled = False
-            self.btn_open_file.visible = True
-            self.btn_open_folder.visible = True
-            self.status_text.value = f"{msg} ({duration:.2f}s)"
-            self.status_text.color = ft.Colors.GREEN_400
-            self.page.update()
+            self.state.last_converted_path = out_path
+            self.state.is_processing = False
+            self.footer_bar.set_processing(False)
+            self.footer_bar.set_result_buttons_visible(True)
+            self.footer_bar.set_status(f"{msg} ({duration:.2f}s)", ft.Colors.GREEN_400)
         except Exception as ex:
             err_msg = str(ex)
             print(f"[DEBUG] Conversion error: {err_msg}")
+            self.state.is_processing = False
+            self.footer_bar.set_processing(False)
+            self.footer_bar.set_status(f"Conversion failed: {err_msg}", ft.Colors.RED_400)
 
-            self.is_processing = False
-            self.progress_bar.visible = False
-            self.btn_convert.disabled = False
-            self.status_text.value = f"Conversion failed: {err_msg}"
-            self.status_text.color = ft.Colors.RED_400
-            self.page.update()
+    def _open_converted_file(self, e):
+        if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
+            os.startfile(self.state.last_converted_path)
+
+    def _open_converted_folder(self, e):
+        if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
+            folder = os.path.dirname(self.state.last_converted_path)
+            os.startfile(folder)
 
 
 def main(page: ft.Page):
     app = DocumentConvertApp(page)
+
 
 if __name__ == "__main__":
     ft.app(target=main)

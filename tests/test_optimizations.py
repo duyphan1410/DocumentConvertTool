@@ -4,9 +4,6 @@ import shutil
 import tempfile
 from src.services.media_asset_manager import MediaAssetManager
 from src.services.conversion_service import submit_async_task
-from src.ui.components.editor_pane import EditorPane
-from src.ui.components.config_pane import ConfigPane
-from src.ui.components.log_pane import LogPane
 
 
 class TestOptimizations(unittest.TestCase):
@@ -30,10 +27,6 @@ class TestOptimizations(unittest.TestCase):
         mgr.cleanup_cache(max_age_days=30)
         mgr.enforce_lru_cache_limit(max_bytes=100 * 1024 * 1024)
 
-    def test_ui_components_imported(self):
-        self.assertTrue(issubclass(EditorPane, object))
-        self.assertTrue(issubclass(ConfigPane, object))
-        self.assertTrue(issubclass(LogPane, object))
 
 
 if __name__ == "__main__":

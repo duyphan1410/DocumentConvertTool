@@ -95,6 +95,27 @@ def get_color_pair(color_tuple: tuple[str, str], is_dark: bool) -> str:
     """Helper to return light or dark color from tuple."""
     return color_tuple[1] if is_dark else color_tuple[0]
 
+def resolve_color(palette: dict, key: str, is_dark: bool) -> str:
+    """Resolve a palette color key to actual hex string.
+    
+    Args:
+        palette: A palette dict from PALETTES (e.g. PALETTES["Violet Cyberpunk"])
+        key: The color key (e.g. "bg_header", "btn_convert_fg")
+        is_dark: True for dark mode, False for light mode
+    Returns:
+        Hex color string
+    """
+    color_tuple = palette.get(key, ("#5d3fd3", "#725ac1"))
+    return get_color_pair(color_tuple, is_dark)
+
+def make_border(width: int, color: str) -> "ft.Border":
+    """Create a uniform ft.Border with all 4 sides the same width and color.
+    
+    Use this instead of ft.border.all() which is not available in all Flet versions.
+    """
+    side = ft.BorderSide(width=width, color=color)
+    return ft.Border(left=side, top=side, right=side, bottom=side)
+
 def get_palette_color(palette_name: str, key: str, is_dark: bool) -> str:
     """Retrieve color from PALETTES dict."""
     palette = PALETTES.get(palette_name, PALETTES["Violet Cyberpunk"])

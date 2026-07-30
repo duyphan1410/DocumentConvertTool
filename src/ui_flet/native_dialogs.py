@@ -137,3 +137,60 @@ async def pick_output_file_async(default_ext: str = ".docx", initial_file: str =
             return path
     return await asyncio.to_thread(pick_output_file_sync, default_ext, initial_file)
 
+
+IMAGE_FILETYPES = [
+    ("Image Files (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.svg)", "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.svg"),
+    ("PNG Image (*.png)", "*.png"),
+    ("JPEG Image (*.jpg;*.jpeg)", "*.jpg;*.jpeg"),
+    ("WebP Image (*.webp)", "*.webp"),
+    ("All Files (*.*)", "*.*"),
+]
+
+
+def pick_image_file_sync() -> str | None:
+    """Synchronous worker that opens transient Windows Open Image File Dialog."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_path = filedialog.askopenfilename(
+            title="Select Image File to Insert",
+            filetypes=IMAGE_FILETYPES
+        )
+        if selected_path:
+            return os.path.normpath(selected_path)
+    except Exception as e:
+        print(f"[DEBUG] Native image filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
+    """Async wrapper running image picker dialog."""
+    if page and (page.web or page.platform in (ft.PagePlatform.ANDROID, ft.PagePlatform.IOS)):
+        if picker:
+            files = await picker.pick_files(
+                dialog_title="Select Image File to Insert",
+                allow_multiple=False,
+                allowed_extensions=["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"],
+            )
+            if files:
+                return files[0].path
+            return None
+    return await asyncio.to_thread(pick_image_file_sync)
+
+

@@ -2,16 +2,17 @@
 Footer Bar Layout component.
 Contains Convert Action button, Open File/Folder buttons, Progress bar, and Status console.
 """
-from typing import Callable
+from typing import Callable, Optional
 import flet as ft
+from src.ui_flet.theme import resolve_color, make_border
 
 
 class FooterBar:
     def __init__(
         self,
-        on_convert_clicked: Callable[[ft.ControlEvent], None],
-        on_open_file: Callable[[ft.ControlEvent], None],
-        on_open_folder: Callable[[ft.ControlEvent], None],
+        on_convert_clicked: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_open_file: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_open_folder: Optional[Callable[[ft.ControlEvent], None]] = None,
     ):
         self.on_convert_clicked = on_convert_clicked
         self.on_open_file = on_open_file
@@ -50,20 +51,17 @@ class FooterBar:
         self.status_text = ft.Text("Ready", size=13)
 
         self.container = ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            self.btn_convert,
-                            self.btn_open_file,
-                            self.btn_open_folder,
-                            self.btn_copy_error,
-                            self.status_text,
-                            self.progress_bar,
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    )
-                ]
+                    self.btn_convert,
+                    self.btn_open_file,
+                    self.btn_open_folder,
+                    self.btn_copy_error,
+                    self.status_text,
+                    self.progress_bar,
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=10,
             ),
             padding=ft.Padding(left=12, top=8, right=12, bottom=8),
             border_radius=8,
@@ -80,7 +78,6 @@ class FooterBar:
         if color:
             self.status_text.color = color
 
-        # Show Copy Error button ONLY when status is an error
         is_err = is_error or (color in (ft.Colors.RED_400, ft.Colors.RED, "#f44336", "#ef5350"))
         self.btn_copy_error.visible = is_err
         if self.btn_copy_error.page:
@@ -104,3 +101,48 @@ class FooterBar:
             self.btn_open_file.update()
         if self.btn_open_folder.page:
             self.btn_open_folder.update()
+
+    def apply_palette(self, palette: dict, is_dark: bool):
+        """Apply palette colors to the footer bar."""
+        bg = resolve_color(palette, "bg_component", is_dark)
+        border = resolve_color(palette, "border_color", is_dark)
+        btn_fg = resolve_color(palette, "btn_convert_fg", is_dark)
+        btn_hover = resolve_color(palette, "btn_convert_hover", is_dark)
+        btn_open_fg = resolve_color(palette, "btn_open_fg", is_dark)
+        btn_open_hover = resolve_color(palette, "btn_open_hover", is_dark)
+        accent_secondary = resolve_color(palette, "text_accent_secondary", is_dark)
+
+        # Container background and border
+        self.container.bgcolor = bg
+        self.container.border = make_border(1, border)
+
+        # Convert button
+        self.btn_convert.style = ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=8),
+            padding=ft.Padding(left=24, top=16, right=24, bottom=16),
+            color=ft.Colors.WHITE,
+            bgcolor=btn_fg,
+            overlay_color=btn_hover,
+        )
+
+        # Open File / Open Folder buttons (only if visible/enabled)
+        if self.btn_open_file.visible:
+            self.btn_open_file.style = ft.ButtonStyle(
+                bgcolor=btn_open_fg,
+                overlay_color=btn_open_hover,
+                color=ft.Colors.WHITE,
+            )
+        if self.btn_open_folder.visible:
+            self.btn_open_folder.style = ft.ButtonStyle(
+                bgcolor=btn_open_fg,
+                overlay_color=btn_open_hover,
+                color=ft.Colors.WHITE,
+            )
+
+        # Progress bar color
+        self.progress_bar.color = accent_secondary
+
+        try:
+            self.container.update()
+        except Exception:
+            pass

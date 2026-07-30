@@ -305,14 +305,30 @@ class WordModule(BaseDocumentModule):
             line = lines[i].rstrip("\r\n")
 
             # Image check (Markdown ![alt](url) or HTML <img src="url">)
-            img_match = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line) or re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
-            if img_match:
-                src_url = img_match.group(2) if len(img_match.groups()) >= 2 else img_match.group(1)
+            img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+            img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
+            src_url = None
+            if img_match_md:
+                src_url = img_match_md.group(2)
+            elif img_match_html:
+                src_url = img_match_html.group(1)
+
+            if src_url:
                 img_path = asset_mgr.resolve_uri(src_url)
-                if not os.path.isabs(img_path):
-                    sess_path = os.path.join(asset_mgr.get_session_dir(), img_path)
-                    if os.path.exists(sess_path):
-                        img_path = sess_path
+                if not os.path.isabs(img_path) or not os.path.exists(img_path):
+                    out_dir = os.path.dirname(out_path)
+                    candidate = os.path.join(out_dir, src_url)
+                    if os.path.exists(candidate) and os.path.isfile(candidate):
+                        img_path = candidate
+                    else:
+                        base_filename = os.path.basename(src_url)
+                        if os.path.exists(asset_mgr.cache_dir):
+                            for root, _, files in os.walk(asset_mgr.cache_dir):
+                                if base_filename in files:
+                                    cand = os.path.join(root, base_filename)
+                                    if os.path.isfile(cand):
+                                        img_path = cand
+                                        break
                 
                 img_path = os.path.normpath(os.path.abspath(img_path))
                 if os.path.exists(img_path) and os.path.isfile(img_path):

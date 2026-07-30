@@ -657,12 +657,24 @@ class DocumentConvertApp:
 
     def _open_converted_file(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
-            os.startfile(self.state.last_converted_path)
+            abs_path = os.path.abspath(self.state.last_converted_path)
+            os.startfile(abs_path)
+            try:
+                self.page.window.minimized = True
+                self.page.update()
+            except Exception:
+                pass
 
     def _open_converted_folder(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
-            folder = os.path.dirname(self.state.last_converted_path)
-            os.startfile(folder)
+            import subprocess
+            abs_path = os.path.abspath(self.state.last_converted_path)
+            subprocess.Popen(['explorer.exe', '/select,', abs_path])
+            try:
+                self.page.window.minimized = True
+                self.page.update()
+            except Exception:
+                pass
 
 
 def main(page: ft.Page):

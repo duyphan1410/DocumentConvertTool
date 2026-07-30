@@ -20,24 +20,32 @@ class HTMLModule(BaseDocumentModule):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
+        from src.services.media_asset_manager import MediaAssetManager
+        asset_mgr = MediaAssetManager()
+        base_dir = os.path.dirname(file_path)
+
         try:
+            content = None
             try:
                 from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(file_path)
                 if result and result.text_content:
-                    return result.text_content
+                    content = result.text_content
             except Exception:
                 pass
 
-            try:
-                from bs4 import BeautifulSoup
-                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                    soup = BeautifulSoup(f.read(), "html.parser")
-                    return soup.get_text()
-            except Exception:
-                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                    return f.read()
+            if not content:
+                try:
+                    from bs4 import BeautifulSoup
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        soup = BeautifulSoup(f.read(), "html.parser")
+                        content = soup.get_text()
+                except Exception:
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+
+            return asset_mgr.import_local_images(content, base_dir)
         except Exception as e:
             raise RuntimeError(f"HTML Ingestion Error: Failed to extract text from HTML. Detail: {str(e)}")
 

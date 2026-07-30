@@ -11,7 +11,7 @@ class AppState:
     out_path: str = ""
     last_converted_path: str = ""
     current_mode: str = "MD -> Excel"
-    current_palette: str = "Violet Cyberpunk"
+    current_palette: str = "Deep Ocean"
     current_theme_mode: str = "Dark"
     full_content: str = ""
     is_dirty: bool = False

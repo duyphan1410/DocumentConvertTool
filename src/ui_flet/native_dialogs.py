@@ -89,7 +89,8 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
             title="Select Output Destination",
             defaultextension=default_ext,
             initialfile=initial_file,
-            filetypes=OUTPUT_FILETYPES
+            filetypes=OUTPUT_FILETYPES,
+            confirmoverwrite=True,
         )
         if save_path:
             return os.path.normpath(save_path)
@@ -192,5 +193,32 @@ async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePick
                 return files[0].path
             return None
     return await asyncio.to_thread(pick_image_file_sync)
+
+
+def confirm_overwrite_sync(file_path: str) -> bool:
+    """Prompts a native Windows messagebox asking user if they want to overwrite an existing file."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        enable_high_dpi_awareness()
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        res = messagebox.askyesno(
+            "Confirm Overwrite",
+            f"The file '{os.path.basename(file_path)}' already exists.\n\nDo you want to overwrite it?",
+            parent=root
+        )
+        root.destroy()
+        return res
+    except Exception as e:
+        print(f"[DEBUG] confirm_overwrite_sync error: {e}")
+        return True
+
+
+async def confirm_overwrite_async(file_path: str) -> bool:
+    """Async wrapper for confirm_overwrite_sync."""
+    return await asyncio.to_thread(confirm_overwrite_sync, file_path)
+
 
 

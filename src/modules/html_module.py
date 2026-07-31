@@ -16,7 +16,7 @@ class HTMLModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return ["markdown2", "beautifulsoup4", "Pygments"]
+        return ["markdown2"]
 
     def load_to_markdown(self, file_path: str) -> str:
         """Loads physical HTML file and extracts it to Markdown text using BeautifulSoup structure parsing."""
@@ -171,6 +171,8 @@ class HTMLModule(BaseDocumentModule):
 
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text and saves it to a styled HTML document."""
+        import time
+        t0 = time.time()
         try:
             from src.services.media_asset_manager import MediaAssetManager
             asset_mgr = MediaAssetManager()
@@ -197,26 +199,102 @@ class HTMLModule(BaseDocumentModule):
                 alt, src = match.group(1), match.group(2)
                 return f"![{alt}]({resolve_to_base64(src)})"
 
-            # Resolve @media/ URIs on raw markdown BEFORE converting to HTML.
+            # Step 1: Base64 media resolution
+            t1 = time.time()
             processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+            t_base64 = time.time() - t1
 
-            # Auto-repair malformed code blocks safely:
-            # 1. Insert missing newline after ```lang if at start of line and NOT ending with ``` on same line
-            def fix_fence(match):
-                prefix = match.group(1)
-                lang = match.group(2)
-                rest = match.group(3)
-                if rest.rstrip().endswith("```"):
-                    return match.group(0)  # Keep inline triple backticks unchanged
-                return f"{prefix}```{lang}\n{rest}"
+            # Step 2: Code block auto-repair
+            t2 = time.time()
+            def repair_markdown_code_blocks(md: str) -> str:
+                if not md:
+                    return md
+                lines = md.split("\n")
+                result_lines = []
+                in_code_block = False
+                fence_indent = 0
 
-            processed_md = re.sub(r'(^|\n)```([a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)', fix_fence, processed_md)
-            # 2. Insert missing blank line before ``` if preceded directly by text
-            processed_md = re.sub(r'([^\n])\n```', r'\1\n\n```', processed_md)
-            # 3. Auto-close unclosed code block if the number of ``` fences is odd
-            if processed_md.count("```") % 2 != 0:
-                processed_md += "\n```\n"
+                for line in lines:
+                    stripped = line.strip()
+                    is_fence = stripped.startswith("```")
+                    has_lang = bool(re.match(r"^```[a-zA-Z0-9_\-+]+", stripped))
+                    is_inline_fence = is_fence and stripped.endswith("```") and len(stripped) > 5
 
+                    if is_inline_fence and not in_code_block:
+                        result_lines.append(stripped)
+                        continue
+
+                    if in_code_block:
+                        if is_fence:
+                            if has_lang:
+                                if fence_indent > 0:
+                                    result_lines.append(" " * fence_indent + "```")
+                                else:
+                                    result_lines.append("```")
+                                in_code_block = False
+                                match = re.match(r'^(```[a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)$', stripped)
+                                if match:
+                                    result_lines.append(match.group(1))
+                                    result_lines.append(match.group(2))
+                                else:
+                                    result_lines.append(stripped)
+                                in_code_block = True
+                            else:
+                                if fence_indent > 0:
+                                    result_lines.append(" " * fence_indent + "```")
+                                else:
+                                    result_lines.append("```")
+                                in_code_block = False
+                                fence_indent = 0
+                        else:
+                            if fence_indent > 0 and line.startswith(" " * fence_indent):
+                                result_lines.append(line)
+                            else:
+                                result_lines.append(stripped if len(line) - len(stripped) >= 4 else line)
+                    else:
+                        is_header = bool(re.match(r'^#{1,6}\s', stripped))
+                        is_list_item = bool(re.match(r'^[ \t]*[-*+]\s', line)) or bool(re.match(r'^[ \t]*\d+\.\s', line))
+
+                        if result_lines and result_lines[-1].strip() != "":
+                            prev_is_list = bool(re.match(r'^[ \t]*[-*+]\s', result_lines[-1])) or bool(re.match(r'^[ \t]*\d+\.\s', result_lines[-1]))
+                            prev_is_fence = result_lines[-1].strip() == "```"
+                            if is_header or (is_list_item and not prev_is_list and not prev_is_fence):
+                                result_lines.append("")
+
+                        if is_fence:
+                            fence_indent = len(line) - len(line.lstrip())
+                            if result_lines and result_lines[-1].strip() != "" and not result_lines[-1].strip().startswith("#"):
+                                result_lines.append("")
+                            match = re.match(r'^(```[a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)$', stripped)
+                            if match and not stripped.endswith("```"):
+                                result_lines.append(match.group(1))
+                                result_lines.append(match.group(2))
+                            else:
+                                result_lines.append(line if fence_indent > 0 else stripped)
+                            in_code_block = True
+                        else:
+                            if fence_indent > 0 and line.startswith(" " * fence_indent) and not is_list_item and not is_header:
+                                result_lines.append(line)
+                                if line.strip() == "":
+                                    fence_indent = 0
+                            elif line.startswith("    ") and not is_list_item and not is_header:
+                                result_lines.append(line.lstrip())
+                            else:
+                                result_lines.append(line)
+
+                if in_code_block:
+                    if fence_indent > 0:
+                        result_lines.append(" " * fence_indent + "```")
+                    else:
+                        result_lines.append("```")
+
+                return "\n".join(result_lines)
+
+            processed_md = repair_markdown_code_blocks(processed_md)
+            t_repair = time.time() - t2
+
+            # Step 3: Markdown to HTML conversion
+            t3 = time.time()
             try:
                 import markdown2
                 html_body = markdown2.markdown(
@@ -231,6 +309,7 @@ class HTMLModule(BaseDocumentModule):
                     # Simple fallback when external markdown libraries are not installed
                     lines = processed_md.split("\n")
                     html_body = "\n".join(f"<p>{l}</p>" if l.strip() else "<br/>" for l in lines)
+            t_md2html = time.time() - t3
 
             # HTML Template with beautiful modern CSS styles supporting both Light and Dark themes
             # using system preference (prefers-color-scheme)
@@ -453,6 +532,9 @@ class HTMLModule(BaseDocumentModule):
 
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(html_document)
+
+            t_total = time.time() - t0
+            print(f"[BENCHMARK] HTMLModule Export: total={t_total:.3f}s (base64={t_base64:.3f}s, repair={t_repair:.3f}s, md2html={t_md2html:.3f}s)")
 
             return f"Exported successfully to HTML -> {os.path.basename(out_path)}"
         except Exception as e:

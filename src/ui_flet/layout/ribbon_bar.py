@@ -60,7 +60,7 @@ class RibbonBar(ft.Container):
         self._search_visible = False
 
         self.is_expanded = True
-        self.active_tab = "file"
+        self.active_tab = "edit"
 
         # ── Integrated Mode, Palette & Theme Selectors ───────────────────────────
         self.mode_dropdown = ft.Dropdown(

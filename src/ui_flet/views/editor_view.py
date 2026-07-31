@@ -59,7 +59,7 @@ class EditorView:
         self.editor = ft.TextField(
             multiline=True,
             expand=True,
-            min_lines=22,
+            min_lines=23,
             max_lines=None,
             border_radius=8,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),

@@ -87,18 +87,11 @@ class MediaAssetManager:
         dest_media_dir_name = f"{out_base}_media"
         dest_media_dir = os.path.join(out_dir, dest_media_dir_name)
 
-        from src.core.converters import parse_inline
+        import re
 
-        # Retrieve all unique @media/ references from the content using structural parsing
-        referenced_images = set()
-        for line in markdown_content.splitlines():
-            try:
-                segments = parse_inline(line)
-                for seg in segments:
-                    if getattr(seg, "is_image", False) and seg.url and seg.url.startswith("@media/"):
-                        referenced_images.add(seg.url)
-            except Exception:
-                pass
+        # Retrieve all unique @media/ references from markdown image syntax ![alt](@media/...)
+        matches = re.findall(r'!\[([^\]]*)\]\((@media/[^)]+)\)', markdown_content)
+        referenced_images = set(m[1] for m in matches)
 
         if not referenced_images:
             return markdown_content

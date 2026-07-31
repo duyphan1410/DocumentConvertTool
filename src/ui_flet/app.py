@@ -634,12 +634,12 @@ class DocumentConvertApp:
         self.footer_bar.set_processing(True)
         self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
 
-        threading.Thread(target=self._run_conversion_worker, args=(out_path,), daemon=True).start()
+        t0 = time.time()  # Start timer here — captures full perceived time:
+                          # validation + thread dispatch + conversion + file write
+        threading.Thread(target=self._run_conversion_worker, args=(content, out_path, t0), daemon=True).start()
 
-    def _run_conversion_worker(self, out_path: str):
-        t0 = time.time()
+    def _run_conversion_worker(self, content: str, out_path: str, t0: float):
         try:
-            content = self.editor_view.get_text()
             msg = convert_content(self.state.current_mode, content, out_path)
             duration = time.time() - t0
 

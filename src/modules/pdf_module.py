@@ -570,6 +570,10 @@ class PDFModule(BaseDocumentModule):
                 font_family_name = "'AppUnicodeFont', sans-serif"
 
             css = (font_face_css + """
+            @page {
+                size: A4;
+                margin: 2cm 2.5cm 2.5cm 2.5cm;
+            }
             body {
                 font-family: __FONT_FAMILY__;
                 font-size: 11pt;
@@ -608,6 +612,7 @@ class PDFModule(BaseDocumentModule):
                 margin-top: 12px;
                 margin-bottom: 16px;
                 font-size: 10.5pt;
+                page-break-inside: avoid;
             }
             th, td {
                 border: 1px solid #d0d7de;
@@ -639,6 +644,7 @@ class PDFModule(BaseDocumentModule):
                 overflow-x: auto;
                 margin-top: 10px;
                 margin-bottom: 14px;
+                page-break-inside: avoid;
             }
             pre code {
                 background-color: transparent;

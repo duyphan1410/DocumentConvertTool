@@ -533,11 +533,17 @@ class PDFModule(BaseDocumentModule):
                 new_src = prepare_image(src)
                 return f'{prefix}src="{new_src}"{suffix}'
 
-            processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img_markdown, markdown_content)
-            processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+            if "!" in markdown_content or "<img" in markdown_content:
+                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img_markdown, markdown_content)
+                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+            else:
+                processed_md = markdown_content
 
             # Pre-process Markdown: replace ~~text~~ with <del>text</del> for strikethrough support
-            html_content = re.sub(r"~~(.*?)~~", r"<del>\1</del>", processed_md)
+            if "~~" in processed_md:
+                html_content = re.sub(r"~~(.*?)~~", r"<del>\1</del>", processed_md)
+            else:
+                html_content = processed_md
 
             from markdown_pdf import MarkdownPdf, Section
 

@@ -255,8 +255,9 @@ class WordModule(BaseDocumentModule):
             paragraph._p.append(hyperlink)
             return hyperlink
 
+        from src.core.converters import parse_inline
+
         def add_formatted_runs(paragraph, text, size=11, default_bold=False, default_color=None):
-            from src.core.converters import parse_inline
             segments = parse_inline(text, bold=default_bold)
             for seg in segments:
                 if seg.url:
@@ -304,62 +305,66 @@ class WordModule(BaseDocumentModule):
         while i < len(lines):
             line = lines[i].rstrip("\r\n")
 
-            # Image check (Markdown ![alt](url) or HTML <img src="url">)
-            img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
-            img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
-            src_url = None
-            if img_match_md:
-                src_url = img_match_md.group(2)
-            elif img_match_html:
-                src_url = img_match_html.group(1)
+            # Image check (Fast string pre-check before running regex)
+            if "!" in line or "<img" in line:
+                img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+                img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
+                src_url = None
+                if img_match_md:
+                    src_url = img_match_md.group(2)
+                elif img_match_html:
+                    src_url = img_match_html.group(1)
 
-            if src_url:
-                img_path = asset_mgr.resolve_uri(src_url)
-                if not os.path.isabs(img_path) or not os.path.exists(img_path):
-                    out_dir = os.path.dirname(out_path)
-                    candidate = os.path.join(out_dir, src_url)
-                    if os.path.exists(candidate) and os.path.isfile(candidate):
-                        img_path = candidate
-                    else:
-                        base_filename = os.path.basename(src_url)
-                        if os.path.exists(asset_mgr.cache_dir):
-                            for root, _, files in os.walk(asset_mgr.cache_dir):
-                                if base_filename in files:
-                                    cand = os.path.join(root, base_filename)
-                                    if os.path.isfile(cand):
-                                        img_path = cand
-                                        break
-                
-                img_path = os.path.normpath(os.path.abspath(img_path))
-                if os.path.exists(img_path) and os.path.isfile(img_path):
-                    try:
-                        p = doc.add_paragraph()
-                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        run = p.add_run()
-                        
-                        from PIL import Image as PILImage
-                        with PILImage.open(img_path) as pil_img:
-                            w_px, h_px = pil_img.size
-                            w_inches = min(5.8, max(1.5, w_px / 150.0))
+                if src_url:
+                    img_path = asset_mgr.resolve_uri(src_url)
+                    if not os.path.isabs(img_path) or not os.path.exists(img_path):
+                        out_dir = os.path.dirname(out_path)
+                        candidate = os.path.join(out_dir, src_url)
+                        if os.path.exists(candidate) and os.path.isfile(candidate):
+                            img_path = candidate
+                        else:
+                            base_filename = os.path.basename(src_url)
+                            if os.path.exists(asset_mgr.cache_dir):
+                                for root, _, files in os.walk(asset_mgr.cache_dir):
+                                    if base_filename in files:
+                                        cand = os.path.join(root, base_filename)
+                                        if os.path.isfile(cand):
+                                            img_path = cand
+                                            break
+                    
+                    img_path = os.path.normpath(os.path.abspath(img_path))
+                    if os.path.exists(img_path) and os.path.isfile(img_path):
+                        try:
+                            p = doc.add_paragraph()
+                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            run = p.add_run()
                             
-                        run.add_picture(img_path, width=Inches(w_inches))
-                        p.paragraph_format.space_before = Pt(6)
-                        p.paragraph_format.space_after = Pt(6)
-                        i += 1
-                        continue
-                    except Exception as img_err:
-                        print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
+                            from PIL import Image as PILImage
+                            with PILImage.open(img_path) as pil_img:
+                                w_px, h_px = pil_img.size
+                                w_inches = min(5.8, max(1.5, w_px / 150.0))
+                                
+                            run.add_picture(img_path, width=Inches(w_inches))
+                            p.paragraph_format.space_before = Pt(6)
+                            p.paragraph_format.space_after = Pt(6)
+                            i += 1
+                            continue
+                        except Exception as img_err:
+                            print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
 
-            m = re.match(r"^(#{1,6})\s+(.*)", line)
-            if m:
-                level = len(m.group(1))
-                heading = doc.add_heading('', level=min(level, 9))
-                add_formatted_runs(heading, m.group(2), size=HEADING_SIZES[level], default_bold=True, default_color=HEADING_COLORS[level])
-                heading.paragraph_format.space_before = Pt(10)
-                heading.paragraph_format.space_after = Pt(4)
-                i += 1
-                continue
+            # Heading check (Fast string pre-check)
+            if line.startswith("#"):
+                m = re.match(r"^(#{1,6})\s+(.*)", line)
+                if m:
+                    level = len(m.group(1))
+                    heading = doc.add_heading('', level=min(level, 9))
+                    add_formatted_runs(heading, m.group(2), size=HEADING_SIZES[level], default_bold=True, default_color=HEADING_COLORS[level])
+                    heading.paragraph_format.space_before = Pt(10)
+                    heading.paragraph_format.space_after = Pt(4)
+                    i += 1
+                    continue
 
+            # Table check (Fast string pre-check)
             if "|" in line and not re.match(r"^[\|\s\-:]+$", line.strip()):
                 table_lines = []
                 while i < len(lines) and "|" in lines[i]:
@@ -391,29 +396,34 @@ class WordModule(BaseDocumentModule):
                     doc.add_paragraph()
                 continue
 
-            m = re.match(r"^(\s*)[-*+]\s+(.*)", line)
-            if m:
-                indent_spaces = len(m.group(1))
-                level = (indent_spaces // 2) + 1
-                style_name = f"List Bullet {level}" if level > 1 else "List Bullet"
-                if style_name not in doc.styles:
-                    style_name = "List Bullet"
-                add_paragraph_with_font(doc, m.group(2), style=style_name)
-                i += 1
-                continue
+            # Bullet List check
+            sline = line.lstrip()
+            if sline and sline[0] in ("-", "*", "+"):
+                m = re.match(r"^(\s*)[-*+]\s+(.*)", line)
+                if m:
+                    indent_spaces = len(m.group(1))
+                    level = (indent_spaces // 2) + 1
+                    style_name = f"List Bullet {level}" if level > 1 else "List Bullet"
+                    if style_name not in doc.styles:
+                        style_name = "List Bullet"
+                    add_paragraph_with_font(doc, m.group(2), style=style_name)
+                    i += 1
+                    continue
 
-            m = re.match(r"^(\s*)\d+\.\s+(.*)", line)
-            if m:
-                indent_spaces = len(m.group(1))
-                level = (indent_spaces // 2) + 1
-                style_name = f"List Number {level}" if level > 1 else "List Number"
-                if style_name not in doc.styles:
-                    style_name = "List Number"
-                add_paragraph_with_font(doc, m.group(2), style=style_name)
-                i += 1
-                continue
+            # Numbered List check
+            if sline and sline[0].isdigit():
+                m = re.match(r"^(\s*)\d+\.\s+(.*)", line)
+                if m:
+                    indent_spaces = len(m.group(1))
+                    level = (indent_spaces // 2) + 1
+                    style_name = f"List Number {level}" if level > 1 else "List Number"
+                    if style_name not in doc.styles:
+                        style_name = "List Number"
+                    add_paragraph_with_font(doc, m.group(2), style=style_name)
+                    i += 1
+                    continue
 
-            if re.match(r"^[-*_]{3,}$", line.strip()):
+            if sline.startswith(("---", "***", "___")) and re.match(r"^[-*_]{3,}$", line.strip()):
                 p = doc.add_paragraph("─" * 50)
                 p.runs[0].font.color.rgb = RGBColor(0x99, 0x99, 0x99)
                 i += 1

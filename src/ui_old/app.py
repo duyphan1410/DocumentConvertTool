@@ -1634,12 +1634,8 @@ class App(BaseClass): # type: ignore
         out = self.output_state.out_path
         if out and os.path.exists(out):
             try:
-                if sys.platform == "win32":
-                    os.startfile(out)
-                elif sys.platform == "darwin":
-                    subprocess.run(["open", out], check=True)
-                else:
-                    subprocess.run(["xdg-open", out], check=True)
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(out, is_folder=False)
                 self._set_status("Opened file in default application", "green")
             except Exception as e:
                 self._set_status(f"Failed to open file: {e}", "red")
@@ -1655,12 +1651,8 @@ class App(BaseClass): # type: ignore
         out = self.output_state.out_path
         if out and os.path.exists(out):
             try:
-                if sys.platform == "win32":
-                    subprocess.run(["explorer", "/select,", os.path.normpath(out)])
-                elif sys.platform == "darwin":
-                    subprocess.run(["open", "-R", out])
-                else:
-                    subprocess.run(["xdg-open", os.path.dirname(out)])
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(out, is_folder=True)
                 self._set_status("Opened containing folder", "green")
             except Exception as e:
                 self._set_status(f"Failed to open folder: {e}", "red")

@@ -659,21 +659,8 @@ class DocumentConvertApp:
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
             file_path = os.path.normpath(os.path.abspath(self.state.last_converted_path))
             try:
-                import sys
-                if sys.platform == "win32":
-                    os.startfile(file_path)
-                elif sys.platform == "darwin":
-                    import subprocess
-                    subprocess.Popen(["open", file_path])
-                else:
-                    import subprocess
-                    subprocess.Popen(["xdg-open", file_path])
-
-                try:
-                    self.page.window.minimized = True
-                    self.page.update()
-                except Exception:
-                    pass
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(file_path, is_folder=False)
             except Exception as ex:
                 print(f"[DEBUG] Failed to open file '{file_path}': {ex}")
 
@@ -681,28 +668,10 @@ class DocumentConvertApp:
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
             file_path = os.path.normpath(os.path.abspath(self.state.last_converted_path))
             try:
-                import sys
-                if sys.platform == "win32":
-                    import subprocess
-                    subprocess.Popen(f'explorer /select,"{file_path}"')
-                elif sys.platform == "darwin":
-                    import subprocess
-                    subprocess.Popen(["open", "-R", file_path])
-                else:
-                    import subprocess
-                    folder = os.path.dirname(file_path)
-                    subprocess.Popen(["xdg-open", folder])
-
-                try:
-                    self.page.window.minimized = True
-                    self.page.update()
-                except Exception:
-                    pass
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(file_path, is_folder=True)
             except Exception as ex:
                 print(f"[DEBUG] Failed to open folder for '{file_path}': {ex}")
-                folder = os.path.dirname(file_path)
-                if hasattr(os, "startfile"):
-                    os.startfile(folder)
 
 
 def main(page: ft.Page):

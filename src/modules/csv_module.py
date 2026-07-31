@@ -78,9 +78,9 @@ class CSVModule(BaseDocumentModule):
                     writer.writerow(cells)
                 else:
                     # Write plain text row in Column A (remove heading markdown markers)
-                    match_heading = re.match(r"^(#{1,6})\s+(.*)", stripped)
-                    if match_heading:
-                        text_val = strip_markdown_styles(match_heading.group(2))
+                    if stripped.startswith("#"):
+                        match_heading = re.match(r"^(#{1,6})\s+(.*)", stripped)
+                        text_val = strip_markdown_styles(match_heading.group(2)) if match_heading else strip_markdown_styles(line)
                     else:
                         text_val = strip_markdown_styles(line)
                     writer.writerow([text_val])

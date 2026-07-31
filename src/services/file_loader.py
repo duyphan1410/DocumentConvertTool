@@ -30,13 +30,18 @@ def load_document(path: str) -> LoadResult:
         short, detail = integrity_error
         return LoadResult(False, error_short=short, error_detail=detail)
 
+    from src.services.media_asset_manager import MediaAssetManager
+    asset_mgr = MediaAssetManager()
+    asset_mgr.open_session(path)
+
     ext = os.path.splitext(path)[1].lower()
     module = ModuleRegistry.get_module_by_extension(ext)
     if not module:
         if ext == ".md":
             try:
                 with open(path, encoding="utf-8") as f:
-                    content = f.read()
+                    raw_content = f.read()
+                content = asset_mgr.import_local_images(raw_content, os.path.dirname(path))
                 return LoadResult(True, content=content, mode="MD -> Excel")
             except Exception as exc:
                 return LoadResult(False, error_short="Load error", error_detail=str(exc))

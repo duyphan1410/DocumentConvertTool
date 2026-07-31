@@ -122,6 +122,23 @@ class RibbonBar(ft.Container):
             size=15
         )
 
+        self.btn_quick_add = ft.OutlinedButton(
+            "Open file",
+            icon=ft.Icons.FOLDER_OPEN,
+            on_click=self._on_browse_in_click,
+            height=34,
+            style=ft.ButtonStyle(padding=ft.Padding(left=10, top=0, right=10, bottom=0)),
+            tooltip="Open file to convert"
+        )
+        self.btn_quick_save = ft.OutlinedButton(
+            "Save file",
+            icon=ft.Icons.SAVE_AS,
+            on_click=self._on_browse_out_click,
+            height=34,
+            style=ft.ButtonStyle(padding=ft.Padding(left=10, top=0, right=10, bottom=0)),
+            tooltip="Choose converted file location"
+        )
+
         self.tab_strip = ft.Row(
             controls=[
                 self.logo_icon,
@@ -132,6 +149,8 @@ class RibbonBar(ft.Container):
                 self.btn_tab_view,
                 self.btn_tab_options,
                 ft.Container(expand=True),
+                self.btn_quick_add,
+                self.btn_quick_save,
                 self.mode_dropdown,
                 self.btn_collapse,
             ],
@@ -211,7 +230,7 @@ class RibbonBar(ft.Container):
         )
 
         self.panel_container = ft.Container(
-            content=self.edit_tab_content,
+            content=self.file_tab_content,
             padding=ft.Padding(left=12, top=2, right=12, bottom=2),
             height=60,
             alignment=ft.alignment.Alignment(-1.0, 0.0),

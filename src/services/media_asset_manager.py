@@ -53,8 +53,7 @@ class MediaAssetManager:
 
     def register_image(self, image_bytes: bytes, filename: str) -> str:
         """
-        Saves the image bytes to the session cache folder and returns a virtual path
-        prefix @media/<filename> to prevent local file paths in the editor.
+        Saves the image bytes to the session cache folder in AppData and returns an absolute file path.
         """
         session_dir = self.get_session_dir()
         dest_path = os.path.join(session_dir, filename)
@@ -63,63 +62,93 @@ class MediaAssetManager:
                 f.write(image_bytes)
         except Exception as e:
             print(f"[DEBUG] MediaAssetManager: Failed to write image {filename}: {e}")
-        return f"@media/{filename}"
+        return dest_path.replace("\\", "/")
 
     def resolve_uri(self, uri: str) -> str:
         """
-        Resolves a virtual URI (like @media/image_rId8.png) to its absolute cached disk path.
-        If it's not a virtual URI, returns the original string unchanged.
+        Resolves a virtual URI (like @media/image_rId8.png) or relative path to its absolute cached disk path.
+        Searches the current session directory first, then all cached session folders in AppData.
         """
-        if uri and uri.startswith("@media/"):
+        if not uri:
+            return uri
+
+        if uri.startswith("@media/"):
             filename = uri[7:]
-            return os.path.join(self.get_session_dir(), filename)
+            primary_path = os.path.join(self.get_session_dir(), filename)
+            if os.path.exists(primary_path) and os.path.isfile(primary_path):
+                return primary_path
+
+            # Search across all session directories in AppData cache
+            if os.path.exists(self.cache_dir):
+                for root, _, files in os.walk(self.cache_dir):
+                    if filename in files:
+                        found_path = os.path.join(root, filename)
+                        if os.path.isfile(found_path):
+                            return found_path
+
+            return primary_path
+
+        # If not @media/, check if it's already an existing file path or in cache_dir
+        if not uri.startswith(("http://", "https://", "data:")):
+            if os.path.exists(uri) and os.path.isfile(uri):
+                return uri
+
+            base_name = os.path.basename(uri)
+            if os.path.exists(self.cache_dir):
+                for root, _, files in os.walk(self.cache_dir):
+                    if base_name in files:
+                        found_path = os.path.join(root, base_name)
+                        if os.path.isfile(found_path):
+                            return found_path
+
         return uri
+
+    def import_local_images(self, markdown_content: str, base_dir: str) -> str:
+        """
+        Finds local image file links or @media/ links in Markdown, registers/resolves them in AppData session cache,
+        and rewrites them to absolute AppData file paths so images remain accessible from any Markdown viewer.
+        """
+        if not markdown_content or "![" not in markdown_content or "](" not in markdown_content:
+            return markdown_content
+
+        import re
+        image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+
+        def replacer(match):
+            alt = match.group(1)
+            src = match.group(2)
+            if src.startswith(("http://", "https://", "data:")):
+                return match.group(0)
+
+            resolved = self.resolve_uri(src)
+            if os.path.exists(resolved) and os.path.isfile(resolved):
+                abs_path = os.path.abspath(resolved).replace("\\", "/")
+                return f"![{alt}]({abs_path})"
+
+            local_path = src if os.path.isabs(src) else os.path.join(base_dir, src) if base_dir else src
+            if os.path.exists(local_path) and os.path.isfile(local_path):
+                try:
+                    with open(local_path, "rb") as f:
+                        img_bytes = f.read()
+                    filename = os.path.basename(local_path)
+                    registered_path = self.register_image(img_bytes, filename)
+                    return f"![{alt}]({registered_path})"
+                except Exception as e:
+                    print(f"[DEBUG] MediaAssetManager: Failed to import local image {local_path}: {e}")
+            return match.group(0)
+
+        return re.sub(image_pattern, replacer, markdown_content)
 
     def export_assets(self, markdown_content: str, target_markdown_path: str) -> str:
         """
-        Parses Markdown content, finds all referenced @media/ links, copies only the used
-        cached files to a target local folder `<doc_name>_media/` next to target_markdown_path,
-        and returns the markdown with relative links.
+        Ensures all images referenced in Markdown content are safely stored in AppData cache
+        and saved with absolute AppData paths so no local _media folders need to be created.
         """
-        # Determine target media folder name and absolute path
-        out_dir = os.path.dirname(target_markdown_path)
-        out_base = os.path.splitext(os.path.basename(target_markdown_path))[0]
-        dest_media_dir_name = f"{out_base}_media"
-        dest_media_dir = os.path.join(out_dir, dest_media_dir_name)
-
-        import re
-
-        # Retrieve all unique @media/ references from markdown image syntax ![alt](@media/...)
-        matches = re.findall(r'!\[([^\]]*)\]\((@media/[^)]+)\)', markdown_content)
-        referenced_images = set(m[1] for m in matches)
-
-        if not referenced_images:
+        if not markdown_content:
             return markdown_content
 
-        # Copy the referenced images
-        media_dir_created = False
-        copied_mapping = {}
-
-        for uri in referenced_images:
-            filename = uri[7:]
-            src_path = self.resolve_uri(uri)
-            if os.path.exists(src_path) and os.path.isfile(src_path):
-                if not media_dir_created:
-                    os.makedirs(dest_media_dir, exist_ok=True)
-                    media_dir_created = True
-                dest_path = os.path.join(dest_media_dir, filename)
-                try:
-                    shutil.copy2(src_path, dest_path)
-                    copied_mapping[uri] = f"{dest_media_dir_name}/{filename}"
-                except Exception as e:
-                    print(f"[DEBUG] MediaAssetManager: Failed to copy {src_path} to {dest_path}: {e}")
-
-        # Rewrite references in the Markdown content
-        rewritten_content = markdown_content
-        for virtual_uri, relative_path in copied_mapping.items():
-            rewritten_content = rewritten_content.replace(virtual_uri, relative_path)
-
-        return rewritten_content
+        base_dir = os.path.dirname(target_markdown_path)
+        return self.import_local_images(markdown_content, base_dir)
 
     DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
 

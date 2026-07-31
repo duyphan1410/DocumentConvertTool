@@ -113,12 +113,12 @@ class ExcelModule(BaseDocumentModule):
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
 
+        from src.core.converters import parse_inline
+        from openpyxl.cell.rich_text import CellRichText, TextBlock
+        from openpyxl.cell.text import InlineFont
+
         # Nested helper to apply inline styling (bold, italic, links, etc.)
         def format_excel_cell(cell, md_text: str, is_heading: bool = False):
-            from src.core.converters import parse_inline
-            from openpyxl.cell.rich_text import CellRichText, TextBlock
-            from openpyxl.cell.text import InlineFont
-
             if not md_text:
                 cell.value = ""
                 return

@@ -633,14 +633,16 @@ class DocumentConvertApp:
         self.state.is_processing = True
         self.footer_bar.set_processing(True)
         self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
+        self.page.update()
 
-        threading.Thread(target=self._run_conversion_worker, args=(out_path,), daemon=True).start()
+        asyncio.create_task(self._async_run_conversion_worker(out_path))
 
-    def _run_conversion_worker(self, out_path: str):
+    async def _async_run_conversion_worker(self, out_path: str):
         t0 = time.time()
         try:
             content = self.editor_view.get_text()
-            msg = convert_content(self.state.current_mode, content, out_path)
+            mode = self.state.current_mode
+            msg = await asyncio.to_thread(convert_content, mode, content, out_path)
             duration = time.time() - t0
 
             self.state.last_converted_path = out_path
@@ -648,32 +650,21 @@ class DocumentConvertApp:
             self.footer_bar.set_processing(False)
             self.footer_bar.set_result_buttons_visible(True)
             self.footer_bar.set_status(f"{msg} ({duration:.2f}s)", ft.Colors.GREEN_400)
+            self.page.update()
         except Exception as ex:
             err_msg = str(ex)
             print(f"[DEBUG] Conversion error: {err_msg}")
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_status(f"Conversion failed: {err_msg}", ft.Colors.RED_400)
+            self.page.update()
 
     def _open_converted_file(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
             file_path = os.path.normpath(os.path.abspath(self.state.last_converted_path))
             try:
-                import sys
-                if sys.platform == "win32":
-                    os.startfile(file_path)
-                elif sys.platform == "darwin":
-                    import subprocess
-                    subprocess.Popen(["open", file_path])
-                else:
-                    import subprocess
-                    subprocess.Popen(["xdg-open", file_path])
-
-                try:
-                    self.page.window.minimized = True
-                    self.page.update()
-                except Exception:
-                    pass
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(file_path, is_folder=False)
             except Exception as ex:
                 print(f"[DEBUG] Failed to open file '{file_path}': {ex}")
 
@@ -681,31 +672,13 @@ class DocumentConvertApp:
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
             file_path = os.path.normpath(os.path.abspath(self.state.last_converted_path))
             try:
-                import sys
-                if sys.platform == "win32":
-                    import subprocess
-                    subprocess.Popen(f'explorer /select,"{file_path}"')
-                elif sys.platform == "darwin":
-                    import subprocess
-                    subprocess.Popen(["open", "-R", file_path])
-                else:
-                    import subprocess
-                    folder = os.path.dirname(file_path)
-                    subprocess.Popen(["xdg-open", folder])
-
-                try:
-                    self.page.window.minimized = True
-                    self.page.update()
-                except Exception:
-                    pass
+                from src.utils.env import open_file_or_folder_foreground
+                open_file_or_folder_foreground(file_path, is_folder=True)
             except Exception as ex:
                 print(f"[DEBUG] Failed to open folder for '{file_path}': {ex}")
-                folder = os.path.dirname(file_path)
-                if hasattr(os, "startfile"):
-                    os.startfile(folder)
 
 
-def main(page: ft.Page):
+async def main(page: ft.Page):
     app = DocumentConvertApp(page)
 
 

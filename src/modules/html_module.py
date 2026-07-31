@@ -212,7 +212,10 @@ class HTMLModule(BaseDocumentModule):
 
             # Step 1: Base64 media resolution
             t1 = time.time()
-            processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+            if "!" in markdown_content or "<img" in markdown_content:
+                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+            else:
+                processed_md = markdown_content
             t_base64 = time.time() - t1
 
             # Step 2: Code block auto-repair

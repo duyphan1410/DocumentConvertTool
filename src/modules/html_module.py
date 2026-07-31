@@ -19,7 +19,7 @@ class HTMLModule(BaseDocumentModule):
         return []
 
     def load_to_markdown(self, file_path: str) -> str:
-        """Loads physical HTML file and extracts it to Markdown text."""
+        """Loads physical HTML file and extracts it to Markdown text using BeautifulSoup structure parsing."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -28,16 +28,119 @@ class HTMLModule(BaseDocumentModule):
                 from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(file_path)
-                if result and result.text_content:
+                if result and result.text_content and result.text_content.strip():
                     return result.text_content
             except Exception:
                 pass
 
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup, NavigableString, Tag
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     soup = BeautifulSoup(f.read(), "html.parser")
-                    return soup.get_text()
+
+                # Decompose non-content elements
+                for elem in soup(["script", "style", "head", "title"]):
+                    elem.decompose()
+
+                container = soup.find(class_="markdown-body") or soup.find("body") or soup
+
+                def parse_node(node):
+                    if isinstance(node, NavigableString):
+                        return str(node)
+                    if not isinstance(node, Tag):
+                        return ""
+
+                    tag = node.name.lower()
+
+                    if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+                        level = int(tag[1])
+                        text = "".join(parse_node(child) for child in node.children).strip()
+                        return f"\n\n{'#' * level} {text}\n\n"
+
+                    elif tag == "p":
+                        text = "".join(parse_node(child) for child in node.children).strip()
+                        return f"\n\n{text}\n\n"
+
+                    elif tag == "pre":
+                        code_tag = node.find("code")
+                        lang = ""
+                        if code_tag and code_tag.get("class"):
+                            for c in code_tag["class"]:
+                                if c.startswith("language-"):
+                                    lang = c.replace("language-", "")
+                                elif c != "codehilite":
+                                    lang = c
+                        code_text = (code_tag or node).get_text()
+                        return f"\n\n```{lang}\n{code_text.strip()}\n```\n\n"
+
+                    elif tag == "code":
+                        if node.parent and node.parent.name == "pre":
+                            return "".join(parse_node(child) for child in node.children)
+                        return f"`{node.get_text()}`"
+
+                    elif tag in ["strong", "b"]:
+                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        return f"**{inner}**" if inner else ""
+
+                    elif tag in ["em", "i"]:
+                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        return f"*{inner}*" if inner else ""
+
+                    elif tag in ["del", "strike", "s"]:
+                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        return f"~~{inner}~~" if inner else ""
+
+                    elif tag == "a":
+                        href = node.get("href", "")
+                        text = "".join(parse_node(child) for child in node.children).strip()
+                        return f"[{text}]({href})" if href else text
+
+                    elif tag == "img":
+                        src = node.get("src", "")
+                        alt = node.get("alt", "")
+                        return f"![{alt}]({src})"
+
+                    elif tag == "blockquote":
+                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        lines = inner.split("\n")
+                        quoted = "\n".join(f"> {l}" for l in lines)
+                        return f"\n\n{quoted}\n\n"
+
+                    elif tag == "hr":
+                        return "\n\n---\n\n"
+
+                    elif tag == "table":
+                        rows = []
+                        for tr in node.find_all("tr"):
+                            cells = [td.get_text().strip().replace("\n", "<br>").replace("|", "\\|") for td in tr.find_all(["th", "td"])]
+                            if cells:
+                                rows.append(cells)
+                        if not rows:
+                            return ""
+                        headers = rows[0]
+                        md_lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
+                        for r in rows[1:]:
+                            if len(r) < len(headers):
+                                r.extend([""] * (len(headers) - len(r)))
+                            md_lines.append("| " + " | ".join(r[:len(headers)]) + " |")
+                        return "\n\n" + "\n".join(md_lines) + "\n\n"
+
+                    elif tag in ["ul", "ol"]:
+                        items = []
+                        for idx, li in enumerate(node.find_all("li", recursive=False)):
+                            item_text = "".join(parse_node(child) for child in li.children).strip()
+                            prefix = f"{idx + 1}." if tag == "ol" else "-"
+                            items.append(f"{prefix} {item_text}")
+                        return "\n\n" + "\n".join(items) + "\n\n"
+
+                    else:
+                        return "".join(parse_node(child) for child in node.children)
+
+                result = parse_node(container)
+                result = re.sub(r"\n{3,}", "\n\n", result).strip()
+                if result:
+                    return result
+                return soup.get_text()
             except Exception:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     return f.read()
@@ -113,6 +216,11 @@ class HTMLModule(BaseDocumentModule):
             --link-color: #0366d6;
             --blockquote-color: #6a737d;
             --blockquote-border: #dfe2e5;
+            --syntax-keyword: #d73a49;
+            --syntax-func: #6f42c1;
+            --syntax-string: #032f62;
+            --syntax-comment: #6a737d;
+            --syntax-builtin: #005cc5;
         }}
 
         @media (prefers-color-scheme: dark) {{
@@ -128,6 +236,11 @@ class HTMLModule(BaseDocumentModule):
                 --link-color: #58a6ff;
                 --blockquote-color: #8b949e;
                 --blockquote-border: #30363d;
+                --syntax-keyword: #ff79c6;
+                --syntax-func: #d2a8ff;
+                --syntax-string: #a5d6ff;
+                --syntax-comment: #8b949e;
+                --syntax-builtin: #79c0ff;
             }}
         }}
 
@@ -213,6 +326,30 @@ class HTMLModule(BaseDocumentModule):
             word-break: normal;
             white-space: pre;
         }}
+
+        .codehilite {{
+            background-color: var(--code-bg);
+            border-radius: 6px;
+            margin-top: 0;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
+        }}
+
+        .codehilite pre {{
+            margin: 0;
+            padding: 16px;
+            overflow: auto;
+            font-size: 85%;
+            line-height: 1.45;
+            background: transparent;
+            border: 0;
+        }}
+
+        .codehilite .k, .codehilite .kd, .codehilite .kn {{ color: var(--syntax-keyword); font-weight: bold; }}
+        .codehilite .nf, .codehilite .fm {{ color: var(--syntax-func); }}
+        .codehilite .s, .codehilite .s1, .codehilite .s2 {{ color: var(--syntax-string); }}
+        .codehilite .c, .codehilite .c1 {{ color: var(--syntax-comment); font-style: italic; }}
+        .codehilite .nb {{ color: var(--syntax-builtin); }}
 
         blockquote {{
             padding: 0 1em;

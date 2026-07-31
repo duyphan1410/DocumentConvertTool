@@ -213,6 +213,9 @@ class HTMLModule(BaseDocumentModule):
             processed_md = re.sub(r'(^|\n)```([a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)', fix_fence, processed_md)
             # 2. Insert missing blank line before ``` if preceded directly by text
             processed_md = re.sub(r'([^\n])\n```', r'\1\n\n```', processed_md)
+            # 3. Auto-close unclosed code block if the number of ``` fences is odd
+            if processed_md.count("```") % 2 != 0:
+                processed_md += "\n```\n"
 
             try:
                 import markdown2

@@ -16,7 +16,7 @@ class HTMLModule(BaseDocumentModule):
 
     @property
     def required_dependencies(self) -> list[str]:
-        return []
+        return ["markdown2", "beautifulsoup4", "Pygments"]
 
     def load_to_markdown(self, file_path: str) -> str:
         """Loads physical HTML file and extracts it to Markdown text using BeautifulSoup structure parsing."""
@@ -44,7 +44,7 @@ class HTMLModule(BaseDocumentModule):
 
                 container = soup.find(class_="markdown-body") or soup.find("body") or soup
 
-                def parse_node(node):
+                def parse_node(node, depth=0):
                     if isinstance(node, NavigableString):
                         return str(node)
                     if not isinstance(node, Tag):
@@ -54,11 +54,11 @@ class HTMLModule(BaseDocumentModule):
 
                     if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
                         level = int(tag[1])
-                        text = "".join(parse_node(child) for child in node.children).strip()
+                        text = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"\n\n{'#' * level} {text}\n\n"
 
                     elif tag == "p":
-                        text = "".join(parse_node(child) for child in node.children).strip()
+                        text = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"\n\n{text}\n\n"
 
                     elif tag == "pre":
@@ -75,24 +75,24 @@ class HTMLModule(BaseDocumentModule):
 
                     elif tag == "code":
                         if node.parent and node.parent.name == "pre":
-                            return "".join(parse_node(child) for child in node.children)
+                            return "".join(parse_node(child, depth) for child in node.children)
                         return f"`{node.get_text()}`"
 
                     elif tag in ["strong", "b"]:
-                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"**{inner}**" if inner else ""
 
                     elif tag in ["em", "i"]:
-                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"*{inner}*" if inner else ""
 
                     elif tag in ["del", "strike", "s"]:
-                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"~~{inner}~~" if inner else ""
 
                     elif tag == "a":
                         href = node.get("href", "")
-                        text = "".join(parse_node(child) for child in node.children).strip()
+                        text = "".join(parse_node(child, depth) for child in node.children).strip()
                         return f"[{text}]({href})" if href else text
 
                     elif tag == "img":
@@ -101,7 +101,7 @@ class HTMLModule(BaseDocumentModule):
                         return f"![{alt}]({src})"
 
                     elif tag == "blockquote":
-                        inner = "".join(parse_node(child) for child in node.children).strip()
+                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
                         lines = inner.split("\n")
                         quoted = "\n".join(f"> {l}" for l in lines)
                         return f"\n\n{quoted}\n\n"
@@ -110,9 +110,15 @@ class HTMLModule(BaseDocumentModule):
                         return "\n\n---\n\n"
 
                     elif tag == "table":
+                        tr_elements = []
+                        for sec in node.find_all(["thead", "tbody", "tfoot"], recursive=False):
+                            tr_elements.extend(sec.find_all("tr", recursive=False))
+                        if not tr_elements:
+                            tr_elements = node.find_all("tr", recursive=False)
+
                         rows = []
-                        for tr in node.find_all("tr"):
-                            cells = [td.get_text().strip().replace("\n", "<br>").replace("|", "\\|") for td in tr.find_all(["th", "td"])]
+                        for tr in tr_elements:
+                            cells = [td.get_text().strip().replace("\n", "<br>").replace("|", "\\|") for td in tr.find_all(["th", "td"], recursive=False)]
                             if cells:
                                 rows.append(cells)
                         if not rows:
@@ -127,21 +133,37 @@ class HTMLModule(BaseDocumentModule):
 
                     elif tag in ["ul", "ol"]:
                         items = []
+                        indent = "  " * depth
                         for idx, li in enumerate(node.find_all("li", recursive=False)):
-                            item_text = "".join(parse_node(child) for child in li.children).strip()
+                            inline_parts = []
+                            nested_lists = []
+                            for child in li.children:
+                                if isinstance(child, Tag) and child.name.lower() in ["ul", "ol"]:
+                                    nested_lists.append(child)
+                                else:
+                                    inline_parts.append(parse_node(child, depth + 1))
+
+                            item_text = "".join(inline_parts).strip()
                             prefix = f"{idx + 1}." if tag == "ol" else "-"
-                            items.append(f"{prefix} {item_text}")
+                            item_str = f"{indent}{prefix} {item_text}"
+
+                            if nested_lists:
+                                sub_str = "\n".join(parse_node(nl, depth + 1).strip() for nl in nested_lists)
+                                item_str += f"\n{sub_str}"
+
+                            items.append(item_str)
                         return "\n\n" + "\n".join(items) + "\n\n"
 
                     else:
-                        return "".join(parse_node(child) for child in node.children)
+                        return "".join(parse_node(child, depth) for child in node.children)
 
                 result = parse_node(container)
                 result = re.sub(r"\n{3,}", "\n\n", result).strip()
                 if result:
                     return result
                 return soup.get_text()
-            except Exception:
+            except Exception as bs_err:
+                print(f"[DEBUG] HTMLModule: Structured BS4 parse failed: {bs_err}")
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     return f.read()
         except Exception as e:
@@ -178,9 +200,17 @@ class HTMLModule(BaseDocumentModule):
             # Resolve @media/ URIs on raw markdown BEFORE converting to HTML.
             processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
 
-            # Auto-repair malformed code blocks:
-            # 1. Insert missing newline after ```lang if text is on the same line (e.g. ```python def...)
-            processed_md = re.sub(r'```([a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)', r'```\1\n\2', processed_md)
+            # Auto-repair malformed code blocks safely:
+            # 1. Insert missing newline after ```lang if at start of line and NOT ending with ``` on same line
+            def fix_fence(match):
+                prefix = match.group(1)
+                lang = match.group(2)
+                rest = match.group(3)
+                if rest.rstrip().endswith("```"):
+                    return match.group(0)  # Keep inline triple backticks unchanged
+                return f"{prefix}```{lang}\n{rest}"
+
+            processed_md = re.sub(r'(^|\n)```([a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)', fix_fence, processed_md)
             # 2. Insert missing blank line before ``` if preceded directly by text
             processed_md = re.sub(r'([^\n])\n```', r'\1\n\n```', processed_md)
 

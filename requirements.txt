@@ -11,3 +11,4 @@ markdown2
 markdown-pdf
 Pillow
 beautifulsoup4
+Pygments

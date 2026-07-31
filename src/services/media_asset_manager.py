@@ -108,7 +108,7 @@ class MediaAssetManager:
         Finds local image file links or @media/ links in Markdown, registers/resolves them in AppData session cache,
         and rewrites them to absolute AppData file paths so images remain accessible from any Markdown viewer.
         """
-        if not markdown_content:
+        if not markdown_content or "![" not in markdown_content or "](" not in markdown_content:
             return markdown_content
 
         import re

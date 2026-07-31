@@ -8,6 +8,7 @@ if not appdata_dir:
     appdata_dir = os.path.join(os.path.expanduser("~"), ".config")
 
 DRAFT_PATH = os.path.join(appdata_dir, "DocConvert", "draft_autosave.md")
+DRAFT_META_PATH = os.path.join(appdata_dir, "DocConvert", "draft_autosave_meta.json")
 EDITOR_DISPLAY_LIMIT = 500_000
 
 MODES = {

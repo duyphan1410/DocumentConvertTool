@@ -176,9 +176,13 @@ class HTMLModule(BaseDocumentModule):
                 return f"![{alt}]({resolve_to_base64(src)})"
 
             # Resolve @media/ URIs on raw markdown BEFORE converting to HTML.
-            # By the time markdown2.markdown() runs, all ![alt](src) tokens become
-            # <img src="..."> tags — the Markdown syntax no longer exists in html_body.
             processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+
+            # Auto-repair malformed code blocks:
+            # 1. Insert missing newline after ```lang if text is on the same line (e.g. ```python def...)
+            processed_md = re.sub(r'```([a-zA-Z0-9_\-+]+)[ \t]+([^\n]+)', r'```\1\n\2', processed_md)
+            # 2. Insert missing blank line before ``` if preceded directly by text
+            processed_md = re.sub(r'([^\n])\n```', r'\1\n\n```', processed_md)
 
             try:
                 import markdown2

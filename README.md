@@ -152,6 +152,17 @@ pyinstaller --onefile --name "Document Converter" run.py
 ```text
 DocumentConvertTool/
 │
+├── assets/
+│   └── icons/
+│       └── app_icon.ico
+│
+├── docs/
+│   ├── CONVERSION_PERFORMANCE_ANALYSIS.md
+│   ├── PROJECT_SUMMARY.md
+│   ├── REFACTORING_SUMMARY.md
+│   ├── RIBBON_UI_SUMMARY.md
+│   └── ROADMAP.md
+│
 ├── src/
 │   ├── __version__.py
 │   ├── main.py
@@ -177,12 +188,35 @@ DocumentConvertTool/
 │   │
 │   ├── ui_flet/
 │   │   ├── app.py
+│   │   ├── constants.py
 │   │   ├── native_dialogs.py
-│   │   ├── preview.py
-│   │   └── theme.py
+│   │   ├── state.py
+│   │   ├── theme.py
+│   │   │
+│   │   ├── components/
+│   │   │   ├── file_path_bar.py
+│   │   │   ├── formatting_toolbar.py
+│   │   │   └── search_replace_bar.py
+│   │   │
+│   │   ├── layout/
+│   │   │   ├── footer_bar.py
+│   │   │   ├── header_bar.py
+│   │   │   └── ribbon_bar.py
+│   │   │
+│   │   └── views/
+│   │       ├── editor_view.py
+│   │       └── preview_view.py
 │   │
 │   └── utils/
+│       ├── assets.py
 │       └── env.py
+│
+├── tests/
+│   ├── test_document_preview.py
+│   ├── test_headless_launch.py
+│   ├── test_optimizations.py
+│   ├── test_smoke_imports.py
+│   └── test_ui_formatting.py
 │
 ├── run.py
 ├── requirements.txt
@@ -195,6 +229,8 @@ DocumentConvertTool/
 
 | Path | Purpose |
 | :--- | :--- |
+| `assets/icons/app_icon.ico` | Application icon for packaged executable |
+| `docs/` | Developer documentation (roadmap, summaries, analysis reports) |
 | `src/__version__.py` | SemVer version config |
 | `src/main.py` | Application entry point & Flet initialization |
 | `src/core/base_module.py` | Base abstract document module |
@@ -203,11 +239,22 @@ DocumentConvertTool/
 | `src/core/validator.py` | Document structure validation |
 | `src/modules/` | Document conversion plugins (Word, Excel, CSV, PDF, HTML) |
 | `src/services/` | Core conversion background services & Media Asset Manager |
-| `src/ui_flet/app.py` | Main Flet UI Desktop Application (responsive split-pane) |
+| `src/ui_flet/app.py` | Main Flet UI orchestrator — wires all components, views & layout together |
+| `src/ui_flet/constants.py` | Shared UI constants (sizes, spacing, key names) |
+| `src/ui_flet/state.py` | Centralized application state dataclass |
 | `src/ui_flet/native_dialogs.py` | Async Windows Native FileDialog helper (8 filter categories) |
-| `src/ui_flet/preview.py` | Real-time Markdown Live Document Preview (RAM cache & 68% image scale) |
 | `src/ui_flet/theme.py` | Flet UI 5-Palette Design Token & Theme Engine |
+| `src/ui_flet/components/file_path_bar.py` | File path display & open-in-explorer widget |
+| `src/ui_flet/components/formatting_toolbar.py` | Markdown formatting toolbar (Bold, Italic, Heading, Table, …) |
+| `src/ui_flet/components/search_replace_bar.py` | Smart Hybrid Search & Replace panel with match cycling |
+| `src/ui_flet/layout/header_bar.py` | Top application header (title, theme switcher, window controls) |
+| `src/ui_flet/layout/ribbon_bar.py` | Office-style Ribbon bar (File, Edit, View, Convert tabs) |
+| `src/ui_flet/layout/footer_bar.py` | Status bar (word count, cursor position, async progress indicator) |
+| `src/ui_flet/views/editor_view.py` | Split-pane Markdown raw editor view |
+| `src/ui_flet/views/preview_view.py` | Real-time Markdown Live Document Preview (RAM cache & image scaling) |
+| `src/utils/assets.py` | Asset path resolution helper (PyInstaller-aware) |
 | `src/utils/env.py` | UTF-8 encoding, Tcl/Tk path & High-DPI configuration |
+| `tests/` | Automated test suite (smoke imports, UI formatting, headless launch) |
 | `Document Converter.spec` | Optimized PyInstaller build spec |
 | `run.py` | Launcher script |
 
@@ -255,14 +302,43 @@ DocumentConvertTool/
 * [x] PDF → Markdown (using pdfplumber + pymupdf layout extraction, preserving tables and slide images)
 * [x] HTML ↔ Markdown (HTML export with GitHub Markdown CSS styling & import fallback)
 
-### 🔄 Phase 3–5 — v2.0 Roadmap (Planned)
+### ✅ Phase 3 — 3-Tier Flet Architecture Refactor (Completed · v1.3.0)
 
-* [ ] Two-Way Image Pipeline (Word/PDF/HTML 2-way image import & export)
-* [ ] Multi-document tabs & global keyboard shortcuts
-* [ ] Markdown syntax highlighting in raw editor
-* [ ] Markdown → PDF (with embedded image & table rendering)
-* [ ] Command-Line Interface (CLI mode)
-* [ ] Optimized `Document Converter.spec` build & Windows Setup Installer (`DocumentConverter_Setup_v2.0.0.exe` via Inno Setup)
+* [x] Refactored monolithic `app.py` (907 lines → ~378 lines) into clean 3-tier modular layout
+* [x] `layout/` layer — `header_bar.py`, `ribbon_bar.py`, `footer_bar.py` (application shell)
+* [x] `components/` layer — `file_path_bar.py`, `search_replace_bar.py`, `formatting_toolbar.py` (reusable widgets)
+* [x] `views/` layer — `editor_view.py`, `preview_view.py` (business panel views)
+* [x] Centralized `state.py` AppState dataclass & shared `constants.py`
+* [x] PyInstaller-aware asset path resolver (`src/utils/assets.py` + `assets/icons/app_icon.ico`)
+* [x] Loading placeholder in Editor & ProgressBar in Preview during async file load
+* [x] Smart "Copy Error" button on Footer (auto-shows on error, 1-click clipboard copy)
+* [x] `[BENCHMARK]` timing logger — per-stage performance breakdown in terminal
+* [x] UI freeze fix: `threading.Thread` → `asyncio.to_thread` reducing UI block from 20s → 2.39s
+
+### ✅ Phase 4 — Office Ribbon UI & UX Polish (Completed · v1.3.1)
+
+* [x] Office-style Ribbon Navbar (`ribbon_bar.py`) with 4 tabs: `File`, `Edit`, `View`, `Options`
+* [x] Ribbon toggle: clicking the active tab collapses/expands the toolbar panel (zero layout shift, fixed `height=60`)
+* [x] Heading Dropdown H1–H6 with `dense=True` sizing aligned to formatting toolbar buttons
+* [x] Smart Image Insert button — opens Windows file picker & auto-inserts `![name](file:///...)` Markdown syntax
+* [x] Removed 100% duplicate buttons across Ribbon, Header, and Footer
+* [x] Live Preview 1-step lag fix: decoupled heavy extraction (`asyncio.to_thread`) from UI draw (main event loop)
+* [x] Full Flet API 0.86.4+ compliance (`ft.Padding`, post-init `on_change`, `bgcolor` in `ButtonStyle`)
+* [x] Automated test suite in `tests/` (5 files: smoke imports, UI formatting, headless launch, preview, optimizations)
+
+### 🔄 Phase 4.1 — Two-Way Image Pipeline (In Progress)
+
+* [ ] `MediaAssetManager` service — decode `@media/` URI tokens → Base64 RAM cache for live preview
+* [ ] Word Exporter image embed — parse `@media/` tokens and embed images directly into `.docx` export (`word_module.py`)
+
+### 📋 Phase 5–7 — v2.0 Roadmap (Planned)
+
+* [ ] **Phase 5.1** — Multi-document tabs (`tab_bar.py`) & global keyboard shortcuts
+* [ ] **Phase 5.2** — Markdown syntax highlighting in raw editor
+* [ ] **Phase 6.1** — GitHub-styled Markdown → HTML → PDF engine (`pdf_exporter.py`, `sindresorhus/github-markdown-css`)
+* [ ] **Phase 6.2** — Print Preview & A4 paginated print view (`print_view.py`)
+* [ ] **Phase 6.3** — Batch & ZIP Converter (`batch_service.py`) for bulk folder/archive conversion
+* [ ] **Phase 7.0** — CLI headless mode (`src/cli.py`) & Windows Setup Installer (`DocumentConverter_Setup_v2.0.0.exe` via Inno Setup)
 
 ---
 

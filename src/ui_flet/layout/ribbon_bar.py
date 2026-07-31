@@ -90,7 +90,7 @@ class RibbonBar(ft.Container):
                 ft.dropdown.Option("Light"),
                 ft.dropdown.Option("System"),
             ],
-            width=110,
+            # width=110,
             dense=True,
         )
         self.theme_mode_dropdown.on_change = self.on_theme_mode_changed

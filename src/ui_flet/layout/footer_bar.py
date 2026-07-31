@@ -69,8 +69,18 @@ class FooterBar:
         )
 
     def _on_copy_error(self, e):
-        if self.container.page:
-            self.container.page.set_clipboard(self.status_text.value or "")
+        err_text = self.status_text.value or ""
+        if err_text:
+            import sys, subprocess
+            try:
+                if sys.platform == "win32":
+                    subprocess.run("clip", input=err_text, text=True, encoding="utf-8", shell=True)
+                elif sys.platform == "darwin":
+                    subprocess.run("pbcopy", input=err_text, text=True, encoding="utf-8")
+                else:
+                    subprocess.run(["xclip", "-selection", "clipboard"], input=err_text, text=True, encoding="utf-8")
+            except Exception as ex:
+                print(f"[DEBUG] Clipboard copy failed: {ex}")
             self.set_status("Error copied to clipboard!", ft.Colors.GREEN_400)
 
     def set_status(self, text: str, color=None, is_error: bool = False):

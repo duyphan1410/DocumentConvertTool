@@ -59,10 +59,10 @@ class DocumentConvertApp:
         # Application State
         self.state = AppState()
 
-        # Timers
+        # Timers & Tasks
         self._autosave_timer: threading.Timer | None = None
         self._undo_timer: threading.Timer | None = None
-        self._preview_timer: threading.Timer | None = None
+        self._preview_task: asyncio.Task | None = None
 
         # File Pickers for Web/Mobile fallback
         self.file_picker_in = ft.FilePicker()
@@ -176,7 +176,7 @@ class DocumentConvertApp:
         status_vis = self.footer_bar.container.visible
         ribbon_vis = self.ribbon_bar.is_expanded
 
-        lines = 20
+        lines = 21
         if not file_path_vis:
             lines += 4
         if not status_vis:
@@ -390,11 +390,10 @@ class DocumentConvertApp:
         self.doc_info_text.value = f"{words:,} words | {chars:,} chars"
         self.doc_info_text.update()
 
-        # Debounced preview update (300ms) to prevent Flet UI render thread blocking
-        if self._preview_timer:
-            self._preview_timer.cancel()
-        self._preview_timer = threading.Timer(0.3, lambda: self._update_markdown_preview(current_text))
-        self._preview_timer.start()
+        # Debounced preview update (300ms) on Main asyncio Event Loop to prevent Flet UI thread blocking
+        if self._preview_task and not self._preview_task.done():
+            self._preview_task.cancel()
+        self._preview_task = asyncio.create_task(self._async_update_markdown_preview_debounced(current_text))
 
         if self._autosave_timer:
             self._autosave_timer.cancel()
@@ -598,6 +597,16 @@ class DocumentConvertApp:
         base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
         self.preview.update_preview(content, base_dir=base_dir)
 
+    async def _async_update_markdown_preview_debounced(self, content: str):
+        try:
+            await asyncio.sleep(0.3)
+            self._update_markdown_preview(content)
+            self.page.update()
+        except asyncio.CancelledError:
+            pass
+        except Exception as ex:
+            print(f"[DEBUG] Debounced preview update error: {ex}")
+
     def _load_draft_if_exists(self):
         if os.path.exists(DRAFT_PATH):
             try:
@@ -667,7 +676,12 @@ class DocumentConvertApp:
 
         if os.path.exists(out_path):
             if is_output_locked(out_path):
-                self.footer_bar.set_status("Output file locked! Close target file and try again.", ft.Colors.RED_400)
+                file_name = os.path.basename(out_path)
+                self.footer_bar.set_status(
+                    f"Cannot overwrite! File '{file_name}' is currently open in another program. Please close the file and try again.",
+                    ft.Colors.RED_400,
+                    is_error=True,
+                )
                 return
             self._show_overwrite_confirmation_dialog(
                 out_path,
@@ -775,17 +789,19 @@ class DocumentConvertApp:
         self.page.update()
 
     def _start_conversion_process(self, content: str, out_path: str, t0: float | None = None):
+        asyncio.create_task(self._async_start_conversion(content, out_path, t0))
+
+    async def _async_start_conversion(self, content: str, out_path: str, t0: float | None = None):
         self.state.is_processing = True
         self.footer_bar.set_processing(True)
         self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
+        self.page.update()
 
         if t0 is None:
             t0 = time.time()
-        threading.Thread(target=self._run_conversion_worker, args=(content, out_path, t0), daemon=True).start()
 
-    def _run_conversion_worker(self, content: str, out_path: str, t0: float):
         try:
-            msg = convert_content(self.state.current_mode, content, out_path)
+            msg = await asyncio.to_thread(convert_content, self.state.current_mode, content, out_path)
             duration = time.time() - t0
 
             self.state.last_converted_path = out_path
@@ -796,21 +812,56 @@ class DocumentConvertApp:
             self.page.update()
             print(f"[BENCHMARK] Full Perceived Time (Click Convert -> UI Complete): {duration:.3f}s")
         except Exception as ex:
-            err_msg = str(ex)
-            print(f"[DEBUG] Conversion error: {err_msg}")
+            raw_err = str(ex)
+            print(f"[DEBUG] Conversion error: {raw_err}")
+            
+            if isinstance(ex, PermissionError) or "Permission denied" in raw_err or "WinError 32" in raw_err or "WinError 5" in raw_err:
+                file_name = os.path.basename(out_path)
+                display_err = f"Cannot overwrite! File '{file_name}' is currently open in another program. Please close the file and try again."
+            else:
+                display_err = f"Conversion failed: {raw_err}"
+
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
-            self.footer_bar.set_status(f"Conversion failed: {err_msg}", ft.Colors.RED_400)
+            self.footer_bar.set_status(display_err, ft.Colors.RED_400, is_error=True)
             self.page.update()
 
     def _open_converted_file(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
-            os.startfile(self.state.last_converted_path)
+            file_path = os.path.normpath(self.state.last_converted_path)
+            try:
+                import sys
+                if sys.platform == "win32":
+                    os.startfile(file_path)
+                elif sys.platform == "darwin":
+                    import subprocess
+                    subprocess.Popen(["open", file_path])
+                else:
+                    import subprocess
+                    subprocess.Popen(["xdg-open", file_path])
+            except Exception as ex:
+                print(f"[DEBUG] Failed to open file '{file_path}': {ex}")
 
     def _open_converted_folder(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):
-            folder = os.path.dirname(self.state.last_converted_path)
-            os.startfile(folder)
+            file_path = os.path.normpath(self.state.last_converted_path)
+            try:
+                import sys
+                if sys.platform == "win32":
+                    import subprocess
+                    subprocess.Popen(f'explorer /select,"{file_path}"')
+                elif sys.platform == "darwin":
+                    import subprocess
+                    subprocess.Popen(["open", "-R", file_path])
+                else:
+                    import subprocess
+                    folder = os.path.dirname(file_path)
+                    subprocess.Popen(["xdg-open", folder])
+            except Exception as ex:
+                print(f"[DEBUG] Failed to open folder for '{file_path}': {ex}")
+                folder = os.path.dirname(file_path)
+                if hasattr(os, "startfile"):
+                    os.startfile(folder)
 
 
 def main(page: ft.Page):

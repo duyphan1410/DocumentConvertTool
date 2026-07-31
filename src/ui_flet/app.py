@@ -4,6 +4,7 @@ Main Flet UI Application Orchestrator for DocumentConvertTool.
 import os
 import re
 import time
+import json
 import threading
 import asyncio
 import flet as ft
@@ -22,6 +23,7 @@ from src.services.conversion_service import (
 from src.__version__ import __version__
 from src.ui_flet.constants import (
     DRAFT_PATH,
+    DRAFT_META_PATH,
     EDITOR_DISPLAY_LIMIT,
     MODES,
     IN_FILETYPES,
@@ -33,6 +35,7 @@ from src.ui_flet.native_dialogs import (
     pick_input_file_async,
     pick_output_file_async,
     pick_image_file_async,
+    confirm_overwrite_sync,
 )
 from src.ui_flet.layout.footer_bar import FooterBar
 from src.ui_flet.layout.ribbon_bar import RibbonBar
@@ -387,8 +390,11 @@ class DocumentConvertApp:
         self.doc_info_text.value = f"{words:,} words | {chars:,} chars"
         self.doc_info_text.update()
 
-        # Synchronous preview update directly on Flet main UI loop for instant 0ms sync
-        self._update_markdown_preview(current_text)
+        # Debounced preview update (300ms) to prevent Flet UI render thread blocking
+        if self._preview_timer:
+            self._preview_timer.cancel()
+        self._preview_timer = threading.Timer(0.3, lambda: self._update_markdown_preview(current_text))
+        self._preview_timer.start()
 
         if self._autosave_timer:
             self._autosave_timer.cancel()
@@ -601,6 +607,20 @@ class DocumentConvertApp:
                     self.state.full_content = draft
                     self.editor_view.set_text(draft)
                     self.state.undo_stack.append(draft)
+                    
+                    if os.path.exists(DRAFT_META_PATH):
+                        try:
+                            with open(DRAFT_META_PATH, "r", encoding="utf-8") as mf:
+                                meta = json.load(mf)
+                            if meta.get("in_path"):
+                                self.state.in_path = meta["in_path"]
+                                self.file_path_bar.set_in_path(meta["in_path"])
+                            if meta.get("out_path"):
+                                self.state.out_path = meta["out_path"]
+                                self.file_path_bar.set_out_path(meta["out_path"])
+                        except Exception as me:
+                            print(f"[DEBUG] Failed to load draft metadata: {me}")
+
                     self._update_markdown_preview(draft)
                     self.footer_bar.set_status("Loaded autosaved draft", ft.Colors.GREEN_400)
             except Exception as e:
@@ -611,31 +631,156 @@ class DocumentConvertApp:
             os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
             with open(DRAFT_PATH, "w", encoding="utf-8") as f:
                 f.write(self.editor_view.get_text())
+            meta = {
+                "in_path": self.state.in_path or "",
+                "out_path": self.state.out_path or "",
+            }
+            with open(DRAFT_META_PATH, "w", encoding="utf-8") as mf:
+                json.dump(meta, mf)
         except Exception as e:
             print(f"[DEBUG] Autosave error: {e}")
 
     # ── Conversion Execution ─────────────────────────────────────────────────
     def _on_convert_clicked(self, e):
+        t0 = time.time()  # Start timer at the instant Convert button is clicked
+
         content = self.editor_view.get_text()
         if not content or not content.strip():
             self.footer_bar.set_status("Editor content is empty! Please type or load a document.", ft.Colors.RED_400)
             return
 
-        out_path = self.file_path_bar.out_path_text.value.strip()
+        raw_out = self.file_path_bar.out_path_text.value or ""
+        out_path = raw_out.strip('"\' ')
         if not out_path:
-            self.footer_bar.set_status("Please specify output path", ft.Colors.RED_400)
+            mode_cfg = MODES.get(self.state.current_mode, {})
+            out_ext = mode_cfg.get("out_ext", ".html")
+            docs_dir = os.path.expanduser("~/Documents")
+            if not os.path.exists(docs_dir):
+                docs_dir = os.getcwd()
+            fallback_path = os.path.normpath(os.path.join(docs_dir, f"Converted_Draft{out_ext}"))
+            out_path = fallback_path
+            self.state.out_path = fallback_path
+            self.file_path_bar.set_out_path(fallback_path)
+
+        out_path = os.path.normpath(out_path)
+        print(f"[DEBUG] Convert clicked: out_path='{out_path}', exists={os.path.exists(out_path)}")
+
+        if os.path.exists(out_path):
+            if is_output_locked(out_path):
+                self.footer_bar.set_status("Output file locked! Close target file and try again.", ft.Colors.RED_400)
+                return
+            self._show_overwrite_confirmation_dialog(
+                out_path,
+                on_confirm_callback=lambda: self._start_conversion_process(content, out_path, t0)
+            )
             return
 
-        if is_output_locked(out_path):
-            self.footer_bar.set_status("Output file locked! Close target file and try again.", ft.Colors.RED_400)
-            return
+        self._start_conversion_process(content, out_path, t0)
 
+    def _show_overwrite_confirmation_dialog(self, out_path: str, on_confirm_callback):
+        """Shows a Flet AlertDialog styled with current palette for file overwrite confirmation."""
+        from src.ui_flet.theme import resolve_color, get_style_color
+        palette = PALETTES.get(self.state.current_palette, PALETTES.get("Violet Cyberpunk", {}))
+        is_dark = self.page.theme_mode != ft.ThemeMode.LIGHT
+
+        bg_card = resolve_color(palette, "bg_component", is_dark)
+        bg_pill = resolve_color(palette, "bg_header", is_dark)
+        accent_color = resolve_color(palette, "text_accent_secondary", is_dark)
+        text_primary = get_style_color("text_primary", is_dark)
+        text_secondary = get_style_color("text_secondary", is_dark)
+        border_color = resolve_color(palette, "border_color", is_dark)
+
+        file_name = os.path.basename(out_path)
+
+        def close_dialog(e, confirmed: bool):
+            print("[DEBUG] Closing overwrite dialog")
+
+            dialog.open = False
+            self.page.update()
+
+            if confirmed:
+                on_confirm_callback()
+            else:
+                self.footer_bar.set_status(
+                    "Conversion cancelled: File overwrite rejected.",
+                    ft.Colors.AMBER_400,
+                )
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.WARNING_ROUNDED, color=ft.Colors.AMBER_400, size=24),
+                    ft.Text("Confirm File Overwrite", weight=ft.FontWeight.BOLD, size=18, color=text_primary),
+                ],
+                spacing=10,
+            ),
+            content=ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            "The target output file already exists on disk:",
+                            size=13,
+                            color=text_secondary,
+                        ),
+                        ft.Container(
+                            content=ft.Text(
+                                file_name,
+                                weight=ft.FontWeight.W_600,
+                                size=13,
+                                color=accent_color,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            padding=10,
+                            bgcolor=bg_pill,
+                            border_radius=6,
+                            border=make_border(1, border_color),
+                        ),
+                        ft.Text(
+                            "Do you want to overwrite and replace this file?",
+                            size=13,
+                            color=text_secondary,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=12,
+                ),
+                width=420,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Cancel",
+                    on_click=lambda e: close_dialog(e, False),
+                    style=ft.ButtonStyle(color=text_secondary),
+                ),
+                ft.Button(
+                    "Overwrite / Replace",
+                    icon=ft.Icons.AUTORENEW_ROUNDED,
+                    on_click=lambda e: close_dialog(e, True),
+                    style=ft.ButtonStyle(
+                        color=ft.Colors.WHITE,
+                        bgcolor=ft.Colors.RED_600,
+                    ),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=bg_card,
+            shape=ft.RoundedRectangleBorder(radius=10),
+        )
+
+        if dialog not in self.page.overlay:
+            self.page.overlay.append(dialog)
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _start_conversion_process(self, content: str, out_path: str, t0: float | None = None):
         self.state.is_processing = True
         self.footer_bar.set_processing(True)
         self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
 
-        t0 = time.time()  # Start timer here — captures full perceived time:
-                          # validation + thread dispatch + conversion + file write
+        if t0 is None:
+            t0 = time.time()
         threading.Thread(target=self._run_conversion_worker, args=(content, out_path, t0), daemon=True).start()
 
     def _run_conversion_worker(self, content: str, out_path: str, t0: float):
@@ -648,12 +793,15 @@ class DocumentConvertApp:
             self.footer_bar.set_processing(False)
             self.footer_bar.set_result_buttons_visible(True)
             self.footer_bar.set_status(f"{msg} ({duration:.2f}s)", ft.Colors.GREEN_400)
+            self.page.update()
+            print(f"[BENCHMARK] Full Perceived Time (Click Convert -> UI Complete): {duration:.3f}s")
         except Exception as ex:
             err_msg = str(ex)
             print(f"[DEBUG] Conversion error: {err_msg}")
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_status(f"Conversion failed: {err_msg}", ft.Colors.RED_400)
+            self.page.update()
 
     def _open_converted_file(self, e):
         if self.state.last_converted_path and os.path.exists(self.state.last_converted_path):

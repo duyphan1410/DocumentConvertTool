@@ -1,4 +1,7 @@
 import os
+import re
+import base64
+import mimetypes
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 
@@ -44,19 +47,49 @@ class HTMLModule(BaseDocumentModule):
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text and saves it to a styled HTML document."""
         try:
+            from src.services.media_asset_manager import MediaAssetManager
+            asset_mgr = MediaAssetManager()
+
+            def resolve_to_base64(src: str) -> str:
+                """Resolve @media/ URI or local path to an inline base64 data URI.
+                Remote URLs (http/https) and existing data URIs are passed through unchanged.
+                Falls back to the original src string if the file cannot be found.
+                """
+                if not src or src.startswith(("http://", "https://", "data:")):
+                    return src
+                resolved = asset_mgr.resolve_uri(src)
+                if os.path.isfile(resolved):
+                    mime, _ = mimetypes.guess_type(resolved)
+                    if not mime:
+                        mime = "image/png"
+                    with open(resolved, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                    return f"data:{mime};base64,{b64}"
+                print(f"[DEBUG] HTMLModule: Image not found, keeping original src: {src}")
+                return src
+
+            def replace_md_image(match):
+                alt, src = match.group(1), match.group(2)
+                return f"![{alt}]({resolve_to_base64(src)})"
+
+            # Resolve @media/ URIs on raw markdown BEFORE converting to HTML.
+            # By the time markdown2.markdown() runs, all ![alt](src) tokens become
+            # <img src="..."> tags — the Markdown syntax no longer exists in html_body.
+            processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+
             try:
                 import markdown2
                 html_body = markdown2.markdown(
-                    markdown_content,
+                    processed_md,
                     extras=["fenced-code-blocks", "tables", "strike", "underline"]
                 )
             except ImportError:
                 try:
                     import markdown
-                    html_body = markdown.markdown(markdown_content, extensions=["fenced_code", "tables"])
+                    html_body = markdown.markdown(processed_md, extensions=["fenced_code", "tables"])
                 except ImportError:
                     # Simple fallback when external markdown libraries are not installed
-                    lines = markdown_content.split("\n")
+                    lines = processed_md.split("\n")
                     html_body = "\n".join(f"<p>{l}</p>" if l.strip() else "<br/>" for l in lines)
 
             # HTML Template with beautiful modern CSS styles supporting both Light and Dark themes
@@ -108,7 +141,7 @@ class HTMLModule(BaseDocumentModule):
             padding: 2rem 1.5rem;
         }}
 
-        .container {{
+        .markdown-body {{
             max-width: 850px;
             margin: 0 auto;
             background-color: var(--container-bg);
@@ -225,10 +258,15 @@ class HTMLModule(BaseDocumentModule):
             background-color: var(--border-color);
             border: 0;
         }}
+
+        img {{
+            max-width: 100%;
+            height: auto;
+        }}
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="markdown-body">
         {html_body}
     </div>
 </body>

@@ -185,8 +185,17 @@ class MarkdownPreview(ft.Container):
             ft.MarkdownCodeTheme.ATOM_ONE_DARK if is_dark else ft.MarkdownCodeTheme.ATOM_ONE_LIGHT
         )
 
-        # Dynamic Markdown Style Sheet (Code, CodeBlock & Blockquote)
+        # Dynamic Markdown Style Sheet (Headings, Code, CodeBlock, Table & Blockquote)
         self.markdown.md_style_sheet = ft.MarkdownStyleSheet(
+            # Heading hierarchy — size + weight differentiation (border-bottom not
+            # supported by Flet Markdown; accepted framework limitation).
+            h1_text_style=ft.TextStyle(size=28, weight=ft.FontWeight.BOLD,  color=text_primary),
+            h2_text_style=ft.TextStyle(size=22, weight=ft.FontWeight.BOLD,  color=text_primary),
+            h3_text_style=ft.TextStyle(size=18, weight=ft.FontWeight.W_600, color=text_primary),
+            h4_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=text_primary),
+            h5_text_style=ft.TextStyle(size=14, weight=ft.FontWeight.W_500, color=text_primary),
+            h6_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, color=text_primary),
+
             p_text_style=ft.TextStyle(color=text_primary, size=14, height=1.4),
             code_text_style=ft.TextStyle(
                 font_family="Consolas",
@@ -211,6 +220,9 @@ class MarkdownPreview(ft.Container):
                 color=text_primary,
                 size=14,
             ),
+            # Table: only head text style is settable via MarkdownStyleSheet.
+            # Cell borders and zebra rows are unsupported by Flet Markdown (framework limit).
+            table_head_text_style=ft.TextStyle(weight=ft.FontWeight.BOLD, color=text_primary),
         )
 
 

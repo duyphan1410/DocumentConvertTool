@@ -1,8 +1,8 @@
 # 🏛️ Tổng Hợp Kết Quả Phân Tách Kiến Trúc 3 Tầng Flet (v1.3.0)
 
-**Ngày cập nhật:** 29/07/2026  
+**Ngày cập nhật:** 31/07/2026  
 **Dự án:** Document Converter Tool  
-**Phiên bản:** `v1.3.0`  
+**Phiên bản:** `v1.3.2`  
 
 ---
 
@@ -53,9 +53,15 @@ DocumentConvertTool/
 - Ngay khi người dùng chọn file, khung Editor hiển thị ngay `⏳ Loading 'filename', please wait...` và khóa nhẹ ô gõ (`read_only=True`).
 - Khung Preview hiển thị `*Loading...*` và thanh `ProgressBar` ở chân trang chạy hiệu ứng nạp tệp.
 
-### ⚡ Khắc Phục Nghẽn Giao Diện (20s ➔ 2.39s)
+### ⚡ Khắc Phục Nghẽn Giao Diện Nạp File (20s ➔ 2.39s)
 - **Giải pháp**: Đổi từ `threading.Thread` sang `await asyncio.to_thread(...)` kết hợp với `self.page.update()`.
 - **Kết quả**: Ép Flet redraw khung hình ngay lập tức, đưa thời gian hiển thị từ **20 giây xuống còn 2.39 giây** (trong đó 2.20s là thời gian thư viện Python bóc tách PDF thực hiện).
+
+### ⚡ Khắc Phục Lỗi Trễ Giao Diện Convert (10s Freeze ➔ Tức Thì < 0.05s) (v1.3.2)
+- **Hiện tượng**: Khi Convert lần đầu, bộ đếm đo xong chỉ trong 0.03s nhưng thanh trạng thái Footer bị treo đọng lại ~10 giây mới đổi thành `Exported successfully`. Tuy nhiên, nếu Overwrite (có modal animation tick) hoặc Tab sang ứng dụng khác rồi quay lại thì giao diện cập nhật xong ngay lập tức.
+- **Nguyên nhân**: Hàm `_start_conversion_process` khởi chạy bằng `threading.Thread` ngầm của OS. Việc gọi `self.page.update()` từ OS Thread ngầm KHÔNG phát tín hiệu wake-up cho Main asyncio Event Loop của Flet, khiến gói tin redraw bị kẹt lại trong WebSocket write buffer khoảng ~10s (chờ socket tick định kỳ).
+- **Giải pháp**: Chuyển luồng xử lý `_start_conversion_process` sang `asyncio.create_task` với coroutine `_async_start_conversion`, kết hợp `await asyncio.to_thread(convert_content, ...)`.
+- **Kết quả**: Giao diện cập nhật trạng thái `Converting...` và `Exported successfully (0.0x s)` trực tiếp trên Main Event Loop tức thì (< 0.05s) mà không còn bị đọng buffer hay trễ 10s.
 
 ### 🖼️ Hiển Thị Xem Trước Hình Ảnh Super Fast (0.17s)
 - Đọc byte ảnh trực tiếp mã hóa `data:image/png;base64,...` mà không cần nén lại bằng PIL LANCZOS heavy.

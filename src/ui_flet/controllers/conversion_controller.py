@@ -15,6 +15,9 @@ from src.ui_flet.state import AppState
 from src.ui_flet.constants import MODES
 
 
+from src.ui_flet.native_dialogs import confirm_overwrite_async
+
+
 class ConversionController:
     def __init__(self, page: ft.Page, state: AppState, app_controls: dict):
         self.page = page
@@ -42,23 +45,24 @@ class ConversionController:
             self.state.out_path = out_path
             self.file_path_bar.set_out_path(out_path)
 
-        if is_output_locked(out_path):
-            self.footer_bar.set_status(
-                "Output file locked! Close target file and try again.", ft.Colors.RED_400
-            )
-            return
-
         task = asyncio.create_task(self._async_check_overwrite_and_convert(out_path))
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
 
     async def _async_check_overwrite_and_convert(self, out_path: str):
         if os.path.exists(out_path):
-            confirmed = await self.confirm_overwrite_dialog(out_path)
+            confirmed = await confirm_overwrite_async(out_path)
             if not confirmed:
                 self.footer_bar.set_status("Conversion cancelled", ft.Colors.AMBER_400)
                 self.page.update()
                 return
+
+        if is_output_locked(out_path):
+            self.footer_bar.set_status(
+                "Output file locked by another application! Close target file and try again.", ft.Colors.RED_400
+            )
+            self.page.update()
+            return
 
         self.state.is_processing = True
         self.footer_bar.set_processing(True)
@@ -73,11 +77,10 @@ class ConversionController:
         fut = loop.create_future()
 
         def _close(result: bool):
-            if hasattr(self.page, "close"):
+            try:
                 self.page.close(dlg)
-            else:
-                dlg.open = False
-                self.page.update()
+            except Exception:
+                pass
             if not fut.done():
                 fut.set_result(result)
 
@@ -97,7 +100,7 @@ class ConversionController:
                     ft.Text(f"The target file '{file_name}' already exists at destination:"),
                     ft.Container(
                         content=ft.Text(
-                            out_path, size=12, color=ft.Colors.GREY_300, selectable=True
+                            out_path, size=12, color=ft.Colors.PRIMARY, selectable=True
                         ),
                         padding=10,
                         border_radius=6,
@@ -121,13 +124,8 @@ class ConversionController:
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
-        if hasattr(self.page, "open"):
-            self.page.open(dlg)
-        else:
-            self.page.dialog = dlg
-            dlg.open = True
-            self.page.update()
-
+        self.page.open(dlg)
+        await asyncio.sleep(0.05)
         return await fut
 
     async def _async_run_conversion_worker(self, out_path: str):

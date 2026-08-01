@@ -251,10 +251,14 @@ class RibbonBar(ft.Container):
             if not valid_modes:
                 valid_modes = list(MODES.keys())
         self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
-        if self.mode_dropdown.value not in valid_modes:
-            self.mode_dropdown.value = valid_modes[0]
+        self.mode_dropdown.value = valid_modes[0]
         if self.mode_dropdown.page:
             self.mode_dropdown.update()
+        if self.on_mode_changed:
+            try:
+                self.on_mode_changed(None)
+            except Exception as ex:
+                print(f"[DEBUG] on_mode_changed error in update_mode_options: {ex}")
 
     def _select_tab(self, tab_name: str):
         # Click active tab again to toggle collapse/expand

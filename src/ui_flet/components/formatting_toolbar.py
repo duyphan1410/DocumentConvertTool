@@ -161,5 +161,8 @@ class FormattingToolbar(ft.Container):
         self.heading_dropdown.focused_border_color = accent_primary
         self.heading_dropdown.color = accent_primary
         self.heading_dropdown.label_style = ft.TextStyle(color=accent_primary)
-        if self.heading_dropdown.page:
-            self.heading_dropdown.update()
+        try:
+            if self.heading_dropdown.page:
+                self.heading_dropdown.update()
+        except Exception:
+            pass

@@ -23,149 +23,160 @@ class HTMLModule(BaseDocumentModule):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
+        from src.services.media_asset_manager import MediaAssetManager
+        asset_mgr = MediaAssetManager()
+        base_dir = os.path.dirname(file_path)
+
         try:
+            content = None
             try:
                 from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(file_path)
                 if result and result.text_content and result.text_content.strip():
-                    return result.text_content
+                    content = result.text_content
             except Exception:
                 pass
 
-            try:
-                from bs4 import BeautifulSoup, NavigableString, Tag
-                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                    soup = BeautifulSoup(f.read(), "html.parser")
+            if not content:
+                try:
+                    from bs4 import BeautifulSoup, NavigableString, Tag
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        soup = BeautifulSoup(f.read(), "html.parser")
 
-                # Decompose non-content elements
-                for elem in soup(["script", "style", "head", "title"]):
-                    elem.decompose()
+                    # Decompose non-content elements
+                    for elem in soup(["script", "style", "head", "title"]):
+                        elem.decompose()
 
-                container = soup.find(class_="markdown-body") or soup.find("body") or soup
+                    container = soup.find(class_="markdown-body") or soup.find("body") or soup
 
-                def parse_node(node, depth=0):
-                    if isinstance(node, NavigableString):
-                        return str(node)
-                    if not isinstance(node, Tag):
-                        return ""
-
-                    tag = node.name.lower()
-
-                    if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
-                        level = int(tag[1])
-                        text = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"\n\n{'#' * level} {text}\n\n"
-
-                    elif tag == "p":
-                        text = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"\n\n{text}\n\n"
-
-                    elif tag == "pre":
-                        code_tag = node.find("code")
-                        lang = ""
-                        if code_tag and code_tag.get("class"):
-                            for c in code_tag["class"]:
-                                if c.startswith("language-"):
-                                    lang = c.replace("language-", "")
-                                elif c != "codehilite":
-                                    lang = c
-                        code_text = (code_tag or node).get_text()
-                        return f"\n\n```{lang}\n{code_text.strip()}\n```\n\n"
-
-                    elif tag == "code":
-                        if node.parent and node.parent.name == "pre":
-                            return "".join(parse_node(child, depth) for child in node.children)
-                        return f"`{node.get_text()}`"
-
-                    elif tag in ["strong", "b"]:
-                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"**{inner}**" if inner else ""
-
-                    elif tag in ["em", "i"]:
-                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"*{inner}*" if inner else ""
-
-                    elif tag in ["del", "strike", "s"]:
-                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"~~{inner}~~" if inner else ""
-
-                    elif tag == "a":
-                        href = node.get("href", "")
-                        text = "".join(parse_node(child, depth) for child in node.children).strip()
-                        return f"[{text}]({href})" if href else text
-
-                    elif tag == "img":
-                        src = node.get("src", "")
-                        alt = node.get("alt", "")
-                        return f"![{alt}]({src})"
-
-                    elif tag == "blockquote":
-                        inner = "".join(parse_node(child, depth) for child in node.children).strip()
-                        lines = inner.split("\n")
-                        quoted = "\n".join(f"> {l}" for l in lines)
-                        return f"\n\n{quoted}\n\n"
-
-                    elif tag == "hr":
-                        return "\n\n---\n\n"
-
-                    elif tag == "table":
-                        tr_elements = []
-                        for sec in node.find_all(["thead", "tbody", "tfoot"], recursive=False):
-                            tr_elements.extend(sec.find_all("tr", recursive=False))
-                        if not tr_elements:
-                            tr_elements = node.find_all("tr", recursive=False)
-
-                        rows = []
-                        for tr in tr_elements:
-                            cells = [td.get_text().strip().replace("\n", "<br>").replace("|", "\\|") for td in tr.find_all(["th", "td"], recursive=False)]
-                            if cells:
-                                rows.append(cells)
-                        if not rows:
+                    def parse_node(node, depth=0):
+                        if isinstance(node, NavigableString):
+                            return str(node)
+                        if not isinstance(node, Tag):
                             return ""
-                        headers = rows[0]
-                        md_lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
-                        for r in rows[1:]:
-                            if len(r) < len(headers):
-                                r.extend([""] * (len(headers) - len(r)))
-                            md_lines.append("| " + " | ".join(r[:len(headers)]) + " |")
-                        return "\n\n" + "\n".join(md_lines) + "\n\n"
 
-                    elif tag in ["ul", "ol"]:
-                        items = []
-                        indent = "  " * depth
-                        for idx, li in enumerate(node.find_all("li", recursive=False)):
-                            inline_parts = []
-                            nested_lists = []
-                            for child in li.children:
-                                if isinstance(child, Tag) and child.name.lower() in ["ul", "ol"]:
-                                    nested_lists.append(child)
-                                else:
-                                    inline_parts.append(parse_node(child, depth + 1))
+                        tag = node.name.lower()
 
-                            item_text = "".join(inline_parts).strip()
-                            prefix = f"{idx + 1}." if tag == "ol" else "-"
-                            item_str = f"{indent}{prefix} {item_text}"
+                        if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+                            level = int(tag[1])
+                            text = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"\n\n{'#' * level} {text}\n\n"
 
-                            if nested_lists:
-                                sub_str = "\n".join(parse_node(nl, depth + 1).strip() for nl in nested_lists)
-                                item_str += f"\n{sub_str}"
+                        elif tag == "p":
+                            text = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"\n\n{text}\n\n"
 
-                            items.append(item_str)
-                        return "\n\n" + "\n".join(items) + "\n\n"
+                        elif tag == "pre":
+                            code_tag = node.find("code")
+                            lang = ""
+                            if code_tag and code_tag.get("class"):
+                                for c in code_tag["class"]:
+                                    if c.startswith("language-"):
+                                        lang = c.replace("language-", "")
+                                    elif c != "codehilite":
+                                        lang = c
+                            code_text = (code_tag or node).get_text()
+                            return f"\n\n```{lang}\n{code_text.strip()}\n```\n\n"
 
+                        elif tag == "code":
+                            if node.parent and node.parent.name == "pre":
+                                return "".join(parse_node(child, depth) for child in node.children)
+                            return f"`{node.get_text()}`"
+
+                        elif tag in ["strong", "b"]:
+                            inner = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"**{inner}**" if inner else ""
+
+                        elif tag in ["em", "i"]:
+                            inner = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"*{inner}*" if inner else ""
+
+                        elif tag in ["del", "strike", "s"]:
+                            inner = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"~~{inner}~~" if inner else ""
+
+                        elif tag == "a":
+                            href = node.get("href", "")
+                            text = "".join(parse_node(child, depth) for child in node.children).strip()
+                            return f"[{text}]({href})" if href else text
+
+                        elif tag == "img":
+                            src = node.get("src", "")
+                            alt = node.get("alt", "")
+                            return f"![{alt}]({src})"
+
+                        elif tag == "blockquote":
+                            inner = "".join(parse_node(child, depth) for child in node.children).strip()
+                            lines = inner.split("\n")
+                            quoted = "\n".join(f"> {l}" for l in lines)
+                            return f"\n\n{quoted}\n\n"
+
+                        elif tag == "hr":
+                            return "\n\n---\n\n"
+
+                        elif tag == "table":
+                            tr_elements = []
+                            for sec in node.find_all(["thead", "tbody", "tfoot"], recursive=False):
+                                tr_elements.extend(sec.find_all("tr", recursive=False))
+                            if not tr_elements:
+                                tr_elements = node.find_all("tr", recursive=False)
+
+                            rows = []
+                            for tr in tr_elements:
+                                cells = [td.get_text().strip().replace("\n", "<br>").replace("|", "\\|") for td in tr.find_all(["th", "td"], recursive=False)]
+                                if cells:
+                                    rows.append(cells)
+                            if not rows:
+                                return ""
+                            headers = rows[0]
+                            md_lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
+                            for r in rows[1:]:
+                                if len(r) < len(headers):
+                                    r.extend([""] * (len(headers) - len(r)))
+                                md_lines.append("| " + " | ".join(r[:len(headers)]) + " |")
+                            return "\n\n" + "\n".join(md_lines) + "\n\n"
+
+                        elif tag in ["ul", "ol"]:
+                            items = []
+                            indent = "  " * depth
+                            for idx, li in enumerate(node.find_all("li", recursive=False)):
+                                inline_parts = []
+                                nested_lists = []
+                                for child in li.children:
+                                    if isinstance(child, Tag) and child.name.lower() in ["ul", "ol"]:
+                                        nested_lists.append(child)
+                                    else:
+                                        inline_parts.append(parse_node(child, depth + 1))
+
+                                item_text = "".join(inline_parts).strip()
+                                prefix = f"{idx + 1}." if tag == "ol" else "-"
+                                item_str = f"{indent}{prefix} {item_text}"
+
+                                if nested_lists:
+                                    sub_str = "\n".join(parse_node(nl, depth + 1).strip() for nl in nested_lists)
+                                    item_str += f"\n{sub_str}"
+
+                                items.append(item_str)
+                            return "\n\n" + "\n".join(items) + "\n\n"
+
+                        else:
+                            return "".join(parse_node(child, depth) for child in node.children)
+
+                    parsed_result = parse_node(container)
+                    parsed_result = re.sub(r"\n{3,}", "\n\n", parsed_result).strip()
+                    if parsed_result:
+                        content = parsed_result
                     else:
-                        return "".join(parse_node(child, depth) for child in node.children)
+                        content = soup.get_text()
+                except Exception as bs_err:
+                    print(f"[DEBUG] HTMLModule: Structured BS4 parse failed: {bs_err}")
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
 
-                result = parse_node(container)
-                result = re.sub(r"\n{3,}", "\n\n", result).strip()
-                if result:
-                    return result
-                return soup.get_text()
-            except Exception as bs_err:
-                print(f"[DEBUG] HTMLModule: Structured BS4 parse failed: {bs_err}")
-                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                    return f.read()
+            if content:
+                return asset_mgr.import_local_images(content, base_dir)
+            return ""
         except Exception as e:
             raise RuntimeError(f"HTML Ingestion Error: Failed to extract text from HTML. Detail: {str(e)}")
 
@@ -201,7 +212,10 @@ class HTMLModule(BaseDocumentModule):
 
             # Step 1: Base64 media resolution
             t1 = time.time()
-            processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+            if "!" in markdown_content or "<img" in markdown_content:
+                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+            else:
+                processed_md = markdown_content
             t_base64 = time.time() - t1
 
             # Step 2: Code block auto-repair

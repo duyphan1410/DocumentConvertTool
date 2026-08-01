@@ -287,6 +287,7 @@ class PDFModule(BaseDocumentModule):
 
             doc_elements = []
             settings = {"snap_tolerance": 10, "join_tolerance": 10}
+            global_img_counter = 1
             
             with pdfplumber.open(file_path) as pdf:
                 for page_idx, page in enumerate(pdf.pages):
@@ -321,10 +322,11 @@ class PDFModule(BaseDocumentModule):
 
                                 page_images.append({
                                     "type": "image",
-                                    "content": f"![Image {img_idx + 1}]({uri})",
+                                    "content": f"![Image {global_img_counter}]({uri})",
                                     "top": top_y,
                                     "bottom": top_y + 15.0
                                 })
+                                global_img_counter += 1
                         except Exception as img_err:
                             print(f"[DEBUG] PDFModule: Error extracting images on page {page_idx + 1}: {img_err}", file=sys.stderr)
 
@@ -531,11 +533,17 @@ class PDFModule(BaseDocumentModule):
                 new_src = prepare_image(src)
                 return f'{prefix}src="{new_src}"{suffix}'
 
-            processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img_markdown, markdown_content)
-            processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+            if "!" in markdown_content or "<img" in markdown_content:
+                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img_markdown, markdown_content)
+                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+            else:
+                processed_md = markdown_content
 
             # Pre-process Markdown: replace ~~text~~ with <del>text</del> for strikethrough support
-            html_content = re.sub(r"~~(.*?)~~", r"<del>\1</del>", processed_md)
+            if "~~" in processed_md:
+                html_content = re.sub(r"~~(.*?)~~", r"<del>\1</del>", processed_md)
+            else:
+                html_content = processed_md
 
             from markdown_pdf import MarkdownPdf, Section
 

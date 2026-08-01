@@ -199,6 +199,17 @@ DocumentConvertTool/
 │   │   │   ├── formatting_toolbar.py
 │   │   │   └── search_replace_bar.py
 │   │   │
+│   │   ├── controllers/
+│   │   │   ├── conversion_controller.py
+│   │   │   ├── editor_controller.py
+│   │   │   ├── file_controller.py
+│   │   │   ├── layout_controller.py
+│   │   │   ├── search_controller.py
+│   │   │   └── theme_controller.py
+│   │   │
+│   │   ├── helpers/
+│   │   │   └── shortcut_manager.py
+│   │   │
 │   │   ├── layout/
 │   │   │   ├── footer_bar.py
 │   │   │   ├── header_bar.py
@@ -206,7 +217,9 @@ DocumentConvertTool/
 │   │   │
 │   │   └── views/
 │   │       ├── editor_view.py
-│   │       └── preview_view.py
+│   │       ├── preview_view.py
+│   │       ├── welcome_view.py
+│   │       └── workspace_view.py
 │   │
 │   └── utils/
 │       ├── assets.py
@@ -326,6 +339,20 @@ DocumentConvertTool/
 * [X] Live Preview 1-step lag fix: decoupled heavy extraction (`asyncio.to_thread`) from UI draw (main event loop)
 * [X] Full Flet API 0.86.4+ compliance (`ft.Padding`, post-init `on_change`, `bgcolor` in `ButtonStyle`)
 * [X] Automated test suite in `tests/` (5 files: smoke imports, UI formatting, headless launch, preview, optimizations)
+
+### ✅ Phase 4.2 — Pure Orchestrator MVC Architecture & Welcome Dashboard (Completed · v1.3.2)
+
+* [X] **Welcome Dashboard View (`welcome_view.py`)** — Centered onboarding card with **[Open Document]**, **[Create Blank Note]**, and theme palette integration when opening app without a draft/file.
+* [X] **Workspace View Switcher (`workspace_view.py`)** — Dynamic container orchestrating seamless transitions between Welcome Screen and Editor Workspace.
+* [X] **Editor Header Quick-Open (📂)** — 1-click file opening button directly in Editor header toolbar.
+* [X] **Global Keyboard Shortcut (`Ctrl+O`)** — System-wide shortcut listener (`shortcut_manager.py`) to trigger file picker from any screen.
+* [X] **Pure Orchestrator `app.py`** — Refactored `app.py` from ~450 lines down to ~120 lines, delegating business logic to 6 specialized controllers:
+  * `SearchController` — Regex search & replace, line snippets, match cycling.
+  * `FileController` — Async document loading, draft autosave/restoration, image insertion.
+  * `ConversionController` — Worker execution, overwrite confirmation dialog, foreground file/folder launch.
+  * `EditorController` — Text buffer management, Markdown formatting, Undo/Redo stack, non-destructive clear.
+  * `ThemeController` — Palette switching, Light/Dark mode, Win32 OS title bar sync (`DwmSetWindowAttribute`).
+  * `LayoutController` — Panel visibility toggles, dynamic min-lines editor height calculations.
 
 ### 🔄 Phase 4.1 — Two-Way Image Pipeline (In Progress)
 

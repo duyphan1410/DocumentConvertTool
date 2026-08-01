@@ -46,14 +46,21 @@ DocumentConvertTool là một ứng dụng desktop viết bằng Python & Flet U
 
 - `run.py`: Script khởi chạy chính, gọi `src.main.main()`.
 - `src/main.py`: Cài đặt môi trường hệ thống và khởi tạo ứng dụng giao diện từ `src.ui_flet.app.DocumentConvertApp`.
-- `src/ui_flet/app.py`: Triển khai giao diện chính bằng `Flet UI` (Flutter engine for Python).
-  - Tự động lọc danh sách Chế độ chuyển đổi (Conversion Mode Dropdown) theo đuôi tệp tin vừa nạp.
-  - Tự động lưu nháp ngầm (Autosave Draft) sau 1.5 giây vào `%APPDATA%\DocConvert\draft_autosave.md`.
-  - Bộ công cụ Tìm & Thay thế với Smart Hybrid Focus (cycling Enter và chọn ô highlight).
-  - Đổi bảng màu Palette (Emerald Obsidian, Violet Cyber, Deep Ocean, Slate Minimal...) và chế độ Light/Dark Mode tức thì (0ms) với cập nhật container độc lập (`header_container`, `left_pane`, `right_pane`, `footer_container`, `btn_convert`, `editor`).
-  - Giao diện responsive 2 cột linh hoạt (Editor Buffer & Live Document Preview).
+- `src/ui_flet/app.py`: Pure Orchestrator (~120 dòng) khởi tạo `AppState`, ghép nối callback và dựng cây giao diện chính.
+- `src/ui_flet/controllers/`: Bộ 6 Controller chuyên biệt chuẩn hóa theo mô hình MVC:
+  - `SearchController`: Tìm kiếm regex, thay thế văn bản, duy trì highlight và danh sách snippet match.
+  - `FileController`: Đọc tài liệu bất đồng bộ (`asyncio.to_thread`), chèn ảnh, lưu/nạp draft tự động (`%APPDATA%\DocConvert\draft_autosave.md`).
+  - `ConversionController`: Chạy luồng chuyển đổi ngầm, hiển thị hộp thoại xác nhận ghi đè file Win32 Native, mở file/thư mục sau chuyển đổi. **Đã xử lý 3 lỗi quan trọng:**<br>1. *Tự động sinh đường dẫn đầu ra mặc định* (`output.xlsx`, `output.docx`...) khi Convert từ bản nháp (Draft) hoặc note mới mà chưa chọn file trên đĩa.<br>2. *Bảo vệ Task ngầm* (`self._active_tasks`) tránh bị bộ thu gom rác Garbage Collector của Python hủy giữa chừng (`Task was destroyed but it is pending`).<br>3. *Đồng bộ đuôi file đầu ra* tức thì khi chọn thay đổi Dropdown Conversion Mode trên thanh Ribbon Bar.
+  - `EditorController`: Quản lý bộ đệm văn bản, định dạng Markdown (H1–H6, Bold/Italic), lịch sử Undo/Redo stack và hàm Clear an toàn.
+  - `ThemeController`: Quản lý 5 Palette màu, chế độ Light/Dark/System, đồng bộ màu sắc các View và đổi màu thanh tiêu đề Windows OS (`DwmSetWindowAttribute`).
+  - `LayoutController`: Quản lý bật/tắt các bảng công cụ (Preview, File Path Bar, Status Bar) và tính toán chiều cao co giãn động cho Editor.
+- `src/ui_flet/views/`:
+  - `welcome_view.py`: Màn hình Chào mừng (Welcome Dashboard) sang trọng với nút mở file và tạo trang nháp mới khi khởi chạy chưa có tài liệu.
+  - `workspace_view.py`: Container điều phối chuyển cảnh mượt mà giữa Welcome Screen và Editor Workspace.
+  - `editor_view.py`: Khung soạn thảo Markdown kèm nút Quick-Open (📂) tại header toolbar.
+  - `preview_view.py`: Live Preview Markdown thời gian thực với cơ chế mã hóa Base64 RAM Cache (`_BASE64_CACHE`) và tự động thu nhỏ độ phân giải ảnh 68% (`Pillow LANCZOS`).
+- `src/ui_flet/helpers/shortcut_manager.py`: Quản lý phím tắt toàn cục (`Ctrl+O` mở nhanh file ở bất kỳ màn hình nào).
 - `src/ui_flet/native_dialogs.py`: Hộp thoại chọn tệp Native Windows File Dialog (`askopenfilename`/`asksaveasfilename`) chạy bất đồng bộ qua `asyncio.to_thread` trên luồng phụ, hiển thị đầy đủ 8 danh mục lọc tệp đơn lẻ (`Word`, `Excel`, `PDF`, `Markdown`, `CSV`, `HTML`, `All Files`) chuẩn xác và sắc nét High-DPI.
-- `src/ui_flet/preview.py`: Trình xem trước Live Preview Markdown thời gian thực với cơ chế mã hóa Base64 RAM Cache (`_BASE64_CACHE`) và tự động thu nhỏ độ phân giải ảnh 68% (`Pillow LANCZOS`) cho trải nghiệm cuộn cực mượt.
 
 ### Hệ thống Module chuyển đổi (Plugin-based)
 

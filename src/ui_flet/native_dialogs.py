@@ -204,9 +204,10 @@ def confirm_overwrite_sync(file_path: str) -> bool:
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
+        file_name = os.path.basename(file_path)
         res = messagebox.askyesno(
-            "Confirm Overwrite",
-            f"The file '{os.path.basename(file_path)}' already exists.\n\nDo you want to overwrite it?",
+            "Confirm File Overwrite",
+            f"The target file '{file_name}' already exists at destination:\n\n{file_path}\n\nDo you want to overwrite it?",
             parent=root
         )
         root.destroy()

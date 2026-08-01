@@ -3,11 +3,12 @@ Office Ribbon Navbar Layout Component for Flet UI.
 Provides a modern 4-Tab Office Ribbon Navbar (File, Edit, Convert, View)
 with integrated Mode, Palette, Theme selectors, and Formatting Toolbar (Headings H1-H6).
 """
+import os
 import flet as ft
 from typing import Callable, Optional, TYPE_CHECKING
 from src.__version__ import __version__
 from src.ui_flet.constants import MODES
-from src.ui_flet.theme import PALETTES, resolve_color
+from src.ui_flet.theme import PALETTES, resolve_color, make_border
 from src.ui_flet.components.formatting_toolbar import FormattingToolbar
 
 if TYPE_CHECKING:
@@ -115,28 +116,22 @@ class RibbonBar(ft.Container):
             on_click=self._toggle_collapse
         )
 
-        self.logo_icon = ft.Icon(ft.Icons.AUTO_AWESOME, color=ft.Colors.PRIMARY, size=22)
-        self.logo_text = ft.Text(
-            f"DocConvert Workspace v{__version__}",
-            weight=ft.FontWeight.BOLD,
-            size=15
+
+        self.logo_icon = ft.Icon(
+            ft.Icons.AUTO_AWESOME_ROUNDED,
+            color=ft.Colors.PRIMARY,
+            size=22,
         )
 
-        self.btn_quick_add = ft.OutlinedButton(
-            "Open file",
-            icon=ft.Icons.FOLDER_OPEN,
-            on_click=self._on_browse_in_click,
-            height=34,
-            style=ft.ButtonStyle(padding=ft.Padding(left=10, top=0, right=10, bottom=0)),
-            tooltip="Open file to convert"
+        self.logo_text = ft.Text(
+            "DocConvert",
+            weight=ft.FontWeight.BOLD,
+            size=14,
         )
-        self.btn_quick_save = ft.OutlinedButton(
-            "Save file",
-            icon=ft.Icons.SAVE_AS,
-            on_click=self._on_browse_out_click,
-            height=34,
-            style=ft.ButtonStyle(padding=ft.Padding(left=10, top=0, right=10, bottom=0)),
-            tooltip="Choose converted file location"
+
+        self.mode_dropdown_container = ft.Container(
+            content=self.mode_dropdown,
+            padding=ft.Padding(left=8, top=4, right=8, bottom=8),
         )
 
         self.tab_strip = ft.Row(
@@ -149,13 +144,11 @@ class RibbonBar(ft.Container):
                 self.btn_tab_view,
                 self.btn_tab_options,
                 ft.Container(expand=True),
-                self.btn_quick_add,
-                self.btn_quick_save,
-                self.mode_dropdown,
+                self.mode_dropdown_container,
                 self.btn_collapse,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4
+            spacing=4,
         )
 
         # ── Tab Content Containers ───────────────────────────────────────────────
@@ -243,10 +236,11 @@ class RibbonBar(ft.Container):
                 self.tab_strip,
                 self.panel_container,
             ],
-            spacing=2
+            spacing=4
         )
         self.content = self.main_column
-        self.padding = ft.Padding(left=8, top=4, right=8, bottom=4)
+        self.border_radius = 10
+        self.padding = ft.Padding(left=10, top=6, right=10, bottom=6)
 
     def update_mode_options(self, input_ext: str = ""):
         """Updates available modes in Ribbon mode dropdown."""
@@ -257,10 +251,14 @@ class RibbonBar(ft.Container):
             if not valid_modes:
                 valid_modes = list(MODES.keys())
         self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
-        if self.mode_dropdown.value not in valid_modes:
-            self.mode_dropdown.value = valid_modes[0]
+        self.mode_dropdown.value = valid_modes[0]
         if self.mode_dropdown.page:
             self.mode_dropdown.update()
+        if self.on_mode_changed:
+            try:
+                self.on_mode_changed(None)
+            except Exception as ex:
+                print(f"[DEBUG] on_mode_changed error in update_mode_options: {ex}")
 
     def _select_tab(self, tab_name: str):
         # Click active tab again to toggle collapse/expand
@@ -310,6 +308,19 @@ class RibbonBar(ft.Container):
         if self.on_ribbon_toggle:
             self.on_ribbon_toggle()
 
+        try:
+            self.update()
+        except Exception:
+            pass
+
+    def deselect_all_tabs(self):
+        """Collapse ribbon panel and clear active tab selection for Welcome Screen."""
+        self.active_tab = ""
+        self.is_expanded = False
+        self.panel_container.visible = False
+        self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
+        if self.on_ribbon_toggle:
+            self.on_ribbon_toggle()
         try:
             self.update()
         except Exception:
@@ -424,8 +435,12 @@ class RibbonBar(ft.Container):
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
         btn_convert_fg = resolve_color(palette, "btn_convert_fg", is_dark)
 
+        border_color = resolve_color(palette, "border_color", is_dark)
+
         # Ribbon bar background (header area)
         self.bgcolor = bg_header
+        self.border_radius = 10
+        self.border = make_border(1, border_color)
 
         # Panel container (active tab content area)
         self.panel_container.bgcolor = bg_component

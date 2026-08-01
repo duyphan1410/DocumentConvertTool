@@ -259,10 +259,9 @@ class DocumentConvertApp:
             pass
 
 
-async def main(page: ft.Page):
+def main(page: ft.Page):
     app = DocumentConvertApp(page)
 
 
 if __name__ == "__main__":
-    assets_dir = os.path.abspath("assets")
-    ft.run(main, assets_dir=assets_dir)
+    ft.app(target=main)

@@ -50,7 +50,7 @@ DocumentConvertTool là một ứng dụng desktop viết bằng Python & Flet U
 - `src/ui_flet/controllers/`: Bộ 6 Controller chuyên biệt chuẩn hóa theo mô hình MVC:
   - `SearchController`: Tìm kiếm regex, thay thế văn bản, duy trì highlight và danh sách snippet match.
   - `FileController`: Đọc tài liệu bất đồng bộ (`asyncio.to_thread`), chèn ảnh, lưu/nạp draft tự động (`%APPDATA%\DocConvert\draft_autosave.md`).
-  - `ConversionController`: Chạy luồng chuyển đổi ngầm, hiển thị hộp thoại xác nhận ghi đè file, mở file/thư mục sau chuyển đổi.
+  - `ConversionController`: Chạy luồng chuyển đổi ngầm, hiển thị hộp thoại xác nhận ghi đè file Win32 Native, mở file/thư mục sau chuyển đổi. **Đã xử lý 3 lỗi quan trọng:**<br>1. *Tự động sinh đường dẫn đầu ra mặc định* (`output.xlsx`, `output.docx`...) khi Convert từ bản nháp (Draft) hoặc note mới mà chưa chọn file trên đĩa.<br>2. *Bảo vệ Task ngầm* (`self._active_tasks`) tránh bị bộ thu gom rác Garbage Collector của Python hủy giữa chừng (`Task was destroyed but it is pending`).<br>3. *Đồng bộ đuôi file đầu ra* tức thì khi chọn thay đổi Dropdown Conversion Mode trên thanh Ribbon Bar.
   - `EditorController`: Quản lý bộ đệm văn bản, định dạng Markdown (H1–H6, Bold/Italic), lịch sử Undo/Redo stack và hàm Clear an toàn.
   - `ThemeController`: Quản lý 5 Palette màu, chế độ Light/Dark/System, đồng bộ màu sắc các View và đổi màu thanh tiêu đề Windows OS (`DwmSetWindowAttribute`).
   - `LayoutController`: Quản lý bật/tắt các bảng công cụ (Preview, File Path Bar, Status Bar) và tính toán chiều cao co giãn động cho Editor.

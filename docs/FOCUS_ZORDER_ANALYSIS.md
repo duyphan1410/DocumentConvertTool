@@ -16,6 +16,16 @@ During the development and refactoring of the Flet desktop UI for Document Conve
 
 This document analyzes the root causes of these behaviors, documents the OS mechanics, and establishes standard architectural guidelines.
 
+### 1.1 Application Roles & Terminology Mapping
+
+To prevent ambiguity between window handles, this report defines the following explicit application roles:
+
+| Acronym / Role | Application Name | Process / Binary Name | Role & Action |
+|---|---|---|---|
+| **DCT (Primary App)** | **DocumentConvertTool** | `python.exe` / Flet Desktop GUI Window | Main desktop GUI converter window holding active focus when user clicks **Open File** or **Open Folder**. |
+| **Target File Viewer** | **Microsoft Excel**, **Microsoft Word**, **Google Chrome**, **VS Code** | `excel.exe`, `winword.exe`, `chrome.exe`, `code.exe` | Target viewer application launched/reactivated after converting files (`.xlsx`, `.docx`, `.html`, `.md`). |
+| **Target Folder Viewer** | **Windows File Explorer** | `explorer.exe` | Native OS directory browser window opened when user clicks **Open Folder**. |
+
 ---
 
 ## 2. Technical Root Cause Analysis
@@ -86,103 +96,76 @@ Status message displayed to user:
 
 ---
 
-## 4. Analysis of Attempted Methods, Code Snippets & Technical Drawbacks
+## 4. Analysis of Attempted Methods, Code Snippets & Technical Drawbacks (Open File & Open Folder)
 
-During investigation and iterative debugging, several code patterns and architectural approaches were evaluated. The table below details why each approach failed and why it was rejected in favor of the current architecture.
+During the optimization of the **Open File** and **Open Folder** post-conversion action handlers in DocumentConvertTool (DCT), several window control approaches and launch methods were evaluated. The section below documents why each approach failed OS windowing constraints and was rejected.
 
-### 4.1 Summary Comparison Table
+### 4.1 Summary Comparison Table (Open File & Open Folder Mechanics)
 
-| Category | Attempted Approach / Code | Root Technical Cause of Failure | Impact / Drawback | Final Architectural Solution |
+| Launch / Focus Approach | Target Action | Root Technical Cause of Failure | Impact / User Experience Drawback | Final Architectural Solution |
 |---|---|---|---|---|
-| **OS Windowing** | `self.page.window.focused = False` | Surrenders focus to previously active window (e.g., VS Code), pushing Flet to Z-Index #3. | Destroys `Alt + Tab` window stack ordering for desktop users. | Omit forced unfocus; rely on native `os.startfile` ShellExecute. |
-| **Explorer Spawning** | `subprocess.Popen("explorer /select...")` | Spawns a new `explorer.exe` process per invocation without OS process reuse. | Rapid clicks spawn 5–10 duplicate File Explorer windows. | Use `os.startfile(folder_path)` to reuse existing Explorer instance. |
-| **Tkinter Dialogs** | `tkinter.messagebox.askyesno()` | Native Win32 modal dialog blocks thread and ignores Flet theme palette. | Visual design system mismatch & theme inconsistency. | Custom Flet `ft.AlertDialog` styled with `PALETTES` & `make_border`. |
-| **Flet Dialog Mount** | `page.dialog = dialog; dialog.open = True` | Missing `page.overlay.append(dialog)` in Flet 0.20+ window rendering. | Flet silently ignores dialog; UI appears completely frozen on Convert click. | Explicitly append to `page.overlay` before `page.dialog = dialog`. |
-| **Dialog Unmount** | `dialog.open = False; page.update()` | `page.dialog` reference retained in memory by Flutter Runner. | Overwrite dialog remains visible on top of screen after conversion completes. | Set `self.page.dialog = None` and remove from `page.overlay` on close. |
-| **Worker UI Sync** | Updating status on background thread without `page.update()` | Flet WebSocket queue holds UI update until next polling cycle (3–5s delay). | Fast 0.08s conversion feels like a 5-second application hang. | Explicit `self.page.update()` at completion of `_run_conversion_worker`. |
-| **Theme Resolution** | `is_dark = self.state.current_theme_mode == "dark"` | `current_theme_mode` defaults to `"System"`, evaluating `"System" == "dark"` to `False`. | Renders blinding white dialog in Dark Mode with unreadable purple text. | Use `is_dark = self.page.theme_mode != ft.ThemeMode.LIGHT`. |
-| **Code Block Repair** | Auto-close fence on `#` lines (`re.match(r'^#{1,6}\s', stripped)`) | Python comment lines (`# comment`) inside code blocks misidentified as Markdown H1 headings. | Splits single code block into 3 broken dark boxes in HTML export. | Ignore `#` inside active code blocks; preserve list item fence indent. |
+| **`self.page.window.focused = False`** | Open File & Open Folder | Surrenders focus without designating target handle; Windows drops DCT to Z-Index #3. | Destroys `Alt + Tab` window stack; returning from Excel switches to VS Code instead of DCT. | Omit forced unfocus; rely on native `os.startfile` ShellExecute. |
+| **`subprocess.Popen("explorer /select,...")`** | Open Folder | Spawns a brand-new `explorer.exe` process per click without OS window reuse. | Rapid clicks produce 5–10 duplicate File Explorer windows cluttering taskbar. | Use `os.startfile(folder_path)` to reuse existing File Explorer instance. |
+| **`subprocess.Popen("cmd /c start...")`** | Open File | Invokes Windows Command Prompt process wrapper to launch target file. | Flashes a temporary black `cmd.exe` terminal window on screen before opening app. | Use native `os.startfile(file_path)` without command shell invocation. |
+| **Unassisted `SetForegroundWindow(hwnd)`** | Open File | Bare cross-process focus stealing blocked by OS Foreground Lock (`SPI_SETFOREGROUNDLOCKTIMEOUT`). | API call fails silently or causes target taskbar icon to flash amber without raising window. | Wrap with 3-Layer Fallback Architecture: (1) Class-name `EnumWindows` matching, (2) `SPI_SETFOREGROUNDLOCKTIMEOUT` bypass, (3) `SetWindowPos` TOPMOST Z-order toggle fallback, (4) `FlashWindowEx` fallback. |
+| **Unhandled `PermissionError` (WinError 32)** | Overwrite Active File | Target file is locked exclusively by active viewer (Excel/Word). | Conversion worker thread crashes with raw Python traceback instead of friendly guidance. | Catch `PermissionError` / `WinError 32` explicitly and display general English status message. |
 
 ---
 
-### 4.2 Detailed Technical Breakdown of Failed Code Snippets
+### 4.2 Detailed Technical Breakdown of Failed Code Snippets & Production Solution
 
 #### 1. Forced Window Unfocus (`page.window.focused = False`)
 ```python
-# FAILED CODE:
+# FAILED CODE (in Open File / Open Folder click handler):
 os.startfile(out_path)
-self.page.window.focused = False  # Tried to force target app to front
+self.page.window.focused = False  # Attempted to push target app to front
 ```
-- **Technical Drawback**: Windows OS Foreground Lock algorithm handles focus transfer based on active window history. Forcing `focused = False` causes Flutter Runner to deactivate the window without designating a target recipient. Windows falls back to Z-Index #3 (the window beneath Flet, such as IDE or browser). Pressing `Alt + Tab` from the newly opened file returns to the IDE instead of the Flet converter app.
+- **Technical Drawback**: Microsoft Windows manages the window Z-Order stack based on active thread focus hierarchy. Calling `focused = False` forces Flutter Runner to deactivate DCT's window handle without transferring explicit foreground privilege to the target viewer (Excel/Word/Chrome). Windows defaults to raising the window directly underneath DCT (Z-Index #2, e.g. VS Code or browser), pushing DCT down to **Z-Index #3**. Consequently, pressing `Alt + Tab` inside Excel switches focus to VS Code rather than back to DCT.
 
 #### 2. Explorer Selection Subprocess (`subprocess.Popen`)
 ```python
-# FAILED CODE:
+# FAILED CODE (in Open Folder click handler):
 subprocess.Popen(["explorer", "/select,", os.path.normpath(out_path)])
 ```
-- **Technical Drawback**: Unlike `os.startfile`, `subprocess.Popen` executes a direct binary invocation of `explorer.exe` with command-line parameters. Windows OS creates a new thread and GUI container for every invocation. Repeatedly clicking "Open Folder" litters the user's taskbar with redundant File Explorer windows.
+- **Technical Drawback**: Executing `subprocess.Popen` with the `/select,` argument triggers a direct binary launch of `explorer.exe`. Unlike shell integration routines, `Popen` does not query the OS Shell Desktop Manager to check for open directory windows. Each click spawns a completely new process and desktop window. Clicking "Open Folder" multiple times leaves 5–10 redundant Explorer windows open.
 
-#### 3. Native Win32 Tkinter Message Box
+#### 3. Command Prompt Shell Launch (`subprocess.Popen("cmd /c start")`)
 ```python
-# FAILED CODE:
-import tkinter.messagebox as msgbox
-if msgbox.askyesno("Overwrite", "File exists. Overwrite?"):
-    self._start_conversion_process(content, out_path)
+# FAILED CODE (in Open File click handler):
+subprocess.Popen(f'cmd /c start "" "{out_path}"', shell=True)
 ```
-- **Technical Drawback**: Calling Tkinter messagebox functions in a Flet GUI application introduces a secondary Win32 window event loop on top of the Flutter Runner engine. This causes window layering anomalies, breaks Dark Mode / Violet Cyberpunk theme palette compliance, and risks deadlocking background conversion threads.
+- **Technical Drawback**: Launching files via `cmd.exe` introduces an unnecessary process layer (`python.exe` -> `cmd.exe` -> target app). On Windows 10 and 11 desktop environments, a black Command Prompt console window briefly flashes on screen for 100–300ms before `cmd.exe` delegates the file execution to the default application, causing visual flicker.
 
-#### 4. Flet Dialog Render Ignored (Missing Overlay Entry)
+#### 4. Bare Win32 Focus Stealing vs 3-Layer Win32 Fallback Standard
 ```python
-# FAILED CODE:
-self.page.dialog = dialog
-dialog.open = True
-self.page.update()  # Fails to render on Windows desktop!
+# FAILED CODE (Unassisted SetForegroundWindow):
+hwnd = win32gui.FindWindow(None, "Microsoft Excel - TestCase.xlsx")
+if hwnd:
+    win32gui.SetForegroundWindow(hwnd)  # Fails silently due to OS Foreground Lock!
 ```
-- **Technical Drawback**: In Flet 0.20+ / 0.80+, dynamically constructed `ft.AlertDialog` controls must be present in `self.page.overlay` for the engine to compute overlay bounds. Omitting `self.page.overlay.append(dialog)` causes Flet to ignore the window update silently. The user clicks Convert, but no popup appears and conversion blocks indefinitely awaiting user confirmation on an invisible dialog.
+- **Technical Drawback of Bare Call**: Calling `SetForegroundWindow` without clearing OS foreground lock timeout policy fails silently, leaving the target app at Z-Index #2 with an amber flashing taskbar button.
+- **Production Standard (3-Layer Win32 Fallback in `src/utils/env.py`)**:
+  1. **Layer 1 (Discovery)**: Background thread retry loop (2.0s timeout, 100ms interval) scanning visible window handles strictly matching class name (`OpusApp`, `XLMAIN`, `PPTFrameClass`, `CabinetWClass`, `ExploreWClass`). Window title is logged for debug tracing only.
+  2. **Layer 2 (SPI Lock Bypass)**: Temporarily sets `SPI_SETFOREGROUNDLOCKTIMEOUT` to 0, calls `AllowSetForegroundWindow(-1)` as an auxiliary hint, invokes `SetForegroundWindow(hwnd)`, and immediately restores original timeout in a `finally` block.
+  3. **Layer 3 (Topmost Z-Order Toggle)**: If OS policy blocks active focus grant, performs `SetWindowPos` to `HWND_TOPMOST` then `HWND_NOTOPMOST` (`SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW`), visually raising the target window to Z-Index #1.
+  4. **Layer 4 (Taskbar Flash Fallback)**: If active focus is still withheld, triggers `FlashWindowEx` to notify the user.
 
-#### 5. Persistent Dialog Overlay (Missing Reference Nullification)
+#### 5. Unhandled Active File Overwrite Lock (`PermissionError`)
 ```python
-# FAILED CODE ON DIALOG CLOSE:
-def close_dialog(e, confirmed: bool):
-    dialog.open = False
-    self.page.update()  # Dialog remains stuck on screen!
+# FAILED CODE (in conversion worker execution):
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write(converted_content)  # Crashes if file is open in Excel/Word!
 ```
-- **Technical Drawback**: Even when `dialog.open` is set to `False`, Flutter Runner maintains the widget in memory as long as `self.page.dialog` holds a reference to it. The dialog container remains visible as a semi-transparent modal overlay over the editor, obscuring the newly revealed "Open File" buttons. Setting `self.page.dialog = None` and removing the control from `self.page.overlay` resolves this completely.
-
-#### 6. Delayed Worker Thread UI Synchronization
-```python
-# FAILED CODE IN BACKGROUND WORKER:
-def _run_conversion_worker(self, content, out_path, t0):
-    convert_content(...)
-    self.footer_bar.set_status("Done!", ft.Colors.GREEN_400)
-    # Missing self.page.update()!
-```
-- **Technical Drawback**: Flet uses an asynchronous IPC/WebSocket protocol between the Python runtime and the Flutter C++ runner. UI property updates (`status_text.value = ...`) made inside a daemon thread accumulate in the Python session buffer. Without an explicit `self.page.update()` call on the worker thread, updates are delayed until Flet's periodic 3–5 second event flush, giving the illusion of a slow conversion pipeline.
-
-#### 7. Flawed Dark Mode Heuristic in AppState
-```python
-# FAILED CODE:
-is_dark = self.state.current_theme_mode == "dark"
-```
-- **Technical Drawback**: `AppState.current_theme_mode` initializes to `"System"`. The string comparison `"System" == "dark"` evaluates to `False`. When the application is running in Dark Mode, dialog color resolution functions (`resolve_color(palette, "bg_component", False)`) defaulted to Light Mode tokens (`#ffffff` white background), rendering a high-contrast white card with purple text over a dark editor UI.
-
-#### 8. Over-aggressive Code Block Auto-closing Heuristic
-```python
-# FAILED CODE IN repair_markdown_code_blocks:
-if in_code_block:
-    if re.match(r'^#{1,6}\s', stripped):
-        result_lines.append("```")  # Auto-close code block
-        in_code_block = False
-```
-- **Technical Drawback**: Python code snippets frequently contain single-line comments starting with `# ` (e.g. `# Clear existing widgets`). The regular expression `^#{1,6}\s` matched these comment lines as Markdown H1 headings, causing `repair_markdown_code_blocks` to close the fenced block prematurely. This fragmented a single code block into 3 separate broken HTML code boxes.
+- **Technical Drawback**: When a user converts a document to `.xlsx` or `.docx` and leaves it open in Microsoft Excel or Microsoft Word, Windows places an exclusive file lock (`LOCK_EX`) on the target path. Attempting to write to `out_path` raises `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`. Without explicit lock exception handling, conversion worker threads crash and leave the UI stuck in "Converting..." status.
 
 ---
 
-## 5. Summary & Recommendations
+## 5. Summary & Recommendations for Open File / Open Folder Architecture
 
-1. **Use Native `os.startfile` for Desktop Integrations**: Always prefer `os.startfile` on Windows to leverage OS window reuse mechanisms without spawning duplicate processes.
-2. **Avoid Forced Focus Surrender (`page.window.focused = False`)**: Forcing unfocus causes Z-Order stack degradation in Windows Alt+Tab navigation.
-3. **Graceful File Lock Error Handling**: Always catch `PermissionError` / `WinError 32` explicitly and display general, user-friendly English error guidance.
-4. **Follow Flet Dialog Overlay Lifecycle**: Always append dynamic dialogs to `page.overlay` on show, and set `page.dialog = None` + remove from `page.overlay` on close.
-5. **Explicit UI Flushing in Async Worker Threads**: Always call `self.page.update()` on main page reference when background conversion threads finish to eliminate UI queue delays.
+1. **Use 3-Layer Fallback Architecture in `open_file_or_folder_foreground()`**: Leverage native `os.startfile` combined with background HWND discovery (class-name matching + 2.0s polling loop), `SPI_SETFOREGROUNDLOCKTIMEOUT` bypass, and `SetWindowPos` TOPMOST Z-order fallback. *(Note: Non-Office target formats like `.pdf` or `.html` rely on standard `os.startfile` delegation, while Win32 class-name HWND elevation specifically targets MS Office applications (`.doc(x)`, `.xls(x)`, `.ppt(x)`) and Windows File Explorer).*
+2. **Use Single-Instance `os.startfile(folder_path)` for Open Folder**: Passing directory path to `os.startfile(folder_dir)` activates existing File Explorer windows without spawning duplicate Explorer processes.
+3. **Avoid Forced Focus Surrender (`page.window.focused = False`)**: Maintain natural OS Z-Order focus handling. Forcing unfocus corrupts the `Alt + Tab` navigation stack for desktop users.
+4. **Enforce Graceful File Lock Error Handling**: Always wrap conversion writes in explicit `PermissionError` / `WinError 32` try-except blocks and notify the user with clear English guidance: `Cannot overwrite! File '...' is currently open in another program. Please close the file and try again.`
+
+
 

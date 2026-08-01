@@ -16,6 +16,7 @@ class EditorView:
         on_undo: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_redo: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_clear: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_open_file: Optional[Callable[[ft.ControlEvent], None]] = None,
     ):
         self.search_replace_bar = search_replace_bar
         self.on_editor_changed = on_editor_changed
@@ -23,7 +24,13 @@ class EditorView:
         self.on_undo = on_undo
         self.on_redo = on_redo
         self.on_clear = on_clear
+        self.on_open_file = on_open_file
 
+        self.btn_open_file = ft.IconButton(
+            ft.Icons.FOLDER_OPEN_ROUNDED,
+            tooltip="Open Document (Ctrl+O)",
+            on_click=self.on_open_file,
+        )
         self.btn_undo = ft.IconButton(
             ft.Icons.UNDO,
             tooltip="Undo (Ctrl+Z)",
@@ -46,6 +53,7 @@ class EditorView:
             controls=[
                 self.title_text,
                 ft.Container(expand=True),
+                self.btn_open_file,
                 self.btn_undo,
                 self.btn_redo,
                 self.btn_clear_editor,

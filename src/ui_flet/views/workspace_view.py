@@ -1,16 +1,25 @@
 """
 Workspace Manager View component for Flet UI.
-Houses WelcomeView and Editor Workspace in a unified container.
+Houses WelcomeView, Editor Workspace, SettingsView, and HelpView in a unified container.
 """
 import flet as ft
 from src.ui_flet.views.welcome_view import WelcomeView
 
 
 class WorkspaceView(ft.Container):
-    def __init__(self, welcome_view: WelcomeView, editor_workspace: ft.Row, **kwargs):
+    def __init__(
+        self,
+        welcome_view: WelcomeView,
+        editor_workspace: ft.Row,
+        settings_view=None,
+        help_view=None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.welcome_view = welcome_view
         self.editor_workspace = editor_workspace
+        self.settings_view = settings_view
+        self.help_view = help_view
 
         self.expand = True
         self.content = self.welcome_view
@@ -40,3 +49,26 @@ class WorkspaceView(ft.Container):
                 self.page.update()
         except Exception:
             pass
+
+    def show_settings(self, ribbon_bar=None):
+        """Switch workspace to SettingsView."""
+        if self.settings_view is None:
+            return
+        self.content = self.settings_view
+        try:
+            if self.page:
+                self.page.update()
+        except Exception:
+            pass
+
+    def show_help(self, ribbon_bar=None):
+        """Switch workspace to HelpView."""
+        if self.help_view is None:
+            return
+        self.content = self.help_view
+        try:
+            if self.page:
+                self.page.update()
+        except Exception:
+            pass
+

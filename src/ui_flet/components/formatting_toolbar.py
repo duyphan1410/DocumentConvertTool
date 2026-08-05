@@ -157,10 +157,19 @@ class FormattingToolbar(ft.Container):
     def apply_palette(self, palette: dict, is_dark: bool):
         from src.ui_flet.theme import resolve_color
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
+        border_color = resolve_color(palette, "border_color", is_dark)
         self.heading_dropdown.border_color = accent_primary
         self.heading_dropdown.focused_border_color = accent_primary
-        self.heading_dropdown.color = accent_primary
-        self.heading_dropdown.label_style = ft.TextStyle(color=accent_primary)
+        self.heading_dropdown.color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
+        self.heading_dropdown.label_style = ft.TextStyle(color=accent_primary, size=12)
+
+        for btn in [
+            self.btn_bold, self.btn_italic, self.btn_strike, self.btn_code,
+            self.btn_codeblock, self.btn_quote, self.btn_ulist, self.btn_olist,
+            self.btn_table, self.btn_link, self.btn_image
+        ]:
+            btn.icon_color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
+
         try:
             if self.heading_dropdown.page:
                 self.heading_dropdown.update()

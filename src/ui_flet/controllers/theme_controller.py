@@ -53,6 +53,8 @@ class ThemeController:
         preview = self.app_controls.get("preview")
         right_pane = self.app_controls.get("right_pane")
         footer_bar = self.app_controls.get("footer_bar")
+        settings_view = self.app_controls.get("settings_view")
+        help_view = self.app_controls.get("help_view")
 
         if ribbon_bar:
             ribbon_bar.apply_palette(palette, is_dark)
@@ -73,7 +75,14 @@ class ThemeController:
         if footer_bar:
             footer_bar.apply_palette(palette, is_dark)
 
+        if settings_view:
+            settings_view.apply_palette(palette, is_dark)
+
+        if help_view:
+            help_view.apply_palette(palette, is_dark)
+
         try:
             self.page.update()
         except Exception:
             pass
+

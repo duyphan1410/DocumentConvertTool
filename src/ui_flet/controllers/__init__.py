@@ -7,6 +7,7 @@ from src.ui_flet.controllers.conversion_controller import ConversionController
 from src.ui_flet.controllers.editor_controller import EditorController
 from src.ui_flet.controllers.theme_controller import ThemeController
 from src.ui_flet.controllers.layout_controller import LayoutController
+from src.ui_flet.controllers.settings_controller import SettingsController
 
 __all__ = [
     "SearchController",
@@ -15,4 +16,6 @@ __all__ = [
     "EditorController",
     "ThemeController",
     "LayoutController",
+    "SettingsController",
 ]
+

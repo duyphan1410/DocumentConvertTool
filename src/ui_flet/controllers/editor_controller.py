@@ -52,11 +52,12 @@ class EditorController:
         )
         self.preview.update_preview(current_text, base_dir=base_dir)
 
-        if file_controller:
+        if file_controller and getattr(self.state, "autosave_enabled", True):
             if self._autosave_timer:
                 self._autosave_timer.cancel()
+            interval_sec = float(getattr(self.state, "autosave_interval_sec", 30))
             self._autosave_timer = threading.Timer(
-                2.0, file_controller.perform_autosave
+                interval_sec, file_controller.perform_autosave
             )
             self._autosave_timer.start()
 

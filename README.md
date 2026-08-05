@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.4.0) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.4.1) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 

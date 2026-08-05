@@ -1,0 +1,260 @@
+"""
+Settings Controller for DocConvert Workspace.
+Handles all interactions from SettingsView: palette, theme, autosave, font size, default mode.
+Saves to %APPDATA%/DocConvert/settings.json only on explicit Apply (apply_all).
+"""
+from __future__ import annotations
+
+import flet as ft
+from src.ui_flet.state import AppState
+from src.ui_flet.theme import PALETTES, apply_theme
+from src.utils.settings_store import save_settings, load_settings_into
+
+
+class SettingsController:
+    """Bridges SettingsView UI events with AppState and persistence."""
+
+    def __init__(self, page: ft.Page, state: AppState, app_controls: dict):
+        self.page = page
+        self.state = state
+        self.app_controls = app_controls
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Startup
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def load_and_apply(self):
+        """Load settings.json -> AppState -> sync SettingsView and RibbonBar controls."""
+        load_settings_into(self.state)
+        if self.state.default_mode:
+            self.state.current_mode = self.state.default_mode
+        self._sync_ribbon_dropdowns()
+        self._sync_settings_view()
+        self.apply_word_wrap()
+        theme_ctrl = self.app_controls.get("theme_controller")
+        if theme_ctrl:
+            theme_ctrl.update_theme_colors()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Explicit Apply / Discard
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def apply_all(self, e=None):
+        """Persist current AppState settings to JSON. Called when user clicks Apply."""
+        save_settings(self.state)
+        import time
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[LOG][SETTINGS][{timestamp}] Settings saved to settings.json")
+        footer_bar = self.app_controls.get("footer_bar")
+        if footer_bar:
+            footer_bar.set_status(f"Settings saved ({timestamp})", ft.Colors.GREEN_400)
+            try:
+                if self.page:
+                    self.page.update()
+            except Exception:
+                pass
+        settings_view = self.app_controls.get("settings_view")
+        if settings_view and hasattr(settings_view, "mark_clean"):
+            settings_view.mark_clean()
+
+    def discard_all(self, e=None):
+        """Reload state from JSON and revert UI. Called when user clicks Discard."""
+        load_settings_into(self.state)
+        if self.state.default_mode:
+            self.state.current_mode = self.state.default_mode
+        # Re-apply theme from restored state
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
+        theme_ctrl = self.app_controls.get("theme_controller")
+        if theme_ctrl:
+            theme_ctrl.update_theme_colors()
+        self._sync_ribbon_dropdowns()
+        self._sync_settings_view()
+        self.apply_word_wrap()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Individual setting handlers (preview-only, no JSON save)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def on_palette_changed(self, e):
+        """
+        Palette changed from SettingsView dropdown.
+        FIX: reads value directly from event/dropdown, bypasses ThemeController.on_palette_changed
+        (which reads from ribbon_bar.palette_dropdown and would overwrite our state update).
+        """
+        # 1. Read new value from event control first, fallback to settings_view dropdown
+        new_palette = None
+        if e and hasattr(e, "control") and e.control is not None:
+            new_palette = getattr(e.control, "value", None)
+        if not new_palette:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_palette_dropdown"):
+                new_palette = sv._palette_dropdown.value
+
+        if not new_palette:
+            return
+
+        # 2. Update AppState
+        self.state.current_palette = new_palette
+
+        # 3. Sync ribbon palette dropdown BEFORE applying theme
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        if ribbon_bar and hasattr(ribbon_bar, "palette_dropdown"):
+            ribbon_bar.palette_dropdown.value = new_palette
+            try:
+                if ribbon_bar.palette_dropdown.page:
+                    ribbon_bar.palette_dropdown.update()
+            except Exception:
+                pass
+
+        # 4. Apply theme & refresh all UI colors directly (bypass ThemeController.on_palette_changed)
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
+        theme_ctrl = self.app_controls.get("theme_controller")
+        if theme_ctrl:
+            theme_ctrl.update_theme_colors()
+
+    def on_theme_mode_changed(self, e):
+        """Theme mode changed from SettingsView radio group."""
+        new_mode = None
+        if e and hasattr(e, "control") and e.control is not None:
+            new_mode = getattr(e.control, "value", None)
+        if not new_mode:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_theme_radio"):
+                new_mode = sv._theme_radio.value
+
+        if not new_mode:
+            return
+
+        self.state.current_theme_mode = new_mode
+        apply_theme(self.page, self.state.current_palette, self.state.current_theme_mode)
+
+        theme_ctrl = self.app_controls.get("theme_controller")
+        if theme_ctrl:
+            theme_ctrl.update_theme_colors()
+
+        # Sync ribbon theme dropdown
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        if ribbon_bar and hasattr(ribbon_bar, "theme_mode_dropdown"):
+            ribbon_bar.theme_mode_dropdown.value = new_mode
+            try:
+                if ribbon_bar.theme_mode_dropdown.page:
+                    ribbon_bar.theme_mode_dropdown.update()
+            except Exception:
+                pass
+
+    def on_autosave_toggled(self, e):
+        """Autosave switch toggled -> update state (no JSON save yet)."""
+        sv = self.app_controls.get("settings_view")
+        if sv and hasattr(sv, "_autosave_switch"):
+            self.state.autosave_enabled = sv._autosave_switch.value
+
+    def on_autosave_interval_changed(self, e):
+        """Autosave interval changed -> update state (no JSON save yet)."""
+        # Read from event control value directly
+        val_str = None
+        if e and hasattr(e, "control") and e.control is not None:
+            val_str = getattr(e.control, "value", None)
+        if not val_str:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_autosave_interval_dropdown"):
+                val_str = sv._autosave_interval_dropdown.value
+        try:
+            self.state.autosave_interval_sec = int(val_str or "30")
+        except (ValueError, TypeError):
+            pass
+
+    def on_font_size_changed(self, value: int):
+        """Font size slider changed -> update EditorView text field (preview)."""
+        self.state.editor_font_size = value
+        editor_view = self.app_controls.get("editor_view")
+        if editor_view and hasattr(editor_view, "editor"):
+            try:
+                editor_view.editor.text_style = ft.TextStyle(size=value)
+                if editor_view.editor.page:
+                    editor_view.editor.update()
+            except Exception:
+                pass
+
+    def on_default_mode_changed(self, e):
+        """
+        Default mode dropdown changed -> update state and RibbonBar mode.
+        """
+        new_mode = None
+        if e and hasattr(e, "control") and e.control is not None:
+            new_mode = getattr(e.control, "value", None)
+        if not new_mode:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_default_mode_dropdown"):
+                new_mode = sv._default_mode_dropdown.value
+        if new_mode:
+            self.state.default_mode = new_mode
+            self.state.current_mode = new_mode
+            self._sync_ribbon_dropdowns()
+
+    def on_word_wrap_changed(self, e):
+        """Word wrap switch toggled -> update state and apply to Editor & Preview."""
+        val = None
+        if e and hasattr(e, "control") and e.control is not None:
+            val = getattr(e.control, "value", None)
+        if val is None:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_word_wrap_switch"):
+                val = sv._word_wrap_switch.value
+        if val is not None:
+            self.state.word_wrap = bool(val)
+            self.apply_word_wrap()
+
+    def apply_word_wrap(self):
+        """Applies state.word_wrap setting to both EditorView and MarkdownPreview."""
+        editor_view = self.app_controls.get("editor_view")
+        preview = self.app_controls.get("preview")
+        is_wrap = getattr(self.state, "word_wrap", True)
+
+        if editor_view and hasattr(editor_view, "set_word_wrap"):
+            try:
+                editor_view.set_word_wrap(is_wrap)
+            except Exception:
+                pass
+
+        if preview and hasattr(preview, "set_word_wrap"):
+            try:
+                preview.set_word_wrap(is_wrap)
+            except Exception:
+                pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal sync helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _sync_ribbon_dropdowns(self):
+        """Push loaded AppState values to RibbonBar selectors."""
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        if not ribbon_bar:
+            return
+        try:
+            ribbon_bar.palette_dropdown.value = self.state.current_palette
+            ribbon_bar.theme_mode_dropdown.value = self.state.current_theme_mode
+            if hasattr(ribbon_bar, "mode_dropdown"):
+                ribbon_bar.mode_dropdown.value = self.state.current_mode
+                if ribbon_bar.mode_dropdown.page:
+                    ribbon_bar.mode_dropdown.update()
+        except Exception:
+            pass
+
+        # Trigger mode change event in App if registered
+        on_mode_changed = self.app_controls.get("on_mode_changed")
+        if on_mode_changed:
+            try:
+                on_mode_changed()
+            except Exception:
+                pass
+
+    def _sync_settings_view(self):
+        """Push loaded AppState values to SettingsView controls (rebuild active panel)."""
+        sv = self.app_controls.get("settings_view")
+        if sv and hasattr(sv, "sync_from_state"):
+            try:
+                sv.sync_from_state(self.state)
+            except Exception:
+                pass
+

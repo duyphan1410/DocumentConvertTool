@@ -15,7 +15,7 @@ from src.ui_flet.state import AppState
 from src.ui_flet.constants import MODES
 
 
-from src.ui_flet.native_dialogs import confirm_overwrite_async
+from src.ui_flet.theme import PALETTES, resolve_color, get_style_color, make_border
 
 
 class ConversionController:
@@ -45,88 +45,156 @@ class ConversionController:
             self.state.out_path = out_path
             self.file_path_bar.set_out_path(out_path)
 
-        task = asyncio.create_task(self._async_check_overwrite_and_convert(out_path))
+        out_path = os.path.normpath(out_path)
+
+        task = asyncio.create_task(self._async_check_file_and_convert(out_path))
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
 
-    async def _async_check_overwrite_and_convert(self, out_path: str):
+    async def _async_check_file_and_convert(self, out_path: str):
         if os.path.exists(out_path):
-            confirmed = await confirm_overwrite_async(out_path)
-            if not confirmed:
-                self.footer_bar.set_status("Conversion cancelled", ft.Colors.AMBER_400)
+            # Reveal File Path Bar if hidden so user can inspect or change destination path
+            if not self.file_path_bar.container.visible:
+                self.file_path_bar.container.visible = True
+                try:
+                    self.file_path_bar.container.update()
+                except Exception:
+                    pass
+
+            locked = await asyncio.to_thread(is_output_locked, out_path)
+            if locked:
+                file_name = os.path.basename(out_path)
+                self.footer_bar.set_status(
+                    f"Cannot overwrite! File '{file_name}' is currently open in another program. Please close the file and try again.",
+                    ft.Colors.RED_400,
+                )
                 self.page.update()
                 return
-
-        if is_output_locked(out_path):
-            self.footer_bar.set_status(
-                "Output file locked by another application! Close target file and try again.", ft.Colors.RED_400
+            self.show_overwrite_confirmation_dialog(
+                out_path,
+                on_confirm_callback=lambda: self.start_conversion_process(out_path),
             )
-            self.page.update()
             return
 
-        self.state.is_processing = True
-        self.footer_bar.set_processing(True)
-        self.footer_bar.set_status("Converting...", ft.Colors.AMBER_400)
-        self.page.update()
+        self.start_conversion_process(out_path)
 
-        await self._async_run_conversion_worker(out_path)
+    def show_overwrite_confirmation_dialog(self, out_path: str, on_confirm_callback):
+        """Shows a Flet AlertDialog styled with current palette for file overwrite confirmation."""
+        # Clean up any previously unmounted AlertDialog instances from overlay list to prevent memory leaks
+        self.page.overlay[:] = [
+            c for c in self.page.overlay if not isinstance(c, ft.AlertDialog)
+        ]
 
-    async def confirm_overwrite_dialog(self, out_path: str) -> bool:
+        print(
+            f"[DEBUG] [BEFORE POPUP] Target file exists at '{out_path}'. Preparing Theme Overwrite Modal..."
+        )
+        palette = PALETTES.get(
+            self.state.current_palette, PALETTES.get("Violet Cyberpunk", {})
+        )
+        is_dark = self.page.theme_mode != ft.ThemeMode.LIGHT
+
+        bg_card = resolve_color(palette, "bg_component", is_dark)
+        bg_pill = resolve_color(palette, "bg_header", is_dark)
+        accent_color = resolve_color(palette, "text_accent_secondary", is_dark)
+        text_primary = get_style_color("text_primary", is_dark)
+        text_secondary = get_style_color("text_secondary", is_dark)
+        border_color = resolve_color(palette, "border_color", is_dark)
+
         file_name = os.path.basename(out_path)
-        loop = asyncio.get_running_loop()
-        fut = loop.create_future()
 
-        def _close(result: bool):
-            try:
-                self.page.close(dlg)
-            except Exception:
-                pass
-            if not fut.done():
-                fut.set_result(result)
+        def close_dialog(e, confirmed: bool):
+            print(f"[DEBUG] Closing overwrite dialog, confirmed={confirmed}")
+            dialog.open = False
+            self.page.update()
 
-        dlg = ft.AlertDialog(
+            if confirmed:
+                on_confirm_callback()
+            else:
+                self.footer_bar.set_status(
+                    "Conversion cancelled: File overwrite rejected.",
+                    ft.Colors.AMBER_400,
+                )
+
+        dialog = ft.AlertDialog(
             modal=True,
             title=ft.Row(
-                [
+                controls=[
                     ft.Icon(
-                        ft.Icons.WARNING_AMBER_ROUNDED, color=ft.Colors.AMBER_400, size=28
+                        ft.Icons.WARNING_ROUNDED, color=ft.Colors.AMBER_400, size=24
                     ),
-                    ft.Text("Confirm File Overwrite", weight=ft.FontWeight.BOLD, size=18),
+                    ft.Text(
+                        "Confirm File Overwrite",
+                        weight=ft.FontWeight.BOLD,
+                        size=18,
+                        color=text_primary,
+                    ),
                 ],
                 spacing=10,
             ),
-            content=ft.Column(
-                [
-                    ft.Text(f"The target file '{file_name}' already exists at destination:"),
-                    ft.Container(
-                        content=ft.Text(
-                            out_path, size=12, color=ft.Colors.PRIMARY, selectable=True
+            content=ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            "The target output file already exists on disk:",
+                            size=13,
+                            color=text_secondary,
                         ),
-                        padding=10,
-                        border_radius=6,
-                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                    ),
-                    ft.Text("Do you want to overwrite it?", weight=ft.FontWeight.W_500),
-                ],
-                tight=True,
-                spacing=12,
+                        ft.Container(
+                            content=ft.Text(
+                                file_name,
+                                weight=ft.FontWeight.W_600,
+                                size=13,
+                                color=accent_color,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            padding=10,
+                            bgcolor=bg_pill,
+                            border_radius=6,
+                            border=make_border(1, border_color),
+                        ),
+                        ft.Text(
+                            "Do you want to overwrite and replace this file?",
+                            size=13,
+                            color=text_secondary,
+                        ),
+                    ],
+                    tight=True,
+                    spacing=12,
+                ),
+                width=420,
             ),
             actions=[
-                ft.OutlinedButton("Cancel", on_click=lambda e: _close(False)),
-                ft.ElevatedButton(
-                    "Overwrite",
-                    icon=ft.Icons.DELETE_SWEEP_OUTLINED,
-                    bgcolor=ft.Colors.RED_700,
-                    color=ft.Colors.WHITE,
-                    on_click=lambda e: _close(True),
+                ft.TextButton(
+                    "Cancel",
+                    on_click=lambda e: close_dialog(e, False),
+                    style=ft.ButtonStyle(color=text_secondary),
+                ),
+                ft.Button(
+                    "Overwrite / Replace",
+                    icon=ft.Icons.AUTORENEW_ROUNDED,
+                    on_click=lambda e: close_dialog(e, True),
+                    style=ft.ButtonStyle(
+                        color=ft.Colors.WHITE,
+                        bgcolor=ft.Colors.RED_600,
+                    ),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=bg_card,
+            shape=ft.RoundedRectangleBorder(radius=10),
         )
 
-        self.page.open(dlg)
-        await asyncio.sleep(0.05)
-        return await fut
+        if dialog not in self.page.overlay:
+            self.page.overlay.append(dialog)
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+        print("[DEBUG] Overwrite dialog opened")
+
+    def start_conversion_process(self, out_path: str):
+        task = asyncio.create_task(self._async_run_conversion_worker(out_path))
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     async def _async_run_conversion_worker(self, out_path: str):
         t0 = time.time()

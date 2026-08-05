@@ -113,6 +113,12 @@ class FileController:
                     ft.Colors.GREEN_400,
                 )
 
+            # Ensure active Ribbon tab switches to "Edit" on successful load
+            try:
+                self.ribbon_bar.select_tab("edit", force=True)
+            except Exception as ex:
+                print(f"[DEBUG] select_tab Edit error: {ex}")
+
             self.footer_bar.set_processing(False)
             self.page.update()
 

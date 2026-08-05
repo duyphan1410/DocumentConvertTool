@@ -260,9 +260,10 @@ class RibbonBar(ft.Container):
             except Exception as ex:
                 print(f"[DEBUG] on_mode_changed error in update_mode_options: {ex}")
 
-    def _select_tab(self, tab_name: str):
-        # Click active tab again to toggle collapse/expand
-        if self.active_tab == tab_name and self.panel_container.visible:
+    def select_tab(self, tab_name: str, force: bool = False):
+        """Programmatically or manually select a ribbon tab. If force=True, never toggle-collapse."""
+        # Click active tab again to toggle collapse/expand unless force=True
+        if not force and self.active_tab == tab_name and self.panel_container.visible:
             self._toggle_collapse(None)
             return
 
@@ -312,6 +313,9 @@ class RibbonBar(ft.Container):
             self.update()
         except Exception:
             pass
+
+    def _select_tab(self, tab_name: str):
+        self.select_tab(tab_name, force=False)
 
     def deselect_all_tabs(self):
         """Collapse ribbon panel and clear active tab selection for Welcome Screen."""

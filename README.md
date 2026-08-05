@@ -10,6 +10,16 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 ---
 
+## 📥 Download
+
+Download the latest standalone executable (no Python installation required):
+
+➡️ [**Download Document Converter (v1.4.0) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+
+<small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
+
+---
+
 ## 📸 Screenshots & Themes
 
 | Dark Mode (Violet Cyberpunk) | Light Mode (Light Theme) |
@@ -26,7 +36,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 | :--- | :---: | :---: | :--- |
 | **Word (`.docx`)** | ✅ | ✅ | Styled headings, clean structure, tables |
 | **Excel (`.xlsx`)** | ✅ | ✅ | Multi-sheet parsing, frozen headers, auto-filters |
-| **PDF (`.pdf`)** | ✅ | 🔄 v2.0 | Preserved list/bullet structure, Unicode Vietnamese fonts, `@media/` slide images |
+| **PDF (`.pdf`)** | ✅ | ✅ | Preserved list/bullet structure, Unicode Vietnamese fonts, `@media/` slide images |
 | **CSV (`.csv`)** | ✅ | ✅ | Delimiter auto-detection, clean Markdown table generation |
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 

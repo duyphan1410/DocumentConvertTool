@@ -1,6 +1,7 @@
 build/
 dist/
-*.spec
+# Keep PyInstaller spec file for optimized builds
+!Document Converter.spec
 __pycache__/
 *.pyc
 .env
@@ -10,7 +11,7 @@ test.md
 venv/
 agent_instructions.md
 .gitnexus
-PROJECT_SUMMARY.md
 .gitnexusignore
 /.agents/*
 scratch/
+.vscode

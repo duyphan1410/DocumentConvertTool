@@ -2,9 +2,9 @@
 
 ---
 
-## Tổng quan hiện trạng (v1.3.1 - Pure Orchestrator MVC & Welcome Dashboard Release)
+## Tổng quan hiện trạng (v1.4.0 - Flet 3-Tier MVC, Ribbon Bar & PDF Engine Release)
 
-### ✅ Đã hoàn thành (Phase 0–5.5):
+### ✅ Đã hoàn thành (Phase 0–4.3):
 
 | Phase / Feature | Nội dung chính | Trạng thái |
 | :--- | :--- | :---: |
@@ -13,8 +13,9 @@
 | **P2 – Format Expansion** | PDF ➔ MD (stitching tables, multiline cell continuation, slide image extraction), HTML ↔ MD | ✅ Completed |
 | **P3 – Flet UI Migration** | Responsive split-pane layout, 5-Palette design tokens, instant 0ms container theme updates | ✅ Completed |
 | **P4 – Native Dialogs & 3-Tier UI** | Async Win32 FileDialog via `asyncio.to_thread`, High-DPI Per-Monitor v2, 3-Tier modular layout (`layout/`, `components/`, `views/`). | ✅ Completed |
-| **P5 – Performance & Async Load** | Tách luồng `asyncio.to_thread` nạp file không bị đơ UI, log `[BENCHMARK]`, RAM Base64 image cache (`_BASE64_CACHE` trong `preview.py`) | ✅ Completed |
-| **P5.5 – MVC Refactoring & Welcome View** | 🎯 **Tách nhỏ cấu trúc MVC (Pure Orchestrator Architecture)**:<br>- **AppState**: Quản lý duy nhất trạng thái toàn cục.<br>- **Controllers**: `file_controller`, `editor_controller`, `search_controller`, `theme_controller`, `conversion_controller`, `layout_controller`.<br>- **Welcome View**: Màn hình đón chào / Hướng dẫn Onboarding khi chưa load file (`welcome_view.py`).<br>- **Ribbon Bar 4 Tabs**: File, Edit, View, Options.<br>- **Draft Auto-path Output**: Tự động sinh đường dẫn đầu ra mặc định (`output.xlsx`, `output.docx`...) khi Convert bản nháp. | ✅ Completed |
+| **P4.2 – Pure Orchestrator MVC** | AppState, 6 Controllers (`file`, `editor`, `search`, `theme`, `conversion`, `layout`), Welcome Dashboard, Ribbon Bar 4 tabs | ✅ Completed |
+| **P4.3 – PDF Polish & Packaging** | PDF list/bullet preservation, Vietnamese font handling, HTML code fence regex auto-repair, PyInstaller `hiddenimports`, Pinned requirements | ✅ Completed |
+
 
 ---
 

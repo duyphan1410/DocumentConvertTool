@@ -27,3 +27,11 @@ class AppState:
     # Search panel state
     search_matches: list[tuple[int, int]] = field(default_factory=list)
     current_match_idx: int = -1
+
+    # User Settings (persisted to %APPDATA%\DocConvert\settings.json)
+    autosave_enabled: bool = True
+    autosave_interval_sec: int = 30
+    default_mode: str = "MD -> Excel"
+    editor_font_size: int = 13
+    show_line_numbers: bool = False
+    word_wrap: bool = True

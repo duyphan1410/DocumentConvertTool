@@ -36,6 +36,9 @@ class RibbonBar(ft.Container):
         on_toggle_status_bar: Optional[Callable] = None,
         on_insert_image: Optional[Callable] = None,
         on_ribbon_toggle: Optional[Callable] = None,
+        on_show_settings: Optional[Callable] = None,
+        on_show_help: Optional[Callable] = None,
+        on_show_editor: Optional[Callable] = None,
         search_replace_bar: Optional["SearchReplaceBar"] = None,
         **kwargs
     ):
@@ -57,6 +60,9 @@ class RibbonBar(ft.Container):
         self.on_toggle_status_bar = on_toggle_status_bar
         self.on_insert_image = on_insert_image
         self.on_ribbon_toggle = on_ribbon_toggle
+        self.on_show_settings = on_show_settings
+        self.on_show_help = on_show_help
+        self.on_show_editor = on_show_editor
         self.search_replace_bar = search_replace_bar
         self._search_visible = False
 
@@ -108,14 +114,22 @@ class RibbonBar(ft.Container):
         self.btn_tab_file = ft.TextButton("File", on_click=lambda _: self._select_tab("file"))
         self.btn_tab_edit = ft.TextButton("Edit", on_click=lambda _: self._select_tab("edit"))
         self.btn_tab_view = ft.TextButton("View", on_click=lambda _: self._select_tab("view"))
-        self.btn_tab_options = ft.TextButton("Options", on_click=lambda _: self._select_tab("options"))
+        self.btn_tab_settings = ft.TextButton("Settings", on_click=lambda _: self._select_tab("settings"))
+        self.btn_tab_help = ft.TextButton("Help", on_click=lambda _: self._select_tab("help"))
+
+        self._tabs_map = {
+            "file": self.btn_tab_file,
+            "edit": self.btn_tab_edit,
+            "view": self.btn_tab_view,
+            "settings": self.btn_tab_settings,
+            "help": self.btn_tab_help,
+        }
 
         self.btn_collapse = ft.IconButton(
             icon=ft.Icons.KEYBOARD_ARROW_UP,
             tooltip="Toggle Ribbon Collapse/Expand",
             on_click=self._toggle_collapse
         )
-
 
         self.logo_icon = ft.Icon(
             ft.Icons.AUTO_AWESOME_ROUNDED,
@@ -142,7 +156,8 @@ class RibbonBar(ft.Container):
                 self.btn_tab_file,
                 self.btn_tab_edit,
                 self.btn_tab_view,
-                self.btn_tab_options,
+                self.btn_tab_settings,
+                self.btn_tab_help,
                 ft.Container(expand=True),
                 self.mode_dropdown_container,
                 self.btn_collapse,
@@ -152,21 +167,26 @@ class RibbonBar(ft.Container):
         )
 
         # ── Tab Content Containers ───────────────────────────────────────────────
+        self.btn_tab_file_open = ft.OutlinedButton("Open Document", icon=ft.Icons.FOLDER_OPEN, on_click=self._on_browse_in_click)
+        self.btn_tab_file_save = ft.OutlinedButton("Save Destination", icon=ft.Icons.SAVE_AS, on_click=self._on_browse_out_click)
+        self.btn_tab_file_clear = ft.OutlinedButton("Clear Editor", icon=ft.Icons.DELETE_OUTLINED, on_click=self._on_clear_click)
+
         self.file_tab_content = ft.Row(
             controls=[
-                ft.OutlinedButton("Open Document", icon=ft.Icons.FOLDER_OPEN, on_click=self._on_browse_in_click),
-                ft.OutlinedButton("Save Destination", icon=ft.Icons.SAVE_AS, on_click=self._on_browse_out_click),
-                ft.OutlinedButton("Clear Editor", icon=ft.Icons.DELETE_OUTLINED, on_click=self._on_clear_click),
+                self.btn_tab_file_open,
+                self.btn_tab_file_save,
+                self.btn_tab_file_clear,
             ],
             spacing=8
         )
 
         # Edit tab: formatting toolbar row
+        self.btn_tab_edit_search = ft.OutlinedButton("Find & Replace", icon=ft.Icons.SEARCH, on_click=self._on_search_click)
         self.edit_tab_formatting = ft.Row(
             controls=[
                 self.formatting_toolbar,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                ft.OutlinedButton("Find & Replace", icon=ft.Icons.SEARCH, on_click=self._on_search_click),
+                self.btn_tab_edit_search,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=8,
@@ -180,47 +200,46 @@ class RibbonBar(ft.Container):
             spacing=4,
         )
 
+        self.btn_tab_view_preview = ft.OutlinedButton(
+            "Live Preview",
+            icon=ft.Icons.PREVIEW,
+            on_click=self._on_preview_click,
+            tooltip="Toggle Live Preview panel",
+        )
+        self.btn_tab_view_pathbar = ft.OutlinedButton(
+            "File Path Bar",
+            icon=ft.Icons.FOLDER_OUTLINED,
+            on_click=self._on_toggle_file_path_bar_click,
+            tooltip="Toggle Input/Output path bar",
+        )
+        self.btn_tab_view_editor = ft.OutlinedButton(
+            "Editor Panel",
+            icon=ft.Icons.EDIT_NOTE_OUTLINED,
+            on_click=self._on_toggle_editor_click,
+            tooltip="Toggle Editor text panel",
+        )
+        self.btn_tab_view_statusbar = ft.OutlinedButton(
+            "Status Bar",
+            icon=ft.Icons.SPACE_DASHBOARD_OUTLINED,
+            on_click=self._on_toggle_status_bar_click,
+            tooltip="Toggle bottom status/action bar",
+        )
+
         self.view_tab_content = ft.Row(
             controls=[
-                ft.OutlinedButton(
-                    "Live Preview",
-                    icon=ft.Icons.PREVIEW,
-                    on_click=self._on_preview_click,
-                    tooltip="Toggle Live Preview panel",
-                ),
+                self.btn_tab_view_preview,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                ft.OutlinedButton(
-                    "File Path Bar",
-                    icon=ft.Icons.FOLDER_OUTLINED,
-                    on_click=self._on_toggle_file_path_bar_click,
-                    tooltip="Toggle Input/Output path bar",
-                ),
-                ft.OutlinedButton(
-                    "Editor Panel",
-                    icon=ft.Icons.EDIT_NOTE_OUTLINED,
-                    on_click=self._on_toggle_editor_click,
-                    tooltip="Toggle Editor text panel",
-                ),
-                ft.OutlinedButton(
-                    "Status Bar",
-                    icon=ft.Icons.SPACE_DASHBOARD_OUTLINED,
-                    on_click=self._on_toggle_status_bar_click,
-                    tooltip="Toggle bottom status/action bar",
-                ),
+                self.btn_tab_view_pathbar,
+                self.btn_tab_view_editor,
+                self.btn_tab_view_statusbar,
             ],
             spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        self.options_tab_content = ft.Row(
-            controls=[
-                self.palette_dropdown,
-                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.theme_mode_dropdown,
-            ],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=8
-        )
+        # Settings / Help tabs: panel is collapsed (workspace view takes over)
+        self.settings_tab_content = ft.Container(height=0)
+        self.help_tab_content = ft.Container(height=0)
 
         self.panel_container = ft.Container(
             content=self.file_tab_content,
@@ -275,6 +294,8 @@ class RibbonBar(ft.Container):
         if tab_name == "file":
             self.panel_container.height = 60
             self.panel_container.content = self.file_tab_content
+            if self.on_show_editor:
+                self.on_show_editor()
         elif tab_name == "edit":
             if self._search_visible:
                 self._ensure_find_row_in_edit()
@@ -283,12 +304,27 @@ class RibbonBar(ft.Container):
                 self._remove_find_row_from_edit()
                 self.panel_container.height = 60
             self.panel_container.content = self.edit_tab_content
+            if self.on_show_editor:
+                self.on_show_editor()
         elif tab_name == "view":
             self.panel_container.height = 60
             self.panel_container.content = self.view_tab_content
-        elif tab_name == "options":
-            self.panel_container.height = 60
-            self.panel_container.content = self.options_tab_content
+            if self.on_show_editor:
+                self.on_show_editor()
+        elif tab_name == "settings":
+            # SettingsView occupies workspace — collapse ribbon panel
+            self.panel_container.visible = False
+            self.is_expanded = False
+            self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
+            if self.on_show_settings:
+                self.on_show_settings()
+        elif tab_name == "help":
+            # HelpView occupies workspace — collapse ribbon panel
+            self.panel_container.visible = False
+            self.is_expanded = False
+            self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
+            if self.on_show_help:
+                self.on_show_help()
 
         # Hide or show results container based on tab visibility
         if self.search_replace_bar:
@@ -309,6 +345,7 @@ class RibbonBar(ft.Container):
         if self.on_ribbon_toggle:
             self.on_ribbon_toggle()
 
+        self._update_tab_highlights()
         try:
             self.update()
         except Exception:
@@ -325,6 +362,7 @@ class RibbonBar(ft.Container):
         self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
         if self.on_ribbon_toggle:
             self.on_ribbon_toggle()
+        self._update_tab_highlights()
         try:
             self.update()
         except Exception:
@@ -432,13 +470,37 @@ class RibbonBar(ft.Container):
         if self.on_toggle_status_bar:
             self.on_toggle_status_bar(e)
 
+    def _update_tab_highlights(self):
+        """Highlight active tab with background container fill of palette accent_primary and clean white text."""
+        palette = getattr(self, "_current_palette", None)
+        is_dark = getattr(self, "_is_dark", True)
+        accent_primary = resolve_color(palette, "text_accent_primary", is_dark) if palette else ft.Colors.PRIMARY
+
+        for tab_name, btn in self._tabs_map.items():
+            is_active = (tab_name == self.active_tab)
+            if is_active:
+                btn.style = ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=ft.Padding(left=14, top=8, right=14, bottom=8),
+                    bgcolor=accent_primary,
+                    color=ft.Colors.WHITE,
+                )
+            else:
+                btn.style = ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=ft.Padding(left=14, top=8, right=14, bottom=8),
+                    bgcolor=None,
+                    color=ft.Colors.WHITE70 if is_dark else ft.Colors.BLACK87,
+                )
+
     def apply_palette(self, palette: dict, is_dark: bool):
-        """Apply palette colors to the Ribbon bar and its dropdowns."""
+        """Apply palette colors to the Ribbon bar, active tabs, and its dropdowns."""
+        self._current_palette = palette
+        self._is_dark = is_dark
+
         bg_header = resolve_color(palette, "bg_header", is_dark)
         bg_component = resolve_color(palette, "bg_component", is_dark)
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
-        btn_convert_fg = resolve_color(palette, "btn_convert_fg", is_dark)
-
         border_color = resolve_color(palette, "border_color", is_dark)
 
         # Ribbon bar background (header area)
@@ -449,16 +511,32 @@ class RibbonBar(ft.Container):
         # Panel container (active tab content area)
         self.panel_container.bgcolor = bg_component
 
-        # Logo icon and text accent color
+        # Logo icon and text
         self.logo_icon.color = accent_primary
-        self.logo_text.color = accent_primary
+        self.logo_text.color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
 
-        # Apply vibrant palette colors to all Ribbon dropdowns
+        # Apply clean readable styles to Ribbon dropdowns (White text, colored label & focus border)
         for dd in [self.mode_dropdown, self.palette_dropdown, self.theme_mode_dropdown]:
             dd.border_color = accent_primary
             dd.focused_border_color = accent_primary
-            dd.color = accent_primary
-            dd.label_style = ft.TextStyle(color=accent_primary)
+            dd.color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
+            dd.label_style = ft.TextStyle(color=accent_primary, size=12)
+
+        # Apply tab active highlights
+        self._update_tab_highlights()
+
+        # Style outlined buttons inside tab panel with Palette accent border and clean white text
+        for btn in [
+            self.btn_tab_file_open, self.btn_tab_file_save, self.btn_tab_file_clear,
+            self.btn_tab_edit_search,
+            self.btn_tab_view_preview, self.btn_tab_view_pathbar, self.btn_tab_view_editor, self.btn_tab_view_statusbar
+        ]:
+            if hasattr(btn, "style"):
+                btn.style = ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    color=ft.Colors.WHITE if is_dark else ft.Colors.BLACK87,
+                    side=ft.BorderSide(1, accent_primary),
+                )
 
         # Forward palette update to FormattingToolbar
         self.formatting_toolbar.apply_palette(palette, is_dark)

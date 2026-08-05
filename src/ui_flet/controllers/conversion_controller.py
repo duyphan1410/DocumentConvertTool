@@ -203,6 +203,8 @@ class ConversionController:
             mode = self.state.current_mode
             msg = await asyncio.to_thread(convert_content, mode, content, out_path)
             duration = time.time() - t0
+            timestamp = time.strftime("%H:%M:%S")
+            print(f"[LOG][SAVE/CONVERT][{timestamp}] {msg} ({duration:.2f}s) -> {out_path}")
 
             self.state.last_converted_path = out_path
             self.state.is_processing = False
@@ -214,7 +216,8 @@ class ConversionController:
             self.page.update()
         except Exception as ex:
             err_msg = str(ex)
-            print(f"[DEBUG] Conversion error: {err_msg}")
+            timestamp = time.strftime("%H:%M:%S")
+            print(f"[LOG][SAVE/CONVERT][ERROR][{timestamp}] Conversion failed: {err_msg}")
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_status(

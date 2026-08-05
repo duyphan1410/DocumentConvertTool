@@ -79,12 +79,18 @@ class EditorView:
 
 
 
+        self.editor_row = ft.Row(
+            controls=[self.editor],
+            expand=True,
+            scroll=None,
+        )
+
         self.container = ft.Container(
             content=ft.Column(
                 controls=[
                     self.toolbar,
                     self.search_replace_bar.results_container,
-                    self.editor,
+                    self.editor_row,
                 ],
                 expand=True,
             ),
@@ -93,6 +99,22 @@ class EditorView:
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
+
+    def set_word_wrap(self, enabled: bool):
+        """Toggles horizontal word wrap for the editor text field."""
+        if enabled:
+            self.editor.width = None
+            self.editor.expand = True
+            self.editor_row.scroll = None
+        else:
+            self.editor.width = 3500
+            self.editor.expand = False
+            self.editor_row.scroll = ft.ScrollMode.AUTO
+        try:
+            if self.container.page:
+                self.container.update()
+        except Exception:
+            pass
 
     def _on_selection_change(self, e: ft.TextSelectionChangeEvent):
         """Track current selection/cursor range from Flet TextField events."""

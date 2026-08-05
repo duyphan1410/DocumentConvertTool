@@ -22,7 +22,10 @@ from src.ui_flet.views.editor_view import EditorView
 from src.ui_flet.views.preview_view import MarkdownPreview
 from src.ui_flet.views.welcome_view import WelcomeView
 from src.ui_flet.views.workspace_view import WorkspaceView
+from src.ui_flet.views.settings_view import SettingsView
+from src.ui_flet.views.help_view import HelpView
 from src.ui_flet.helpers.shortcut_manager import ShortcutManager
+from src.utils import settings_store
 
 from src.ui_flet.controllers import (
     SearchController,
@@ -31,6 +34,7 @@ from src.ui_flet.controllers import (
     EditorController,
     ThemeController,
     LayoutController,
+    SettingsController,
 )
 
 
@@ -66,12 +70,17 @@ class DocumentConvertApp:
         # Application State
         self.state = AppState()
 
+        # Load persisted user settings into state before building UI
+        settings_store.load_settings_into(self.state)
+        if self.state.default_mode:
+            self.state.current_mode = self.state.default_mode
+
         # File Pickers
         self.file_picker_in = ft.FilePicker()
         self.file_picker_out = ft.FilePicker()
         self.page.services.extend([self.file_picker_in, self.file_picker_out])
 
-        # Apply Initial Theme
+        # Apply Initial Theme (uses restored palette/theme_mode from settings)
         apply_theme(
             self.page, self.state.current_palette, self.state.current_theme_mode
         )
@@ -83,6 +92,9 @@ class DocumentConvertApp:
         ShortcutManager.register(
             self.page, on_open_file=self.file_controller.trigger_browse_input
         )
+
+        # Load & sync settings into UI controls (after controls are built)
+        self.settings_controller.load_and_apply()
 
         # Restore Draft or Show Welcome Screen
         has_draft = self.file_controller.load_draft_if_exists()
@@ -117,6 +129,25 @@ class DocumentConvertApp:
             on_create_blank=lambda e: self._on_create_blank_note(e),
         )
 
+        self.settings_view = SettingsView(
+            state=self.state,
+            on_palette_changed=lambda e: self.settings_controller.on_palette_changed(e),
+            on_theme_mode_changed=lambda e: self.settings_controller.on_theme_mode_changed(e),
+            on_autosave_toggled=lambda e: self.settings_controller.on_autosave_toggled(e),
+            on_autosave_interval_changed=lambda e: self.settings_controller.on_autosave_interval_changed(e),
+            on_font_size_changed=lambda v: self.settings_controller.on_font_size_changed(v),
+            on_default_mode_changed=lambda e: self.settings_controller.on_default_mode_changed(e),
+            on_word_wrap_changed=lambda e: self.settings_controller.on_word_wrap_changed(e),
+            on_apply=lambda e: self.settings_controller.apply_all(e),
+            on_discard=lambda e: self.settings_controller.discard_all(e),
+            on_close=lambda e: self._show_editor_view(),
+        )
+
+        self.help_view = HelpView(
+            on_get_started=lambda e: self._on_get_started(e),
+            on_close=lambda e: self._show_editor_view(),
+        )
+
         self.ribbon_bar = RibbonBar(
             current_mode=self.state.current_mode,
             current_palette=self.state.current_palette,
@@ -141,6 +172,9 @@ class DocumentConvertApp:
             on_toggle_status_bar=lambda e: self.layout_controller.toggle_status_bar(e),
             on_insert_image=lambda e: self.file_controller.trigger_insert_image(e),
             on_ribbon_toggle=lambda: self.layout_controller.update_editor_dynamic_height(),
+            on_show_settings=lambda: self._show_settings_view(),
+            on_show_help=lambda: self._show_help_view(),
+            on_show_editor=lambda: self._show_editor_view(auto_select_edit=False),
             search_replace_bar=self.search_replace_bar,
         )
 
@@ -182,6 +216,8 @@ class DocumentConvertApp:
         self.workspace_view = WorkspaceView(
             welcome_view=self.welcome_view,
             editor_workspace=self.editor_workspace,
+            settings_view=self.settings_view,
+            help_view=self.help_view,
         )
 
         self.footer_bar = FooterBar(
@@ -199,9 +235,12 @@ class DocumentConvertApp:
             "footer_bar": self.footer_bar,
             "ribbon_bar": self.ribbon_bar,
             "welcome_view": self.welcome_view,
+            "settings_view": self.settings_view,
+            "help_view": self.help_view,
             "file_picker_in": self.file_picker_in,
             "file_picker_out": self.file_picker_out,
             "on_show_editor": self._show_editor_view,
+            "on_mode_changed": self._on_mode_changed,
         }
 
         # 3. Modular Controllers
@@ -219,6 +258,10 @@ class DocumentConvertApp:
             self.editor_view,
             self.ribbon_bar,
         )
+        self.settings_controller = SettingsController(self.page, self.state, app_controls)
+
+        # Back-reference so settings_controller can find theme_controller
+        app_controls["theme_controller"] = self.theme_controller
 
         # 4. Assemble Page Tree
         self.page.add(
@@ -229,11 +272,82 @@ class DocumentConvertApp:
         )
         self.theme_controller.update_theme_colors()
 
-    def _show_welcome_view(self):
-        self.workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+    # ── Unsaved Settings Guard ─────────────────────────────────────────────
 
-    def _show_editor_view(self):
-        self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar)
+    def _check_settings_unsaved(self, on_proceed):
+        """If settings_view has unsaved changes, show a Flet modal before proceeding."""
+        is_dirty = getattr(getattr(self, "settings_view", None), "_is_dirty", False)
+        if not is_dirty:
+            on_proceed()
+            return
+
+        # Build Flet 0.86.4 modal (overlay-based, synchronous callbacks)
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Row(
+                [
+                    ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.ORANGE_400, size=20),
+                    ft.Text("Unsaved Settings", weight=ft.FontWeight.BOLD),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            content=ft.Text(
+                "You have unsaved settings changes.\nDo you want to save them before leaving?",
+                size=13,
+            ),
+            actions=[
+                ft.TextButton("Save",    on_click=lambda e: _close("save")),
+                ft.TextButton("Discard", on_click=lambda e: _close("discard")),
+                ft.TextButton("Cancel",  on_click=lambda e: _close("cancel")),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        def _close(action: str):
+            dialog.open = False
+            self.page.update()
+            if action == "save":
+                self.settings_controller.apply_all()
+                on_proceed()
+            elif action == "discard":
+                self.settings_controller.discard_all()
+                on_proceed()
+            # cancel: stay on settings, do nothing
+
+        # Flet 0.86.4 modal pattern from SKILL.md
+        self.page.overlay[:] = [c for c in self.page.overlay if not isinstance(c, ft.AlertDialog)]
+        if dialog not in self.page.overlay:
+            self.page.overlay.append(dialog)
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    # ── View navigation (all guarded by unsaved-settings check) ───────────
+
+    def _show_welcome_view(self):
+        self._check_settings_unsaved(
+            lambda: self.workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+        )
+
+    def _show_editor_view(self, auto_select_edit: bool = True):
+        self._check_settings_unsaved(
+            lambda: self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar, auto_select_edit=auto_select_edit)
+        )
+
+    def _show_settings_view(self):
+        self.workspace_view.show_settings(ribbon_bar=self.ribbon_bar)
+
+    def _show_help_view(self):
+        self._check_settings_unsaved(
+            lambda: self.workspace_view.show_help(ribbon_bar=self.ribbon_bar)
+        )
+
+    def _on_get_started(self, e=None):
+        """Help view 'Get Started' CTA -> go to welcome view."""
+        self._check_settings_unsaved(
+            lambda: self.workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+        )
 
     def _on_create_blank_note(self, e=None):
         self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar)

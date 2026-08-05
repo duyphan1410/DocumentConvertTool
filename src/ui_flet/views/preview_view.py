@@ -120,10 +120,16 @@ class MarkdownPreview(ft.Container):
             soft_line_break=True
         )
 
-        self.scroll_column = ft.Column(
+        self.markdown_row = ft.Row(
             controls=[self.markdown],
+            expand=True,
+            scroll=None,
+        )
+
+        self.scroll_column = ft.Column(
+            controls=[self.markdown_row],
             scroll=ft.ScrollMode.AUTO,
-            expand=True
+            expand=True,
         )
 
         self.content = ft.Column(
@@ -135,8 +141,14 @@ class MarkdownPreview(ft.Container):
             expand=True,
         )
 
-        from src.ui_flet.theme import PALETTES
-        self.apply_palette(PALETTES["Violet Cyberpunk"], is_dark=True, palette_name="Violet Cyberpunk")
+    def set_word_wrap(self, enabled: bool):
+        """Toggles soft line breaks in MarkdownPreview cleanly."""
+        self.markdown.soft_line_break = enabled
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
 
 
     def set_content(self, markdown_text: str, base_dir: str = None):
@@ -162,19 +174,16 @@ class MarkdownPreview(ft.Container):
         self.set_content(markdown_text, base_dir=base_dir)
 
     def apply_palette(self, palette: dict, is_dark: bool, palette_name: str = ""):
-        """Apply palette accent colors and custom stylesheet for code, codeblocks, and blockquotes."""
+        """Apply palette accent colors to preview header and code themes."""
         from src.ui_flet.theme import resolve_color, get_style_color
-        key = "text_accent_primary" if palette_name == "Violet Cyberpunk" else "text_accent_secondary"
-        accent = resolve_color(palette, key, is_dark)
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
-        accent_secondary = resolve_color(palette, "text_accent_secondary", is_dark)
-        bg_code = resolve_color(palette, "bg_component", is_dark)
-        bg_quote = resolve_color(palette, "bg_header", is_dark)
         border_color = resolve_color(palette, "border_color", is_dark)
         text_primary = get_style_color("text_primary", is_dark)
+        bg_code = resolve_color(palette, "bg_component", is_dark)
+        bg_quote = resolve_color(palette, "bg_header", is_dark)
 
-        self.header_icon.color = accent
-        self.header_title.color = accent
+        self.header_icon.color = accent_primary
+        self.header_title.color = accent_primary
 
 
         code_text_color = "#ff79c6" if is_dark else "#c026d3"

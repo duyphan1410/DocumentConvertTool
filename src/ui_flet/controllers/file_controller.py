@@ -172,18 +172,36 @@ class FileController:
                         else None
                     )
                     self.preview.update_preview(draft, base_dir=base_dir)
+                    timestamp = time.strftime("%H:%M:%S")
+                    print(f"[LOG][DRAFT][{timestamp}] Loaded existing draft ({len(draft)} chars) from {DRAFT_PATH}")
                     self.footer_bar.set_status(
-                        "Loaded autosaved draft", ft.Colors.GREEN_400
+                        f"Loaded autosaved draft ({timestamp})", ft.Colors.GREEN_400
                     )
                     return True
             except Exception as e:
-                print(f"[DEBUG] Failed to load draft: {e}")
+                print(f"[LOG][DRAFT][ERROR] Failed to load draft: {e}")
         return False
 
     def perform_autosave(self):
+        if not getattr(self.state, "autosave_enabled", True):
+            return
         try:
             os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
+            text = self.editor_view.get_text()
             with open(DRAFT_PATH, "w", encoding="utf-8") as f:
-                f.write(self.editor_view.get_text())
+                f.write(text)
+
+            timestamp = time.strftime("%H:%M:%S")
+            print(f"[LOG][AUTO-SAVE][{timestamp}] Draft auto-saved ({len(text)} chars) -> {DRAFT_PATH}")
+
+            if hasattr(self, "footer_bar") and self.footer_bar:
+                self.footer_bar.set_status(
+                    f"Auto-saved draft ({timestamp})", ft.Colors.GREEN_400
+                )
+                try:
+                    if self.page:
+                        self.page.update()
+                except Exception:
+                    pass
         except Exception as e:
-            print(f"[DEBUG] Autosave error: {e}")
+            print(f"[LOG][AUTO-SAVE][ERROR] Autosave error: {e}")

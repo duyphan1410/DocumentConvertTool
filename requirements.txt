@@ -1,14 +1,14 @@
 # Core UI Framework
-flet>=0.80.0
+flet>=0.80.0,<1.0.0
 
 # Document Processing & Conversion Engines
-python-docx
-mammoth
-openpyxl
-pdfplumber
-pymupdf
-markdown2
-markdown-pdf
-Pillow
-beautifulsoup4
-Pygments
+python-docx>=1.1.0
+mammoth>=1.8.0
+openpyxl>=3.1.0
+pdfplumber>=0.11.0
+pymupdf>=1.24.0
+markdown2>=2.4.0
+markdown-pdf>=1.10.0
+Pillow>=10.0.0
+beautifulsoup4>=4.12.0
+Pygments>=2.15.0

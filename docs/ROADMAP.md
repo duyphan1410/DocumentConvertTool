@@ -31,8 +31,9 @@
 | **Multi-Tab Workspace** | `src/ui_flet/components/tab_bar.py` | Quản lý nhiều tài liệu mở song song trên các thẻ Tab theo phong cách Studio Workspace. | ⏳ Planned |
 | **Batch & ZIP Converter** | `src/services/batch_service.py` | Chuyển đổi hàng loạt tệp trong thư mục hoặc file nén `.zip`. | ⏳ Planned |
 | **Win32 Z-Order Focus Enhancement** | `src/utils/env.py` | Nâng cấp cơ chế Layer 4 FlashWindowEx để lấy tiêu điểm (Focus) mượt mà cho Microsoft Excel & Word khi mở file sau chuyển đổi (Tham khảo `FOCUS_ZORDER_ANALYSIS.md`). | ✅ Completed |
-| **Portable Markdown Image Links** | `src/services/media_asset_manager.py` | Sửa lỗi tệp Markdown xuất từ tệp có hình chỉ app nội bộ đọc được; chuẩn hóa đường dẫn ảnh (Base64 hoặc thư mục tài nguyên tương đối `_assets/`) giúp VS Code & IDE khác preview bình thường. | 🔄 In Progress |
-| **Edit Ribbon Add Image Instant Preview** | `src/ui_flet/controllers/editor_controller.py` | Sửa lỗi tính năng Add Image trên thanh Edit Ribbon sau khi chọn & gắn link ảnh chưa tự động trigger render xem trước (Instant Preview) lên màn hình preview ngay. | ⏳ Planned |
+| **Portable Markdown Image Links** | `src/services/media_asset_manager.py` | Sửa lỗi tệp Markdown xuất từ tệp có hình chỉ app nội bộ đọc được; chuẩn hóa đường dẫn ảnh tương đối `<doc_name>_assets/` giúp VS Code & IDE khác preview bình thường. | ✅ Completed |
+| **Edit Ribbon Add Image Instant Preview** | `src/ui_flet/controllers/file_controller.py` | Sửa lỗi tính năng Add Image trên thanh Edit Ribbon sau khi chọn & gắn link ảnh chưa tự động trigger render xem trước (Instant Preview) lên màn hình preview ngay. | ✅ Completed |
+| **Image Settings Dialog & Format Tab** | `src/ui_flet/views/editor_view.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh Width/Height HTML) và bổ sung Contextual Format Tab trên thanh Ribbon Bar khi thao tác với hình ảnh. | ⏳ Planned |
 
 
 ---

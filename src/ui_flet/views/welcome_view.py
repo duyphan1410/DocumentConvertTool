@@ -5,6 +5,7 @@ Displayed in the workspace center when no document or draft is currently loaded.
 import os
 import flet as ft
 from typing import Callable, Optional
+from src.i18n import t
 from src.ui_flet.theme import resolve_color, make_border
 
 
@@ -29,20 +30,20 @@ class WelcomeView(ft.Container):
             size=56,
         )
         self.title_text = ft.Text(
-            "Welcome to DocConvert Workspace",
+            t("welcome.title"),
             size=24,
             weight=ft.FontWeight.BOLD,
             text_align=ft.TextAlign.CENTER,
         )
         self.subtitle_text = ft.Text(
-            "Convert and edit Markdown, Word, Excel, PDF, CSV, and HTML seamlessly",
+            t("welcome.subtitle"),
             size=14,
             color=ft.Colors.GREY_400,
             text_align=ft.TextAlign.CENTER,
         )
 
         self.btn_open = ft.ElevatedButton(
-            "Open Document",
+            t("welcome.btn_open"),
             icon=ft.Icons.FOLDER_OPEN_ROUNDED,
             height=46,
             style=ft.ButtonStyle(
@@ -53,7 +54,7 @@ class WelcomeView(ft.Container):
         )
 
         self.btn_blank = ft.OutlinedButton(
-            "Create Blank Note",
+            t("welcome.btn_blank"),
             icon=ft.Icons.NOTE_ADD_OUTLINED,
             height=46,
             style=ft.ButtonStyle(
@@ -95,6 +96,18 @@ class WelcomeView(ft.Container):
     def _on_blank_click(self, e):
         if self.on_create_blank:
             self.on_create_blank(e)
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.title_text.value = t("welcome.title")
+        self.subtitle_text.value = t("welcome.subtitle")
+        self.btn_open.content = t("welcome.btn_open")
+        self.btn_blank.content = t("welcome.btn_blank")
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
 
     def apply_palette(self, palette: dict, is_dark: bool):
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)

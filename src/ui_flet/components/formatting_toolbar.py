@@ -5,6 +5,7 @@ Provides a Heading Selector (H1-H6) and quick Markdown formatting action buttons
 """
 import flet as ft
 from typing import Callable, Optional
+from src.i18n import t
 
 class FormattingToolbar(ft.Container):
     def __init__(
@@ -23,20 +24,20 @@ class FormattingToolbar(ft.Container):
 
         # ── Heading Level Dropdown ────────────────────────────────────────────────
         self.heading_dropdown = ft.Dropdown(
-            label="Heading",
+            label=t("format.label_heading"),
             value="0",
             width=165,
             dense=True,
             options=[
-                ft.dropdown.Option("0", "Normal Text"),
-                ft.dropdown.Option("1", "Heading 1 (#)"),
-                ft.dropdown.Option("2", "Heading 2 (##)"),
-                ft.dropdown.Option("3", "Heading 3 (###)"),
-                ft.dropdown.Option("4", "Heading 4 (####)"),
-                ft.dropdown.Option("5", "Heading 5 (#####)"),
-                ft.dropdown.Option("6", "Heading 6 (######)"),
+                ft.dropdown.Option("0", t("format.opt_normal")),
+                ft.dropdown.Option("1", t("format.opt_h1")),
+                ft.dropdown.Option("2", t("format.opt_h2")),
+                ft.dropdown.Option("3", t("format.opt_h3")),
+                ft.dropdown.Option("4", t("format.opt_h4")),
+                ft.dropdown.Option("5", t("format.opt_h5")),
+                ft.dropdown.Option("6", t("format.opt_h6")),
             ],
-            tooltip="Apply Heading Style (H1 - H6)"
+            tooltip=t("format.tooltip_heading")
         )
         self.heading_dropdown.on_change = self._handle_heading_change
         self.heading_dropdown.on_select = self._handle_heading_change
@@ -44,55 +45,55 @@ class FormattingToolbar(ft.Container):
         # ── Formatting Buttons ───────────────────────────────────────────────────
         self.btn_bold = ft.IconButton(
             icon=ft.Icons.FORMAT_BOLD,
-            tooltip="Bold (**text**)",
+            tooltip=t("format.tooltip_bold"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("**", "**")
         )
         self.btn_italic = ft.IconButton(
             icon=ft.Icons.FORMAT_ITALIC,
-            tooltip="Italic (*text*)",
+            tooltip=t("format.tooltip_italic"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("*", "*")
         )
         self.btn_strike = ft.IconButton(
             icon=ft.Icons.STRIKETHROUGH_S,
-            tooltip="Strikethrough (~~text~~)",
+            tooltip=t("format.tooltip_strike"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("~~", "~~")
         )
         self.btn_code = ft.IconButton(
             icon=ft.Icons.CODE,
-            tooltip="Inline Code (`code`)",
+            tooltip=t("format.tooltip_code"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("`", "`")
         )
         self.btn_codeblock = ft.IconButton(
             icon=ft.Icons.DATA_OBJECT,
-            tooltip="Code Block (```)",
+            tooltip=t("format.tooltip_codeblock"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("```\n", "\n```")
         )
         self.btn_quote = ft.IconButton(
             icon=ft.Icons.FORMAT_QUOTE,
-            tooltip="Blockquote (> text)",
+            tooltip=t("format.tooltip_quote"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("> ", "")
         )
         self.btn_ulist = ft.IconButton(
             icon=ft.Icons.FORMAT_LIST_BULLETED,
-            tooltip="Bullet List (- item)",
+            tooltip=t("format.tooltip_ulist"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("- ", "")
         )
         self.btn_olist = ft.IconButton(
             icon=ft.Icons.FORMAT_LIST_NUMBERED,
-            tooltip="Numbered List (1. item)",
+            tooltip=t("format.tooltip_olist"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("1. ", "")
         )
         self.btn_table = ft.IconButton(
             icon=ft.Icons.TABLE_CHART,
-            tooltip="Insert Markdown Table",
+            tooltip=t("format.tooltip_table"),
             icon_size=18,
             on_click=lambda _: self._trigger_format(
                 "\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n", ""
@@ -100,13 +101,13 @@ class FormattingToolbar(ft.Container):
         )
         self.btn_link = ft.IconButton(
             icon=ft.Icons.INSERT_LINK,
-            tooltip="Insert Hyperlink",
+            tooltip=t("format.tooltip_link"),
             icon_size=18,
             on_click=lambda _: self._trigger_format("[", "](https://)")
         )
         self.btn_image = ft.IconButton(
             icon=ft.Icons.IMAGE,
-            tooltip="Insert Image File",
+            tooltip=t("format.tooltip_image"),
             icon_size=18,
             on_click=self._trigger_image_insert
         )
@@ -173,5 +174,35 @@ class FormattingToolbar(ft.Container):
         try:
             if self.heading_dropdown.page:
                 self.heading_dropdown.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.heading_dropdown.label = t("format.label_heading")
+        self.heading_dropdown.tooltip = t("format.tooltip_heading")
+        self.heading_dropdown.options = [
+            ft.dropdown.Option("0", t("format.opt_normal")),
+            ft.dropdown.Option("1", t("format.opt_h1")),
+            ft.dropdown.Option("2", t("format.opt_h2")),
+            ft.dropdown.Option("3", t("format.opt_h3")),
+            ft.dropdown.Option("4", t("format.opt_h4")),
+            ft.dropdown.Option("5", t("format.opt_h5")),
+            ft.dropdown.Option("6", t("format.opt_h6")),
+        ]
+        self.btn_bold.tooltip = t("format.tooltip_bold")
+        self.btn_italic.tooltip = t("format.tooltip_italic")
+        self.btn_strike.tooltip = t("format.tooltip_strike")
+        self.btn_code.tooltip = t("format.tooltip_code")
+        self.btn_codeblock.tooltip = t("format.tooltip_codeblock")
+        self.btn_quote.tooltip = t("format.tooltip_quote")
+        self.btn_ulist.tooltip = t("format.tooltip_ulist")
+        self.btn_olist.tooltip = t("format.tooltip_olist")
+        self.btn_table.tooltip = t("format.tooltip_table")
+        self.btn_link.tooltip = t("format.tooltip_link")
+        self.btn_image.tooltip = t("format.tooltip_image")
+        try:
+            if self.page:
+                self.update()
         except Exception:
             pass

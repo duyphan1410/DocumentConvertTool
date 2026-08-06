@@ -10,6 +10,7 @@ import mimetypes
 import time
 import pathlib
 import flet as ft
+from src.i18n import t
 
 from src.services.media_asset_manager import MediaAssetManager
 
@@ -96,10 +97,10 @@ class MarkdownPreview(ft.Container):
         # Header elements — owned by MarkdownPreview for palette sync
         self.header_icon = ft.Icon(ft.Icons.PREVIEW, size=18)
         self.header_title = ft.Text(
-            "Live Document Preview",
+            t("preview.title"),
             weight=ft.FontWeight.W_600,
         )
-        self.doc_info_text = ft.Text("No document loaded.", size=12)
+        self.doc_info_text = ft.Text(t("preview.no_doc"), size=12)
 
         self.header_row = ft.Row(
             controls=[
@@ -112,7 +113,7 @@ class MarkdownPreview(ft.Container):
         )
 
         self.markdown = ft.Markdown(
-            value="*Document Preview Placeholder*",
+            value=t("preview.placeholder"),
             selectable=True,
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK,
@@ -147,6 +148,24 @@ class MarkdownPreview(ft.Container):
         try:
             if self.page:
                 self.update()
+        except Exception:
+            pass
+
+    def set_font_size(self, size: int):
+        """Dynamically update font size scale of MarkdownPreview stylesheet."""
+        s = float(size)
+        self.markdown.md_style_sheet = ft.MarkdownStyleSheet(
+            p_text_style=ft.TextStyle(size=s),
+            h1_text_style=ft.TextStyle(size=s * 1.8, weight=ft.FontWeight.BOLD),
+            h2_text_style=ft.TextStyle(size=s * 1.5, weight=ft.FontWeight.BOLD),
+            h3_text_style=ft.TextStyle(size=s * 1.3, weight=ft.FontWeight.BOLD),
+            h4_text_style=ft.TextStyle(size=s * 1.1, weight=ft.FontWeight.BOLD),
+            code_text_style=ft.TextStyle(size=s * 0.95, font_family="Consolas"),
+            blockquote_text_style=ft.TextStyle(size=s, italic=True),
+        )
+        try:
+            if self.markdown.page:
+                self.markdown.update()
         except Exception:
             pass
 
@@ -237,6 +256,30 @@ class MarkdownPreview(ft.Container):
 
         try:
             self.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh header title, doc info text, and placeholder to current locale."""
+        self.header_title.value = t("preview.title")
+        if not self._last_raw_text:
+            self.doc_info_text.value = t("preview.no_doc")
+            self.markdown.value = t("preview.placeholder")
+        else:
+            words = len(self._last_raw_text.split())
+            chars = len(self._last_raw_text)
+            self.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+
+        for ctrl in [self.header_title, self.doc_info_text, self.markdown]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
+        try:
+            if self.page:
+                self.update()
         except Exception:
             pass
 

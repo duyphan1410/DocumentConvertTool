@@ -4,6 +4,7 @@ Decouples search query matching, snippet rendering, range selection, and text re
 """
 import re
 import flet as ft
+from src.i18n import t
 from src.ui_flet.state import AppState
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.views.editor_view import EditorView
@@ -29,7 +30,7 @@ class SearchController:
             if not e:
                 self.state.search_matches.clear()
                 self.state.current_match_idx = -1
-                self.search_bar.set_match_label("0 matches")
+                self.search_bar.set_match_label(t("search.match_zero"))
                 self.search_bar.results_container.visible = False
                 self.search_bar.update_results([])
                 self.editor_view.editor.selection = None
@@ -60,7 +61,7 @@ class SearchController:
                     self.state.current_match_idx = idx
                     break
         self.search_bar.set_match_label(
-            f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}"
+            t("search.match_position", current=self.state.current_match_idx + 1, total=len(self.state.search_matches))
         )
         self.on_search_changed(None, keep_active_idx=True)
         self.editor_view.select_range(start, end, focus=True)
@@ -92,7 +93,7 @@ class SearchController:
             if self.state.current_match_idx < 0 or self.state.current_match_idx >= count:
                 self.state.current_match_idx = 0
             self.search_bar.set_match_label(
-                f"{self.state.current_match_idx + 1} of {count}"
+                t("search.match_position", current=self.state.current_match_idx + 1, total=count)
             )
 
             lines = content_lf.split("\n")
@@ -124,7 +125,7 @@ class SearchController:
 
             self.highlight_current_match(focus=False)
         else:
-            self.search_bar.set_match_label("0 matches")
+            self.search_bar.set_match_label(t("search.match_zero"))
 
         self.search_bar.update_results(matches_data, self.state.current_match_idx)
 
@@ -134,7 +135,7 @@ class SearchController:
                 self.state.current_match_idx + 1
             ) % len(self.state.search_matches)
             self.search_bar.set_match_label(
-                f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}"
+                t("search.match_position", current=self.state.current_match_idx + 1, total=len(self.state.search_matches))
             )
             start, end = self.state.search_matches[self.state.current_match_idx]
             self.on_search_changed(None, keep_active_idx=True)
@@ -147,7 +148,7 @@ class SearchController:
                 self.state.current_match_idx - 1
             ) % len(self.state.search_matches)
             self.search_bar.set_match_label(
-                f"{self.state.current_match_idx + 1} of {len(self.state.search_matches)}"
+                t("search.match_position", current=self.state.current_match_idx + 1, total=len(self.state.search_matches))
             )
             start, end = self.state.search_matches[self.state.current_match_idx]
             self.on_search_changed(None, keep_active_idx=True)

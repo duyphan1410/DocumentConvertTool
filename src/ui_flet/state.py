@@ -35,3 +35,4 @@ class AppState:
     editor_font_size: int = 13
     show_line_numbers: bool = False
     word_wrap: bool = True
+    language: str = "en"

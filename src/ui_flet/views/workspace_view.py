@@ -25,6 +25,8 @@ class WorkspaceView(ft.Container):
         self.content = self.welcome_view
 
     def show_welcome(self, ribbon_bar=None):
+        if hasattr(self.welcome_view, "update_locale"):
+            self.welcome_view.update_locale()
         self.content = self.welcome_view
         if ribbon_bar:
             try:
@@ -38,6 +40,13 @@ class WorkspaceView(ft.Container):
             pass
 
     def show_editor(self, ribbon_bar=None, auto_select_edit: bool = True):
+        # Update controls in editor_workspace
+        if hasattr(self.editor_workspace, "controls"):
+            for ctrl in self.editor_workspace.controls:
+                if hasattr(ctrl, "update_locale"):
+                    ctrl.update_locale()
+                elif hasattr(ctrl, "content") and hasattr(ctrl.content, "update_locale"):
+                    ctrl.content.update_locale()
         self.content = self.editor_workspace
         if auto_select_edit and ribbon_bar:
             try:
@@ -54,6 +63,8 @@ class WorkspaceView(ft.Container):
         """Switch workspace to SettingsView."""
         if self.settings_view is None:
             return
+        if hasattr(self.settings_view, "update_locale"):
+            self.settings_view.update_locale()
         self.content = self.settings_view
         try:
             if self.page:
@@ -65,6 +76,8 @@ class WorkspaceView(ft.Container):
         """Switch workspace to HelpView."""
         if self.help_view is None:
             return
+        if hasattr(self.help_view, "update_locale"):
+            self.help_view.update_locale()
         self.content = self.help_view
         try:
             if self.page:

@@ -3,6 +3,7 @@ File Path Bar component for displaying input document and destination output pat
 """
 from typing import Callable, Optional
 import flet as ft
+from src.i18n import t
 from src.ui_flet.theme import resolve_color, make_border
 
 
@@ -19,7 +20,7 @@ class FilePathBar:
 
         self.btn_browse_in = ft.IconButton(
             icon=ft.Icons.FOLDER_OPEN,
-            tooltip="Browse Input File",
+            tooltip=t("pathbar.tooltip_browse_in"),
             on_click=self.on_browse_in,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
@@ -28,7 +29,7 @@ class FilePathBar:
         )
 
         self.in_path_text = ft.TextField(
-            label="Input File Path",
+            label=t("pathbar.label_input"),
             value="",
             read_only=True,
             expand=True,
@@ -37,7 +38,7 @@ class FilePathBar:
 
         self.btn_browse_out = ft.IconButton(
             icon=ft.Icons.SAVE,
-            tooltip="Select Output Destination",
+            tooltip=t("pathbar.tooltip_browse_out"),
             on_click=self.on_browse_out,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
@@ -46,7 +47,7 @@ class FilePathBar:
         )
 
         self.out_path_text = ft.TextField(
-            label="Output Destination",
+            label=t("pathbar.label_output"),
             value="",
             expand=True,
             dense=True,
@@ -99,6 +100,17 @@ class FilePathBar:
         border = resolve_color(palette, "border_color", is_dark)
         self.container.bgcolor = bg
         self.container.border = make_border(1, border)
+        try:
+            self.container.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.btn_browse_in.tooltip = t("pathbar.tooltip_browse_in")
+        self.in_path_text.label = t("pathbar.label_input")
+        self.btn_browse_out.tooltip = t("pathbar.tooltip_browse_out")
+        self.out_path_text.label = t("pathbar.label_output")
         try:
             self.container.update()
         except Exception:

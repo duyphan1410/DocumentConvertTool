@@ -7,7 +7,8 @@ import os
 import flet as ft
 from typing import Callable, Optional, TYPE_CHECKING
 from src.__version__ import __version__
-from src.ui_flet.constants import MODES
+from src.i18n import t
+from src.ui_flet.constants import MODES, MODE_DISPLAY_KEYS
 from src.ui_flet.theme import PALETTES, resolve_color, make_border
 from src.ui_flet.components.formatting_toolbar import FormattingToolbar
 
@@ -291,6 +292,8 @@ class RibbonBar(ft.Container):
         self.panel_container.visible = True
         self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_UP
 
+        self._refresh_locale_strings()
+
         if tab_name == "file":
             self.panel_container.height = 60
             self.panel_container.content = self.file_tab_content
@@ -543,5 +546,78 @@ class RibbonBar(ft.Container):
 
         try:
             self.update()
+        except Exception:
+            pass
+
+    def _refresh_locale_strings(self):
+        """Refresh string values on ribbon tabs, buttons, tooltips, and mode dropdown."""
+        self.btn_tab_file.content = t("ribbon.tab_file")
+        self.btn_tab_edit.content = t("ribbon.tab_edit")
+        self.btn_tab_view.content = t("ribbon.tab_view")
+        self.btn_tab_settings.content = t("ribbon.tab_settings")
+        self.btn_tab_help.content = t("ribbon.tab_help")
+        self.logo_text.value = t("ribbon.logo")
+        self.btn_collapse.tooltip = t("ribbon.tooltip_collapse")
+
+        self.btn_tab_file_open.content = t("ribbon.btn_open")
+        self.btn_tab_file_save.content = t("ribbon.btn_save")
+        self.btn_tab_file_clear.content = t("ribbon.btn_clear")
+
+        self.btn_tab_edit_search.content = t("ribbon.btn_search")
+
+        self.btn_tab_view_preview.content = t("ribbon.btn_preview")
+        self.btn_tab_view_preview.tooltip = t("ribbon.tooltip_preview")
+        self.btn_tab_view_pathbar.content = t("ribbon.btn_pathbar")
+        self.btn_tab_view_pathbar.tooltip = t("ribbon.tooltip_pathbar")
+        self.btn_tab_view_editor.content = t("ribbon.btn_editor")
+        self.btn_tab_view_editor.tooltip = t("ribbon.tooltip_editor")
+        self.btn_tab_view_statusbar.content = t("ribbon.btn_statusbar")
+        self.btn_tab_view_statusbar.tooltip = t("ribbon.tooltip_statusbar")
+
+        self.mode_dropdown.label = t("ribbon.label_mode")
+        current_mode = self.mode_dropdown.value
+        current_options = [opt.key for opt in self.mode_dropdown.options]
+        self.mode_dropdown.options = [
+            ft.dropdown.Option(m, t(MODE_DISPLAY_KEYS.get(m, m))) for m in current_options
+        ]
+        self.mode_dropdown.value = current_mode
+
+        self.palette_dropdown.label = t("ribbon.label_palette")
+        self.theme_mode_dropdown.label = t("ribbon.label_theme")
+        self.theme_mode_dropdown.options = [
+            ft.dropdown.Option("Dark", t("settings.theme_dark")),
+            ft.dropdown.Option("Light", t("settings.theme_light")),
+            ft.dropdown.Option("System", t("settings.theme_system")),
+        ]
+
+        if hasattr(self.formatting_toolbar, "update_locale"):
+            self.formatting_toolbar.update_locale()
+
+    def update_locale(self):
+        """Refresh all text to current locale and force update controls."""
+        self._refresh_locale_strings()
+
+        for ctrl in [
+            self.btn_tab_file, self.btn_tab_edit, self.btn_tab_view,
+            self.btn_tab_settings, self.btn_tab_help, self.logo_text, self.btn_collapse,
+            self.btn_tab_file_open, self.btn_tab_file_save, self.btn_tab_file_clear,
+            self.btn_tab_edit_search,
+            self.btn_tab_view_preview, self.btn_tab_view_pathbar,
+            self.btn_tab_view_editor, self.btn_tab_view_statusbar,
+            self.mode_dropdown, self.palette_dropdown, self.theme_mode_dropdown
+        ]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
+        try:
+            if self.tab_strip.page:
+                self.tab_strip.update()
+            if self.panel_container.page:
+                self.panel_container.update()
+            if self.page:
+                self.update()
         except Exception:
             pass

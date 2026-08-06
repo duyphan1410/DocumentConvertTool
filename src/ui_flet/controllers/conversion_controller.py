@@ -7,6 +7,8 @@ import time
 import asyncio
 import flet as ft
 
+from src.i18n import t
+
 from src.services.conversion_service import convert_content, is_output_locked
 from src.utils.env import open_file_or_folder_foreground
 from src.ui_flet.state import AppState
@@ -31,7 +33,7 @@ class ConversionController:
         content = self.editor_view.get_text()
         if not content or not content.strip():
             self.footer_bar.set_status(
-                "Editor content is empty! Please type or load a document.",
+                t("status.empty_editor"),
                 ft.Colors.RED_400,
             )
             return
@@ -65,7 +67,7 @@ class ConversionController:
             if locked:
                 file_name = os.path.basename(out_path)
                 self.footer_bar.set_status(
-                    f"Cannot overwrite! File '{file_name}' is currently open in another program. Please close the file and try again.",
+                    t("status.file_locked", filename=file_name),
                     ft.Colors.RED_400,
                 )
                 self.page.update()
@@ -111,7 +113,7 @@ class ConversionController:
                 on_confirm_callback()
             else:
                 self.footer_bar.set_status(
-                    "Conversion cancelled: File overwrite rejected.",
+                    t("status.conversion_cancelled"),
                     ft.Colors.AMBER_400,
                 )
 
@@ -123,7 +125,7 @@ class ConversionController:
                         ft.Icons.WARNING_ROUNDED, color=ft.Colors.AMBER_400, size=24
                     ),
                     ft.Text(
-                        "Confirm File Overwrite",
+                        t("dialog.overwrite_title"),
                         weight=ft.FontWeight.BOLD,
                         size=18,
                         color=text_primary,
@@ -135,7 +137,7 @@ class ConversionController:
                 content=ft.Column(
                     controls=[
                         ft.Text(
-                            "The target output file already exists on disk:",
+                            t("dialog.overwrite_exists"),
                             size=13,
                             color=text_secondary,
                         ),
@@ -153,7 +155,7 @@ class ConversionController:
                             border=make_border(1, border_color),
                         ),
                         ft.Text(
-                            "Do you want to overwrite and replace this file?",
+                            t("dialog.overwrite_confirm"),
                             size=13,
                             color=text_secondary,
                         ),
@@ -165,12 +167,12 @@ class ConversionController:
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
+                    t("dialog.btn_cancel"),
                     on_click=lambda e: close_dialog(e, False),
                     style=ft.ButtonStyle(color=text_secondary),
                 ),
                 ft.Button(
-                    "Overwrite / Replace",
+                    t("dialog.overwrite_btn"),
                     icon=ft.Icons.AUTORENEW_ROUNDED,
                     on_click=lambda e: close_dialog(e, True),
                     style=ft.ButtonStyle(

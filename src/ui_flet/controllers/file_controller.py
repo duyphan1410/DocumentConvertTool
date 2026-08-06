@@ -157,8 +157,8 @@ class FileController:
             img_name = os.path.basename(img_path)
             alt_text = os.path.splitext(img_name)[0]
             normalized_path = img_path.replace("\\", "/")
-            token = f"![{alt_text}](file:///{normalized_path})"
-            self.editor_view.apply_formatting(token, "")
+            token = f"![{alt_text}]({normalized_path})"
+            self.editor_view.insert_image_token(token)
 
     def load_draft_if_exists(self) -> bool:
         if os.path.exists(DRAFT_PATH):

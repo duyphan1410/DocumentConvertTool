@@ -281,6 +281,36 @@ class EditorView:
         if self.on_editor_changed:
             self.on_editor_changed(None)
 
+    def insert_image_token(self, token: str):
+        """Inserts an image Markdown token into the editor, replacing selection if any, without leaving adjacent text highlighted."""
+        val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else len(val)
+        end = self.selection_end if self.selection_end is not None else start
+
+        start = max(0, min(start, len(val)))
+        end = max(start, min(end, len(val)))
+
+        # Ensure image token stands as a clean block item if inserted next to non-newline text
+        prefix_nl = "\n" if start > 0 and val[start - 1] != "\n" else ""
+        suffix_nl = "\n" if end < len(val) and val[end] != "\n" else ""
+        block_token = f"{prefix_nl}{token}{suffix_nl}"
+
+        # Replace selection if start < end, or insert at cursor 'start'
+        new_val = val[:start] + block_token + val[end:]
+        new_pos = start + len(block_token)
+
+        self.editor.value = new_val
+        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
+        self.selection_start, self.selection_end = new_pos, new_pos
+
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+
     def apply_heading(self, level: int):
         """Applies Markdown Heading (H1-H6) prefix to line(s) containing selection/cursor."""
         import re

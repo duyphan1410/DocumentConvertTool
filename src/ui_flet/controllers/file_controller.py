@@ -7,6 +7,8 @@ import time
 import asyncio
 import flet as ft
 
+from src.i18n import t
+
 from src.services.file_loader import load_document
 from src.ui_flet.constants import DRAFT_PATH, EDITOR_DISPLAY_LIMIT, MODES
 from src.ui_flet.native_dialogs import (
@@ -50,7 +52,7 @@ class FileController:
             self.editor_view.set_loading(filename)
             self.preview.set_content(f"*Loading {filename}...*")
             self.preview.doc_info_text.value = "Loading..."
-            self.footer_bar.set_status(f"Loading file: {filename}...", ft.Colors.AMBER_400)
+            self.footer_bar.set_status(t("status.file_loading", filename=filename), ft.Colors.AMBER_400)
             self.footer_bar.set_processing(True)
             self.page.update()
 
@@ -60,7 +62,7 @@ class FileController:
 
             if not res.success:
                 err_msg = res.error_short or "Failed to load document"
-                self.footer_bar.set_status(f"Load failed: {err_msg}", ft.Colors.RED_400)
+                self.footer_bar.set_status(t("status.load_failed", error=err_msg), ft.Colors.RED_400)
                 self.footer_bar.set_processing(False)
                 self.page.update()
                 return
@@ -92,7 +94,7 @@ class FileController:
 
             words = len(content.split())
             chars = len(content)
-            self.preview.doc_info_text.value = f"{words:,} words | {chars:,} chars"
+            self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
             base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
             self.preview.update_preview(content, base_dir=base_dir)
@@ -104,12 +106,12 @@ class FileController:
 
             if len(content) > EDITOR_DISPLAY_LIMIT:
                 self.footer_bar.set_status(
-                    f"File truncated (>{EDITOR_DISPLAY_LIMIT} chars) ({t_total:.2f}s)",
+                    t("status.file_truncated", limit=EDITOR_DISPLAY_LIMIT, duration=f"{t_total:.2f}"),
                     ft.Colors.ORANGE_400,
                 )
             else:
                 self.footer_bar.set_status(
-                    f"Loaded: {os.path.basename(file_path)} ({t_total:.2f}s)",
+                    t("status.file_loaded", filename=os.path.basename(file_path), duration=f"{t_total:.2f}"),
                     ft.Colors.GREEN_400,
                 )
 
@@ -120,6 +122,7 @@ class FileController:
                 print(f"[DEBUG] select_tab Edit error: {ex}")
 
             self.footer_bar.set_processing(False)
+            self.perform_autosave()
             self.page.update()
 
     def trigger_browse_output(self, e=None):
@@ -175,7 +178,7 @@ class FileController:
                     timestamp = time.strftime("%H:%M:%S")
                     print(f"[LOG][DRAFT][{timestamp}] Loaded existing draft ({len(draft)} chars) from {DRAFT_PATH}")
                     self.footer_bar.set_status(
-                        f"Loaded autosaved draft ({timestamp})", ft.Colors.GREEN_400
+                        t("status.draft_loaded", timestamp=timestamp), ft.Colors.GREEN_400
                     )
                     return True
             except Exception as e:
@@ -187,7 +190,17 @@ class FileController:
             return
         try:
             os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
-            text = self.editor_view.get_text()
+            text = self.editor_view.get_text() if self.editor_view else ""
+            if not text or not text.strip():
+                if os.path.exists(DRAFT_PATH):
+                    try:
+                        os.remove(DRAFT_PATH)
+                    except Exception:
+                        pass
+                timestamp = time.strftime("%H:%M:%S")
+                print(f"[LOG][AUTO-SAVE][{timestamp}] Draft cleared / removed")
+                return
+
             with open(DRAFT_PATH, "w", encoding="utf-8") as f:
                 f.write(text)
 
@@ -196,7 +209,7 @@ class FileController:
 
             if hasattr(self, "footer_bar") and self.footer_bar:
                 self.footer_bar.set_status(
-                    f"Auto-saved draft ({timestamp})", ft.Colors.GREEN_400
+                    t("status.draft_autosaved", timestamp=timestamp), ft.Colors.GREEN_400
                 )
                 try:
                     if self.page:

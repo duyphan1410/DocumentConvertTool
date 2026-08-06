@@ -11,6 +11,9 @@ SETTINGS_KEYS = [
     "show_line_numbers",
     "word_wrap",
     "language",
+    "show_preview",
+    "show_path_bar",
+    "show_status_bar",
 ]
 
 _appdata = os.getenv("APPDATA", os.path.expanduser("~"))

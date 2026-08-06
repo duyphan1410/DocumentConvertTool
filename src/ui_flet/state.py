@@ -36,3 +36,6 @@ class AppState:
     show_line_numbers: bool = False
     word_wrap: bool = True
     language: str = "en"
+    show_preview: bool = True
+    show_path_bar: bool = True
+    show_status_bar: bool = True

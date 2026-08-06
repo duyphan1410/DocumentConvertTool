@@ -37,6 +37,9 @@ class SettingsController:
         theme_ctrl = self.app_controls.get("theme_controller")
         if theme_ctrl:
             theme_ctrl.update_theme_colors()
+        layout_ctrl = self.app_controls.get("layout_controller")
+        if layout_ctrl and hasattr(layout_ctrl, "apply_panel_visibility"):
+            layout_ctrl.apply_panel_visibility()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Explicit Apply / Discard
@@ -78,6 +81,9 @@ class SettingsController:
         self._sync_settings_view()
         self.apply_word_wrap()
         self.apply_font_size()
+        layout_ctrl = self.app_controls.get("layout_controller")
+        if layout_ctrl and hasattr(layout_ctrl, "apply_panel_visibility"):
+            layout_ctrl.apply_panel_visibility()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Individual setting handlers (preview-only, no JSON save)

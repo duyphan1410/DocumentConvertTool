@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 import flet as ft
+from src.i18n import t
 
 from src.ui_flet.theme import resolve_color, make_border
 
@@ -30,12 +31,12 @@ class HelpView(ft.Container):
 
         # ── Internal Tab Buttons ──────────────────────────────────────────────
         self._btn_help = ft.TextButton(
-            "Help",
+            t("help.tab_help"),
             icon=ft.Icons.HELP_OUTLINE_ROUNDED,
             on_click=lambda _: self._switch_tab("help"),
         )
         self._btn_guide = ft.TextButton(
-            "User Guide",
+            t("help.tab_guide"),
             icon=ft.Icons.MENU_BOOK_ROUNDED,
             on_click=lambda _: self._switch_tab("guide"),
         )
@@ -54,20 +55,21 @@ class HelpView(ft.Container):
         )
 
         # ── Close Button ─────────────────────────────────────────────────────
-        btn_close = ft.IconButton(
+        self._btn_close = ft.IconButton(
             icon=ft.Icons.CLOSE_ROUNDED,
             icon_size=20,
-            tooltip="Close Help (Return to Editor)",
+            tooltip=t("help.tooltip_close"),
             on_click=self._on_close_click,
         )
 
         # ── Page Header ──────────────────────────────────────────────────────
+        self._title_text = ft.Text(t("help.title"), size=20, weight=ft.FontWeight.BOLD)
         header = ft.Row(
             [
                 ft.Icon(ft.Icons.HELP_CENTER_ROUNDED, color=ft.Colors.PRIMARY, size=22),
-                ft.Text("Help & User Guide", size=20, weight=ft.FontWeight.BOLD),
+                self._title_text,
                 ft.Container(expand=True),
-                btn_close,
+                self._btn_close,
             ],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -106,12 +108,12 @@ class HelpView(ft.Container):
 
     def _build_shortcuts_section(self) -> ft.Container:
         shortcuts = [
-            ("Ctrl + O", "Open document"),
-            ("Ctrl + S", "Save / Convert"),
-            ("Ctrl + Z", "Undo"),
-            ("Ctrl + Y", "Redo"),
-            ("Ctrl + F", "Find & Replace"),
-            ("Ctrl + A", "Select all text"),
+            ("Ctrl + O", t("help.sc_open")),
+            ("Ctrl + S", t("help.sc_save")),
+            ("Ctrl + Z", t("help.sc_undo")),
+            ("Ctrl + Y / Ctrl + Shift + Z", t("help.sc_redo")),
+            ("Ctrl + F", t("help.sc_find")),
+            ("Ctrl + A", t("help.sc_select_all")),
         ]
         rows = [
             ft.DataRow(cells=[
@@ -127,8 +129,8 @@ class HelpView(ft.Container):
         ]
         table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text("Shortcut", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("Action", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_shortcut"), weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_action"), weight=ft.FontWeight.BOLD)),
             ],
             rows=rows,
             column_spacing=24,
@@ -136,7 +138,7 @@ class HelpView(ft.Container):
         )
         return ft.Container(
             content=ft.Column(
-                [self._section_header("⌨  Keyboard Shortcuts"), table],
+                [self._section_header(t("help.sec_shortcuts")), table],
                 spacing=8,
             ),
         )
@@ -168,9 +170,9 @@ class HelpView(ft.Container):
         ]
         table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text("Format", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("Load", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("Save", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_format"), weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_load"), weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_save"), weight=ft.FontWeight.BOLD)),
             ],
             rows=rows,
             column_spacing=32,
@@ -178,38 +180,18 @@ class HelpView(ft.Container):
         )
         return ft.Container(
             content=ft.Column(
-                [self._section_header("📄  Format Support Matrix"), table],
+                [self._section_header(t("help.sec_matrix")), table],
                 spacing=8,
             ),
         )
 
     def _build_faq_section(self) -> ft.Container:
         faqs = [
-            (
-                "How do I convert a Word file to Markdown?",
-                "Go to File tab → Open Document, select your .docx file. The app auto-detects the format. "
-                "Choose 'Word → MD' mode in the ribbon, set an output path, then click Convert Now.",
-            ),
-            (
-                "Why is my PDF conversion blank?",
-                "PDF export requires WeasyPrint or ReportLab. Run 'pip install weasyprint' in your environment "
-                "and restart the app. A dependency warning will appear in the footer if they are missing.",
-            ),
-            (
-                "Can I edit the Markdown directly in the app?",
-                "Yes — the Editor panel is fully editable. Use the Edit tab in the ribbon for formatting shortcuts "
-                "like Heading H1–H6, Bold, Italic, and Code blocks.",
-            ),
-            (
-                "Where are my auto-saved drafts stored?",
-                "Drafts are saved to %APPDATA%\\DocConvert\\draft_autosave.md and restored automatically "
-                "when you reopen the app.",
-            ),
-            (
-                "How do I change the color theme?",
-                "Use the Settings tab in the ribbon. You can choose from 4 palettes (Violet Cyberpunk, "
-                "Emerald Obsidian, Deep Ocean, Sunset Gold) and switch between Dark, Light, or System mode.",
-            ),
+            (t("help.faq_q1"), t("help.faq_a1")),
+            (t("help.faq_q2"), t("help.faq_a2")),
+            (t("help.faq_q3"), t("help.faq_a3")),
+            (t("help.faq_q4"), t("help.faq_a4")),
+            (t("help.faq_q5"), t("help.faq_a5")),
         ]
 
         panels = [
@@ -230,7 +212,7 @@ class HelpView(ft.Container):
 
         return ft.Container(
             content=ft.Column(
-                [self._section_header("❓  Frequently Asked Questions"), panel_list],
+                [self._section_header(t("help.sec_faq")), panel_list],
                 spacing=8,
             ),
         )
@@ -239,33 +221,28 @@ class HelpView(ft.Container):
         steps = [
             (
                 ft.Icons.FOLDER_OPEN_ROUNDED,
-                "Step 1 — Open a Document",
-                "Click 'Open Document' in the File tab or press Ctrl+O. "
-                "Supported formats: .md, .docx, .xlsx, .csv, .pdf, .html",
+                t("help.step1_title"),
+                t("help.step1_desc"),
             ),
             (
                 ft.Icons.TRANSFORM,
-                "Step 2 — Choose a Conversion Mode",
-                "Select your target format from the mode dropdown (e.g. 'Word → MD'). "
-                "The mode is automatically suggested based on the file you opened.",
+                t("help.step2_title"),
+                t("help.step2_desc"),
             ),
             (
                 ft.Icons.SAVE_AS,
-                "Step 3 — Set Output Path",
-                "The output path is pre-filled automatically. You can browse to a custom location "
-                "using 'Save Destination' in the File tab.",
+                t("help.step3_title"),
+                t("help.step3_desc"),
             ),
             (
                 ft.Icons.PLAY_CIRCLE_OUTLINE,
-                "Step 4 — Convert",
-                "Click the 'CONVERT NOW' button in the action bar at the bottom. "
-                "A progress bar shows conversion status.",
+                t("help.step4_title"),
+                t("help.step4_desc"),
             ),
             (
                 ft.Icons.OPEN_IN_NEW,
-                "Step 5 — Open Your Result",
-                "Once complete, use the 'Open File' or 'Open Folder' buttons to access your output. "
-                "The converted file can be found at the path shown in the status bar.",
+                t("help.step5_title"),
+                t("help.step5_desc"),
             ),
         ]
 
@@ -302,7 +279,7 @@ class HelpView(ft.Container):
             step_cards.append(card)
 
         cta_button = ft.FilledButton(
-            "Get Started →",
+            t("help.btn_get_started"),
             icon=ft.Icons.ROCKET_LAUNCH_ROUNDED,
             height=44,
             style=ft.ButtonStyle(
@@ -316,7 +293,7 @@ class HelpView(ft.Container):
 
         return ft.Column(
             [
-                self._section_header("🚀  Quick Start Guide"),
+                self._section_header(t("help.sec_guide")),
                 *step_cards,
                 ft.Container(height=8),
                 ft.Row([cta_button], alignment=ft.MainAxisAlignment.CENTER),
@@ -376,6 +353,21 @@ class HelpView(ft.Container):
         border = resolve_color(palette, "border_color", is_dark)
         self.bgcolor = bg
         self.border = make_border(1, border)
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh header title, tabs, tooltip, and inner content in HelpView."""
+        self._btn_help.content = t("help.tab_help")
+        self._btn_guide.content = t("help.tab_guide")
+        self._btn_close.tooltip = t("help.tooltip_close")
+        self._title_text.value = t("help.title")
+        self._content_area.content = (
+            self._build_help_tab() if self._active_tab == "help" else self._build_guide_tab()
+        )
         try:
             if self.page:
                 self.update()

@@ -24,6 +24,20 @@ MODES = {
     "HTML -> MD":   {"in_ext": ".html", "out_ext": ".md",   "in_label": "File .html", "out_label": "Save .md"},
 }
 
+# i18n display labels for mode dropdown — maps internal key → locale key
+MODE_DISPLAY_KEYS = {
+    "MD -> Excel":  "mode.md_to_excel",
+    "MD -> Word":   "mode.md_to_word",
+    "MD -> CSV":    "mode.md_to_csv",
+    "MD -> PDF":    "mode.md_to_pdf",
+    "MD -> HTML":   "mode.md_to_html",
+    "Excel -> MD":  "mode.excel_to_md",
+    "Word -> MD":   "mode.word_to_md",
+    "CSV -> MD":    "mode.csv_to_md",
+    "PDF -> MD":    "mode.pdf_to_md",
+    "HTML -> MD":   "mode.html_to_md",
+}
+
 IN_FILETYPES = {
     ".md":   ["md"],
     ".xlsx": ["xlsx", "xls"],

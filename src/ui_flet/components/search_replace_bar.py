@@ -3,6 +3,7 @@ Search & Replace UI Panel Component.
 """
 from typing import Callable
 import flet as ft
+from src.i18n import t
 
 
 class SearchReplaceBar:
@@ -23,30 +24,30 @@ class SearchReplaceBar:
         self.on_match_click = on_match_click
 
         self.search_input = ft.TextField(
-            label="Find",
+            label=t("search.label_find"),
             dense=True,
             expand=True,
             on_submit=self.on_find_next,
             on_change=self.on_search_changed,
         )
         self.replace_input = ft.TextField(
-            label="Replace",
+            label=t("search.label_replace"),
             dense=True,
             expand=True,
             on_submit=self.on_replace,
         )
         self.chk_regex = ft.Checkbox(
-            label="Regex",
+            label=t("search.chk_regex"),
             value=False,
             on_change=self.on_search_changed,
         )
         self.chk_case = ft.Checkbox(
-            label="Match Case",
+            label=t("search.chk_case"),
             value=False,
             on_change=self.on_search_changed,
         )
         self.lbl_search_match = ft.Text(
-            "0 matches",
+            t("search.match_zero"),
             size=12,
             color=ft.Colors.GREY_500,
         )
@@ -71,32 +72,38 @@ class SearchReplaceBar:
         # ── Toggle Replace ▼/▲ ───────────────────────────────────────────────
         self.btn_toggle_replace = ft.IconButton(
             icon=ft.Icons.EXPAND_MORE,
-            tooltip="Show Replace options",
+            tooltip=t("search.tooltip_toggle_replace"),
             on_click=self._toggle_replace_row,
         )
+
+        self.btn_replace = ft.ElevatedButton(content=ft.Text(t("search.btn_replace")), on_click=self.on_replace)
+        self.btn_replace_all = ft.ElevatedButton(content=ft.Text(t("search.btn_replace_all")), on_click=self.on_replace_all)
 
         self.replace_row = ft.Row(
             controls=[
                 self.replace_input,
-                ft.ElevatedButton("Replace", on_click=self.on_replace),
-                ft.ElevatedButton("Replace All", on_click=self.on_replace_all),
+                self.btn_replace,
+                self.btn_replace_all,
             ],
         )
 
         # ── Find Row (inline in Ribbon) ──────────────────────────────────────
+        self.btn_prev = ft.IconButton(
+            ft.Icons.NAVIGATE_BEFORE,
+            tooltip=t("search.tooltip_prev"),
+            on_click=self.on_find_prev,
+        )
+        self.btn_next = ft.IconButton(
+            ft.Icons.NAVIGATE_NEXT,
+            tooltip=t("search.tooltip_next"),
+            on_click=self.on_find_next,
+        )
+
         self.find_row = ft.Row(
             controls=[
                 self.search_input,
-                ft.IconButton(
-                    ft.Icons.NAVIGATE_BEFORE,
-                    tooltip="Find Previous",
-                    on_click=self.on_find_prev,
-                ),
-                ft.IconButton(
-                    ft.Icons.NAVIGATE_NEXT,
-                    tooltip="Find Next",
-                    on_click=self.on_find_next,
-                ),
+                self.btn_prev,
+                self.btn_next,
                 self.chk_regex,
                 self.chk_case,
                 self.btn_toggle_replace,
@@ -222,12 +229,55 @@ class SearchReplaceBar:
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST if is_active else None,
                     on_click=make_click_handler(start, end),
                     ink=True,
-                    tooltip="Click to jump to match line in Editor",
+                    tooltip=t("search.tooltip_match_jump"),
                 )
                 self.results_column.controls.append(item)
 
         try:
             if self.results_container.page:
                 self.results_container.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.search_input.label = t("search.label_find")
+        self.replace_input.label = t("search.label_replace")
+        self.chk_regex.label = t("search.chk_regex")
+        self.chk_case.label = t("search.chk_case")
+        self.btn_toggle_replace.tooltip = t("search.tooltip_toggle_replace")
+        
+        if hasattr(self.btn_replace, "content"):
+            if isinstance(self.btn_replace.content, ft.Text):
+                self.btn_replace.content.value = t("search.btn_replace")
+            else:
+                self.btn_replace.content = ft.Text(t("search.btn_replace"))
+
+        if hasattr(self.btn_replace_all, "content"):
+            if isinstance(self.btn_replace_all.content, ft.Text):
+                self.btn_replace_all.content.value = t("search.btn_replace_all")
+            else:
+                self.btn_replace_all.content = ft.Text(t("search.btn_replace_all"))
+
+        self.btn_prev.tooltip = t("search.tooltip_prev")
+        self.btn_next.tooltip = t("search.tooltip_next")
+
+        try:
+            if self.search_input.page:
+                self.search_input.update()
+            if self.replace_input.page:
+                self.replace_input.update()
+            if self.chk_regex.page:
+                self.chk_regex.update()
+            if self.chk_case.page:
+                self.chk_case.update()
+            if self.btn_replace.page:
+                self.btn_replace.update()
+            if self.btn_replace_all.page:
+                self.btn_replace_all.update()
+            if self.find_container.page:
+                self.find_container.update()
+            if self.replace_container.page:
+                self.replace_container.update()
         except Exception:
             pass

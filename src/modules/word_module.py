@@ -309,11 +309,22 @@ class WordModule(BaseDocumentModule):
             if "!" in line or "<img" in line:
                 img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
                 img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
-                src_url = None
-                if img_match_md:
-                    src_url = img_match_md.group(2)
-                elif img_match_html:
-                    src_url = img_match_html.group(1)
+                match = img_match_md or img_match_html
+                if match:
+                    text_before = line[:match.start()].strip()
+                    text_after = line[match.end():].strip()
+                    src_url = match.group(2) if match == img_match_md else match.group(1)
+
+                    if text_before or text_after:
+                        # Split inline image from surrounding text so no heading/paragraph text is lost
+                        lines[i] = text_before if text_before else f"![image]({src_url})"
+                        insert_offset = 1
+                        if text_before:
+                            lines.insert(i + insert_offset, f"![image]({src_url})")
+                            insert_offset += 1
+                        if text_after:
+                            lines.insert(i + insert_offset, text_after)
+                        continue
 
                 if src_url:
                     img_path = asset_mgr.resolve_uri(src_url)

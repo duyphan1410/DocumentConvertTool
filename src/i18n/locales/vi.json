@@ -10,6 +10,7 @@
   "welcome.subtitle": "Chuyển đổi và chỉnh sửa Markdown, Word, Excel, PDF, CSV và HTML dễ dàng",
   "welcome.btn_open": "Mở tài liệu",
   "welcome.btn_blank": "Tạo tài liệu trống",
+  "welcome.drag_drop_hint": "Kéo & Thả tệp bất kỳ vào cửa sổ để mở tự động",
   "preview.title": "Xem trước tài liệu",
   "preview.no_doc": "Chưa tải tài liệu.",
   "preview.placeholder": "*Khung Xem trước tài liệu*",

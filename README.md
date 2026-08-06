@@ -42,6 +42,8 @@ Download the latest standalone executable (no Python installation required):
 
 ### 🎨 Modern Flet UI & Architecture
 * **3-Tier Pure MVC Architecture**: Clean decoupling between `Views`, `Controllers` (6 specialized controllers), `AppState`, and `Layout`.
+* **Production Error Handling & Modal System**: Standardized `DocumentError` domain exceptions (10 `ErrorCode`s), `ErrorMapper` stage context, and theme-aware `MessageDialog` modals with Error ID tracking and one-click copy.
+* **Single Responsibility Autosave Draft Protection**: Preserves `draft_autosave.md` safely across welcome screens, startup, and file loads; cancels pending timers before text clear.
 * **Office Ribbon Navbar**: 4-tab navigation (`File`, `Edit`, `View`, `Options`) with zero-layout-shift collapsing.
 * **Welcome Dashboard & Quick Open**: Instant onboarding card for new notes / quick document opening (`Ctrl+O`).
 * **Live Document Preview**: Real-time Base64 RAM cache & dynamic image scaling with zero UI freezing (`asyncio.to_thread`).
@@ -78,7 +80,8 @@ The output executable will be created at `dist/Document Converter.exe`.
 
 - **v1.0 — Core Engines**: Initial Word, Excel, CSV, PDF, HTML conversion modules.
 - **v1.3 — Flet Desktop Migration**: Responsive split-pane layout, 5-palette theme engine, async loader.
-- **v1.4 — Pure MVC & PDF Engine Polish (Current)**: 3-Tier MVC architecture (6 Controllers), Welcome Dashboard, Office Ribbon Bar, PDF list preservation & Vietnamese font fix, PyInstaller spec & dependency hardening.
+- **v1.4 — Pure MVC & PDF Engine Polish**: 3-Tier MVC architecture (6 Controllers), Welcome Dashboard, Office Ribbon Bar, PDF list preservation & Vietnamese font fix.
+- **v1.6 — Production Error Handling & Draft Protection (Current)**: 10 `ErrorCode`s, `ErrorMapper`, `MessageDialog` modal UI with `safe_set_clipboard`, 30-day log rotation, single-responsibility autosave draft protection & timer safety.
 - **v2.0 — Studio Workspace (Planned)**: Activity Bar (48px), File Tree Explorer, Multi-Tab workspace, Web SaaS & Installer packaging.
 
 > [!NOTE]

@@ -271,9 +271,10 @@ class DocumentConvertApp:
         )
         self.settings_controller = SettingsController(self.page, self.state, app_controls)
 
-        # Back-reference so controllers can find theme_controller and file_controller
+        # Back-reference so controllers can find theme_controller, file_controller, search_replace_bar
         app_controls["theme_controller"] = self.theme_controller
         app_controls["file_controller"] = self.file_controller
+        app_controls["search_replace_bar"] = self.search_replace_bar
 
         # 4. Assemble Page Tree
         self.page.add(

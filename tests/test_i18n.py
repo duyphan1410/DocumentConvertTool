@@ -113,9 +113,12 @@ class TestI18nSystem(unittest.TestCase):
 
         ribbon = RibbonBar(search_replace_bar=search_bar)
         ribbon.update_locale()
-        self.assertEqual(ribbon.btn_tab_file.content, "Tệp")
-        self.assertEqual(ribbon.btn_tab_edit.content, "Chỉnh sửa")
-        self.assertEqual(ribbon.btn_tab_view.content, "Hiển thị")
+        val_file = ribbon.btn_tab_file.content.value if isinstance(ribbon.btn_tab_file.content, ft.Text) else ribbon.btn_tab_file.content
+        val_edit = ribbon.btn_tab_edit.content.value if isinstance(ribbon.btn_tab_edit.content, ft.Text) else ribbon.btn_tab_edit.content
+        val_view = ribbon.btn_tab_view.content.value if isinstance(ribbon.btn_tab_view.content, ft.Text) else ribbon.btn_tab_view.content
+        self.assertEqual(val_file, "Tệp")
+        self.assertEqual(val_edit, "Chỉnh sửa")
+        self.assertEqual(val_view, "Hiển thị")
 
         footer = FooterBar()
         footer.update_locale()

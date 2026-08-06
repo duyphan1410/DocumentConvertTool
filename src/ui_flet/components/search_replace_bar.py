@@ -76,28 +76,34 @@ class SearchReplaceBar:
             on_click=self._toggle_replace_row,
         )
 
+        self.btn_replace = ft.ElevatedButton(content=ft.Text(t("search.btn_replace")), on_click=self.on_replace)
+        self.btn_replace_all = ft.ElevatedButton(content=ft.Text(t("search.btn_replace_all")), on_click=self.on_replace_all)
+
         self.replace_row = ft.Row(
             controls=[
                 self.replace_input,
-                ft.ElevatedButton(t("search.btn_replace"), on_click=self.on_replace),
-                ft.ElevatedButton(t("search.btn_replace_all"), on_click=self.on_replace_all),
+                self.btn_replace,
+                self.btn_replace_all,
             ],
         )
 
         # ── Find Row (inline in Ribbon) ──────────────────────────────────────
+        self.btn_prev = ft.IconButton(
+            ft.Icons.NAVIGATE_BEFORE,
+            tooltip=t("search.tooltip_prev"),
+            on_click=self.on_find_prev,
+        )
+        self.btn_next = ft.IconButton(
+            ft.Icons.NAVIGATE_NEXT,
+            tooltip=t("search.tooltip_next"),
+            on_click=self.on_find_next,
+        )
+
         self.find_row = ft.Row(
             controls=[
                 self.search_input,
-                ft.IconButton(
-                    ft.Icons.NAVIGATE_BEFORE,
-                    tooltip=t("search.tooltip_prev"),
-                    on_click=self.on_find_prev,
-                ),
-                ft.IconButton(
-                    ft.Icons.NAVIGATE_NEXT,
-                    tooltip=t("search.tooltip_next"),
-                    on_click=self.on_find_next,
-                ),
+                self.btn_prev,
+                self.btn_next,
                 self.chk_regex,
                 self.chk_case,
                 self.btn_toggle_replace,
@@ -240,14 +246,35 @@ class SearchReplaceBar:
         self.chk_regex.label = t("search.chk_regex")
         self.chk_case.label = t("search.chk_case")
         self.btn_toggle_replace.tooltip = t("search.tooltip_toggle_replace")
-        # Replace buttons are inside replace_row, rebuild text
-        for ctrl in self.replace_row.controls:
-            if isinstance(ctrl, (ft.ElevatedButton, ft.Button)):
-                if "replace_all" in (ctrl.on_click.__name__ if hasattr(ctrl.on_click, '__name__') else ''):
-                    ctrl.content = t("search.btn_replace_all")
-                else:
-                    ctrl.content = t("search.btn_replace")
+        
+        if hasattr(self.btn_replace, "content"):
+            if isinstance(self.btn_replace.content, ft.Text):
+                self.btn_replace.content.value = t("search.btn_replace")
+            else:
+                self.btn_replace.content = ft.Text(t("search.btn_replace"))
+
+        if hasattr(self.btn_replace_all, "content"):
+            if isinstance(self.btn_replace_all.content, ft.Text):
+                self.btn_replace_all.content.value = t("search.btn_replace_all")
+            else:
+                self.btn_replace_all.content = ft.Text(t("search.btn_replace_all"))
+
+        self.btn_prev.tooltip = t("search.tooltip_prev")
+        self.btn_next.tooltip = t("search.tooltip_next")
+
         try:
+            if self.search_input.page:
+                self.search_input.update()
+            if self.replace_input.page:
+                self.replace_input.update()
+            if self.chk_regex.page:
+                self.chk_regex.update()
+            if self.chk_case.page:
+                self.chk_case.update()
+            if self.btn_replace.page:
+                self.btn_replace.update()
+            if self.btn_replace_all.page:
+                self.btn_replace_all.update()
             if self.find_container.page:
                 self.find_container.update()
             if self.replace_container.page:

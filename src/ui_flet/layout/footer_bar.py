@@ -72,6 +72,16 @@ class FooterBar:
     def _on_copy_error(self, e):
         err_text = self.status_text.value or ""
         if err_text:
+            page = getattr(e, "page", None) or getattr(self.container, "page", None)
+            if page:
+                try:
+                    page.clipboard = err_text
+                except Exception:
+                    try:
+                        if hasattr(page, "set_clipboard"):
+                            page.set_clipboard(err_text)
+                    except Exception:
+                        pass
             import sys, subprocess
             try:
                 if sys.platform == "win32":

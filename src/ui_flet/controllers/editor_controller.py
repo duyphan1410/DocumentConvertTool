@@ -131,10 +131,11 @@ class EditorController:
             self.state.is_undo_redo_op = False
 
     def clear_editor(self, e=None):
-        """
-        Clears editor text buffer.
-        FIX: Preserves Undo history so clearing text can be UNDONE via Ctrl+Z!
-        """
+        # Cancel any pending autosave timer to prevent race conditions writing old text
+        if self._autosave_timer:
+            self._autosave_timer.cancel()
+            self._autosave_timer = None
+
         current_text = self.editor_view.get_text()
         if current_text and current_text.strip():
             # Push current text to undo stack before clearing so user can Ctrl+Z!
@@ -157,4 +158,4 @@ class EditorController:
 
         file_controller = self.app_controls.get("file_controller")
         if file_controller:
-            file_controller.perform_autosave()
+            file_controller.clear_draft_file()

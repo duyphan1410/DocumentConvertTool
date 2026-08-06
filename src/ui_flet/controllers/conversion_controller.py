@@ -217,15 +217,21 @@ class ConversionController:
             )
             self.page.update()
         except Exception as ex:
-            err_msg = str(ex)
+            from src.core.error_mapper import ErrorMapper
+            from src.ui_flet.components.message_dialog import show_message_dialog
+
+            doc_err = ErrorMapper.map_exception(ex, context_path=out_path, stage="write")
             timestamp = time.strftime("%H:%M:%S")
-            print(f"[LOG][SAVE/CONVERT][ERROR][{timestamp}] Conversion failed: {err_msg}")
+            print(f"[LOG][SAVE/CONVERT][ERROR][{timestamp}] Conversion failed: {doc_err.to_log_string()}")
+
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_status(
-                f"Conversion failed: {err_msg}", ft.Colors.RED_400
+                f"Lỗi chuyển đổi: {doc_err.title}", ft.Colors.RED_400
             )
             self.page.update()
+
+            show_message_dialog(self.page, doc_err)
 
     def open_converted_file(self, e=None):
         if self.state.last_converted_path and os.path.exists(

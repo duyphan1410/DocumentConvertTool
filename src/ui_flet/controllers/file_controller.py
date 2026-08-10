@@ -46,46 +46,6 @@ class FileController:
         if file_path:
             await self.open_file_by_path(file_path)
 
-    async def handle_dropped_files(self, file_paths: list[str]):
-        """
-        Pre-validates and handles dropped files from Drag & Drop event.
-        Opens the first valid document and notifies user if multiple files were dropped.
-        """
-        if not file_paths:
-            return
-
-        first_valid = None
-        last_error = None
-
-        for path in file_paths:
-            try:
-                valid_p = validate_file_pipeline(path)
-                first_valid = valid_p
-                break
-            except DocumentError as de:
-                if last_error is None:
-                    last_error = de
-            except Exception as exc:
-                if last_error is None:
-                    last_error = ErrorMapper.map_exception(exc, context_path=path, stage="read")
-
-        if not first_valid:
-            if last_error:
-                show_message_dialog(self.page, last_error)
-            return
-
-        if len(file_paths) > 1:
-            fn = os.path.basename(first_valid)
-            snack = ft.SnackBar(
-                content=ft.Text(f"Đã mở tệp đầu tiên '{fn}'. Hiện ứng dụng xử lý 1 tệp mỗi lần."),
-                bgcolor=ft.Colors.BLUE_700,
-            )
-            self.page.overlay.append(snack)
-            snack.open = True
-            self.page.update()
-
-        await self.open_file_by_path(first_valid)
-
     async def open_file_by_path(self, file_path: str):
         """
         Loads document from file_path into the editor workspace.

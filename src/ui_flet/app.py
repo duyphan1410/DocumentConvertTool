@@ -18,7 +18,6 @@ from src.ui_flet.state import AppState
 from src.ui_flet.theme import apply_theme
 from src.ui_flet.layout.footer_bar import FooterBar
 from src.ui_flet.layout.ribbon_bar import RibbonBar
-from src.ui_flet.components.drag_drop_overlay import DragDropOverlay
 from src.ui_flet.components.file_path_bar import FilePathBar
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.views.editor_view import EditorView
@@ -278,20 +277,11 @@ class DocumentConvertApp:
         app_controls["search_replace_bar"] = self.search_replace_bar
         app_controls["layout_controller"] = self.layout_controller
 
-        self.drag_drop_overlay = DragDropOverlay()
-        self.main_stack = ft.Stack(
-            controls=[
-                self.workspace_view,
-                self.drag_drop_overlay,
-            ],
-            expand=True,
-        )
-
         # 4. Assemble Page Tree
         self.page.add(
             self.ribbon_bar,
             self.file_path_bar.container,
-            self.main_stack,
+            self.workspace_view,
             self.footer_bar.container,
         )
         self.theme_controller.update_theme_colors()

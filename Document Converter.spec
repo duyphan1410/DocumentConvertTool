@@ -3,6 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [
     ('assets', 'assets'),
+    ('src/i18n/locales', 'src/i18n/locales'),
 ]
 binaries = []
 hiddenimports = [
@@ -12,7 +13,6 @@ hiddenimports = [
     'src.ui_flet.native_dialogs',
     'src.ui_flet.theme',
     'src.ui_flet.layout.ribbon_bar',
-    'src.ui_flet.layout.header_bar',
     'src.ui_flet.layout.footer_bar',
     'src.ui_flet.components.file_path_bar',
     'src.ui_flet.components.search_replace_bar',
@@ -84,6 +84,7 @@ a = Analysis(
         'pdb',
         'flet.cli',
         'flet.pytest_plugin',
+        'flet.testing',
         'tkinter.test',
     ],
     noarchive=False,

@@ -67,6 +67,9 @@ class FilePathBar:
             visible=False,
         )
 
+        self._in_ext = ".md"
+        self._out_ext = ".docx"
+
     def set_in_path(self, path: str):
         self.in_path_text.value = path
         if self.in_path_text.page:
@@ -81,6 +84,9 @@ class FilePathBar:
         if not label_or_ext:
             return
         ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        self._out_ext = ext
         self.out_path_text.label = t("pathbar.out_label", ext=ext)
         if self.out_path_text.page:
             self.out_path_text.update()
@@ -89,6 +95,9 @@ class FilePathBar:
         if not label_or_ext:
             return
         ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        self._in_ext = ext
         self.in_path_text.label = t("pathbar.in_label", ext=ext)
         if self.in_path_text.page:
             self.in_path_text.update()
@@ -115,10 +124,18 @@ class FilePathBar:
         self.btn_browse_in.tooltip = t("pathbar.tooltip_browse_in")
         self.btn_browse_out.tooltip = t("pathbar.tooltip_browse_out")
         if in_ext:
-            self.set_in_label(in_ext)
+            self._in_ext = in_ext if in_ext.startswith(".") else f".{in_ext}"
         if out_ext:
-            self.set_out_label(out_ext)
+            self._out_ext = out_ext if out_ext.startswith(".") else f".{out_ext}"
+        self.in_path_text.label = t("pathbar.in_label", ext=self._in_ext)
+        self.out_path_text.label = t("pathbar.out_label", ext=self._out_ext)
+        for ctrl in [self.in_path_text, self.out_path_text, self.btn_browse_in, self.btn_browse_out]:
+            try:
+                ctrl.update()
+            except Exception:
+                pass
         try:
-            self.container.update()
+            if self.container.page:
+                self.container.update()
         except Exception:
             pass

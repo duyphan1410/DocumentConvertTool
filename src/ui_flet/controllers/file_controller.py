@@ -303,20 +303,26 @@ class FileController:
 
         # 7. Set Detailed Footer Status with Duration Benchmark
         if missing_in_file:
-            self.footer_bar.set_status(
-                t("status.draft_restored_missing", filename=missing_filename, duration=dur_str),
-                ft.Colors.ORANGE_400,
+            self.footer_bar.set_status_key(
+                "status.draft_restored_missing",
+                color=ft.Colors.ORANGE_400,
+                filename=missing_filename,
+                duration=dur_str,
             )
         elif self.state.in_path:
             filename = os.path.basename(self.state.in_path)
-            self.footer_bar.set_status(
-                t("status.draft_restored_file", filename=filename, duration=dur_str),
-                ft.Colors.GREEN_400,
+            self.footer_bar.set_status_key(
+                "status.draft_restored_file",
+                color=ft.Colors.GREEN_400,
+                filename=filename,
+                duration=dur_str,
             )
         else:
-            self.footer_bar.set_status(
-                t("status.draft_restored_untitled", timestamp=timestamp, duration=dur_str),
-                ft.Colors.GREEN_400,
+            self.footer_bar.set_status_key(
+                "status.draft_restored_untitled",
+                color=ft.Colors.GREEN_400,
+                timestamp=timestamp,
+                duration=dur_str,
             )
 
         try:

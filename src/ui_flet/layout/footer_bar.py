@@ -94,7 +94,19 @@ class FooterBar:
                 print(f"[DEBUG] Clipboard copy failed: {ex}")
             self.set_status(t("footer.status_copied"), ft.Colors.GREEN_400)
 
-    def set_status(self, text: str, color=None, is_error: bool = False):
+    def set_status_key(self, key: str, color=None, is_error: bool = False, **kwargs):
+        """Set status using an i18n key so it automatically updates when language changes."""
+        self._current_status_key = key
+        self._current_status_kwargs = kwargs
+        self._current_status_color = color
+        self._current_status_is_error = is_error
+        text = t(key, **kwargs)
+        self.set_status(text, color=color, is_error=is_error, _from_key=True)
+
+    def set_status(self, text: str, color=None, is_error: bool = False, _from_key: bool = False):
+        if not _from_key:
+            self._current_status_key = None
+            self._current_status_kwargs = {}
         self.status_text.value = text
         if color:
             self.status_text.color = color
@@ -170,11 +182,13 @@ class FooterBar:
 
     def update_locale(self):
         """Refresh all text to current locale."""
-        self.btn_convert.content = t("footer.btn_convert")
-        self.btn_open_file.content = t("footer.btn_open_file")
-        self.btn_open_folder.content = t("footer.btn_open_folder")
-        self.btn_copy_error.content = t("footer.btn_copy_error")
-        if self.status_text.value in ("Ready", "Sẵn sàng"):
+        self.btn_convert.text = t("footer.btn_convert")
+        self.btn_open_file.text = t("footer.btn_open_file")
+        self.btn_open_folder.text = t("footer.btn_open_folder")
+        self.btn_copy_error.text = t("footer.btn_copy_error")
+        if hasattr(self, "_current_status_key") and self._current_status_key:
+            self.status_text.value = t(self._current_status_key, **self._current_status_kwargs)
+        elif self.status_text.value in ("Ready", "Sẵn sàng", t("footer.status_ready")):
             self.status_text.value = t("footer.status_ready")
 
         for ctrl in [self.btn_convert, self.btn_open_file, self.btn_open_folder, self.btn_copy_error, self.status_text]:

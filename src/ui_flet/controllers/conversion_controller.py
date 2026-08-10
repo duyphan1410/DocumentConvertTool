@@ -117,33 +117,30 @@ class ConversionController:
         def handle_cancel(e):
             print(f"[DEBUG] Overwrite canceled by user.")
             dialog.open = False
-            self.footer_bar.set_status_key(
-                "status.conversion_cancelled",
-                color=ft.Colors.AMBER_400,
+            self.footer_bar.set_status(
+                t("status.conversion_cancelled"),
+                ft.Colors.AMBER_400,
             )
             # Ensure File Path Bar is visible & focus on output path field for easy manual editing
             if not self.file_path_bar.container.visible:
                 self.file_path_bar.container.visible = True
 
+            val = self.file_path_bar.out_path_text.value or ""
+            try:
+                if val:
+                    base_dir, filename = os.path.split(val)
+                    name_no_ext, ext = os.path.splitext(filename)
+                    start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
+                    end_idx = start_idx + len(name_no_ext)
+                    self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
+            except Exception as sel_ex:
+                print(f"[DEBUG] TextSelection error: {sel_ex}")
             self.page.update()
 
-            async def _deferred_focus_selection():
-                await asyncio.sleep(0.06)
-                val = self.file_path_bar.out_path_text.value or ""
-                if val:
-                    try:
-                        base_dir, filename = os.path.split(val)
-                        name_no_ext, ext = os.path.splitext(filename)
-                        start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
-                        end_idx = start_idx + len(name_no_ext)
-                        self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
-                        if self.file_path_bar.out_path_text.page:
-                            self.file_path_bar.out_path_text.focus()
-                            self.page.update()
-                    except Exception as sel_ex:
-                        print(f"[DEBUG] TextSelection error: {sel_ex}")
-
-            asyncio.create_task(_deferred_focus_selection())
+            try:
+                asyncio.create_task(self.file_path_bar.out_path_text.focus())
+            except Exception as ex:
+                print(f"[DEBUG] Failed to focus out_path_text: {ex}")
 
         def handle_save_new(e):
             print(f"[DEBUG] 1-Click Save as New selected: '{new_path}'")

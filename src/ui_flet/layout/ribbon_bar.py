@@ -7,7 +7,8 @@ import os
 import flet as ft
 from typing import Callable, Optional, TYPE_CHECKING
 from src.__version__ import __version__
-from src.ui_flet.constants import MODES
+from src.i18n import t
+from src.ui_flet.constants import MODES, MODE_DISPLAY_KEYS
 from src.ui_flet.theme import PALETTES, resolve_color, make_border
 from src.ui_flet.components.formatting_toolbar import FormattingToolbar
 
@@ -167,9 +168,9 @@ class RibbonBar(ft.Container):
         )
 
         # ── Tab Content Containers ───────────────────────────────────────────────
-        self.btn_tab_file_open = ft.OutlinedButton("Open Document", icon=ft.Icons.FOLDER_OPEN, on_click=self._on_browse_in_click)
-        self.btn_tab_file_save = ft.OutlinedButton("Save Destination", icon=ft.Icons.SAVE_AS, on_click=self._on_browse_out_click)
-        self.btn_tab_file_clear = ft.OutlinedButton("Clear Editor", icon=ft.Icons.DELETE_OUTLINED, on_click=self._on_clear_click)
+        self.btn_tab_file_open = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_open")), icon=ft.Icons.FOLDER_OPEN, on_click=self._on_browse_in_click)
+        self.btn_tab_file_save = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_save")), icon=ft.Icons.SAVE_AS, on_click=self._on_browse_out_click)
+        self.btn_tab_file_clear = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_clear")), icon=ft.Icons.DELETE_OUTLINED, on_click=self._on_clear_click)
 
         self.file_tab_content = ft.Row(
             controls=[
@@ -181,7 +182,7 @@ class RibbonBar(ft.Container):
         )
 
         # Edit tab: formatting toolbar row
-        self.btn_tab_edit_search = ft.OutlinedButton("Find & Replace", icon=ft.Icons.SEARCH, on_click=self._on_search_click)
+        self.btn_tab_edit_search = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_search")), icon=ft.Icons.SEARCH, on_click=self._on_search_click)
         self.edit_tab_formatting = ft.Row(
             controls=[
                 self.formatting_toolbar,
@@ -201,28 +202,28 @@ class RibbonBar(ft.Container):
         )
 
         self.btn_tab_view_preview = ft.OutlinedButton(
-            "Live Preview",
+            content=ft.Text(t("ribbon.btn_preview")),
             icon=ft.Icons.PREVIEW,
             on_click=self._on_preview_click,
-            tooltip="Toggle Live Preview panel",
+            tooltip=t("ribbon.tooltip_preview"),
         )
         self.btn_tab_view_pathbar = ft.OutlinedButton(
-            "File Path Bar",
+            content=ft.Text(t("ribbon.btn_pathbar")),
             icon=ft.Icons.FOLDER_OUTLINED,
             on_click=self._on_toggle_file_path_bar_click,
-            tooltip="Toggle Input/Output path bar",
+            tooltip=t("ribbon.tooltip_pathbar"),
         )
         self.btn_tab_view_editor = ft.OutlinedButton(
-            "Editor Panel",
+            content=ft.Text(t("ribbon.btn_editor")),
             icon=ft.Icons.EDIT_NOTE_OUTLINED,
             on_click=self._on_toggle_editor_click,
-            tooltip="Toggle Editor text panel",
+            tooltip=t("ribbon.tooltip_editor"),
         )
         self.btn_tab_view_statusbar = ft.OutlinedButton(
-            "Status Bar",
+            content=ft.Text(t("ribbon.btn_statusbar")),
             icon=ft.Icons.SPACE_DASHBOARD_OUTLINED,
             on_click=self._on_toggle_status_bar_click,
-            tooltip="Toggle bottom status/action bar",
+            tooltip=t("ribbon.tooltip_statusbar"),
         )
 
         self.view_tab_content = ft.Row(
@@ -261,8 +262,8 @@ class RibbonBar(ft.Container):
         self.border_radius = 10
         self.padding = ft.Padding(left=10, top=6, right=10, bottom=6)
 
-    def update_mode_options(self, input_ext: str = ""):
-        """Updates available modes in Ribbon mode dropdown."""
+    def update_mode_options(self, input_ext: str = "", preferred_mode: str = ""):
+        """Updates available modes in Ribbon mode dropdown, prioritizing preferred_mode if valid."""
         if not input_ext:
             valid_modes = list(MODES.keys())
         else:
@@ -270,7 +271,13 @@ class RibbonBar(ft.Container):
             if not valid_modes:
                 valid_modes = list(MODES.keys())
         self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
-        self.mode_dropdown.value = valid_modes[0]
+        if preferred_mode and preferred_mode in valid_modes:
+            self.mode_dropdown.value = preferred_mode
+        elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
+            pass
+        else:
+            self.mode_dropdown.value = valid_modes[0]
+
         if self.mode_dropdown.page:
             self.mode_dropdown.update()
         if self.on_mode_changed:
@@ -290,6 +297,8 @@ class RibbonBar(ft.Container):
         self.is_expanded = True
         self.panel_container.visible = True
         self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_UP
+
+        self._refresh_locale_strings()
 
         if tab_name == "file":
             self.panel_container.height = 60
@@ -543,5 +552,89 @@ class RibbonBar(ft.Container):
 
         try:
             self.update()
+        except Exception:
+            pass
+
+    def _refresh_locale_strings(self):
+        """Refresh string values on ribbon tabs, buttons, tooltips, and mode dropdown."""
+        def set_btn_text(btn, text_key):
+            if hasattr(btn, "content"):
+                if isinstance(btn.content, ft.Text):
+                    btn.content.value = t(text_key)
+                else:
+                    btn.content = ft.Text(t(text_key))
+
+        set_btn_text(self.btn_tab_file, "ribbon.tab_file")
+        set_btn_text(self.btn_tab_edit, "ribbon.tab_edit")
+        set_btn_text(self.btn_tab_view, "ribbon.tab_view")
+        set_btn_text(self.btn_tab_settings, "ribbon.tab_settings")
+        set_btn_text(self.btn_tab_help, "ribbon.tab_help")
+
+        set_btn_text(self.btn_tab_file_open, "ribbon.btn_open")
+        set_btn_text(self.btn_tab_file_save, "ribbon.btn_save")
+        set_btn_text(self.btn_tab_file_clear, "ribbon.btn_clear")
+
+        set_btn_text(self.btn_tab_edit_search, "ribbon.btn_search")
+
+        set_btn_text(self.btn_tab_view_preview, "ribbon.btn_preview")
+        set_btn_text(self.btn_tab_view_pathbar, "ribbon.btn_pathbar")
+        set_btn_text(self.btn_tab_view_editor, "ribbon.btn_editor")
+        set_btn_text(self.btn_tab_view_statusbar, "ribbon.btn_statusbar")
+
+        self.logo_text.value = t("ribbon.logo")
+        self.btn_collapse.tooltip = t("ribbon.tooltip_collapse")
+
+        self.btn_tab_view_preview.tooltip = t("ribbon.tooltip_preview")
+        self.btn_tab_view_pathbar.tooltip = t("ribbon.tooltip_pathbar")
+        self.btn_tab_view_editor.tooltip = t("ribbon.tooltip_editor")
+        self.btn_tab_view_statusbar.tooltip = t("ribbon.tooltip_statusbar")
+
+        self.mode_dropdown.label = t("ribbon.label_mode")
+        current_mode = self.mode_dropdown.value
+        current_options = [opt.key for opt in self.mode_dropdown.options]
+        self.mode_dropdown.options = [
+            ft.dropdown.Option(m, t(MODE_DISPLAY_KEYS.get(m, m))) for m in current_options
+        ]
+        self.mode_dropdown.value = current_mode
+
+        self.palette_dropdown.label = t("ribbon.label_palette")
+        self.theme_mode_dropdown.label = t("ribbon.label_theme")
+        self.theme_mode_dropdown.options = [
+            ft.dropdown.Option("Dark", t("settings.theme_dark")),
+            ft.dropdown.Option("Light", t("settings.theme_light")),
+            ft.dropdown.Option("System", t("settings.theme_system")),
+        ]
+
+        if hasattr(self.formatting_toolbar, "update_locale"):
+            self.formatting_toolbar.update_locale()
+        if hasattr(self.search_replace_bar, "update_locale"):
+            self.search_replace_bar.update_locale()
+
+    def update_locale(self):
+        """Refresh all text to current locale and force update controls."""
+        self._refresh_locale_strings()
+
+        for ctrl in [
+            self.btn_tab_file, self.btn_tab_edit, self.btn_tab_view,
+            self.btn_tab_settings, self.btn_tab_help, self.logo_text, self.btn_collapse,
+            self.btn_tab_file_open, self.btn_tab_file_save, self.btn_tab_file_clear,
+            self.btn_tab_edit_search,
+            self.btn_tab_view_preview, self.btn_tab_view_pathbar,
+            self.btn_tab_view_editor, self.btn_tab_view_statusbar,
+            self.mode_dropdown, self.palette_dropdown, self.theme_mode_dropdown
+        ]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
+        try:
+            if self.tab_strip.page:
+                self.tab_strip.update()
+            if self.panel_container.page:
+                self.panel_container.update()
+            if self.page:
+                self.update()
         except Exception:
             pass

@@ -4,6 +4,7 @@ Contains Convert Action button, Open File/Folder buttons, Progress bar, and Stat
 """
 from typing import Callable, Optional
 import flet as ft
+from src.i18n import t
 from src.ui_flet.theme import resolve_color, make_border
 
 
@@ -19,7 +20,7 @@ class FooterBar:
         self.on_open_folder = on_open_folder
 
         self.btn_convert = ft.ElevatedButton(
-            "CONVERT NOW",
+            t("footer.btn_convert"),
             icon=ft.Icons.TRANSFORM,
             on_click=self.on_convert_clicked,
             style=ft.ButtonStyle(
@@ -29,26 +30,26 @@ class FooterBar:
             ),
         )
         self.btn_open_file = ft.ElevatedButton(
-            "Open File",
+            t("footer.btn_open_file"),
             icon=ft.Icons.OPEN_IN_NEW,
             visible=False,
             on_click=self.on_open_file,
         )
         self.btn_open_folder = ft.ElevatedButton(
-            "Open Folder",
+            t("footer.btn_open_folder"),
             icon=ft.Icons.FOLDER_OPEN,
             visible=False,
             on_click=self.on_open_folder,
         )
         self.btn_copy_error = ft.ElevatedButton(
-            "Copy Error",
+            t("footer.btn_copy_error"),
             icon=ft.Icons.COPY,
             visible=False,
             style=ft.ButtonStyle(color=ft.Colors.RED_400),
             on_click=self._on_copy_error,
         )
         self.progress_bar = ft.ProgressBar(visible=False, expand=True)
-        self.status_text = ft.Text("Ready", size=13)
+        self.status_text = ft.Text(t("footer.status_ready"), size=13)
 
         self.container = ft.Container(
             content=ft.Row(
@@ -71,6 +72,16 @@ class FooterBar:
     def _on_copy_error(self, e):
         err_text = self.status_text.value or ""
         if err_text:
+            page = getattr(e, "page", None) or getattr(self.container, "page", None)
+            if page:
+                try:
+                    page.clipboard = err_text
+                except Exception:
+                    try:
+                        if hasattr(page, "set_clipboard"):
+                            page.set_clipboard(err_text)
+                    except Exception:
+                        pass
             import sys, subprocess
             try:
                 if sys.platform == "win32":
@@ -81,7 +92,7 @@ class FooterBar:
                     subprocess.run(["xclip", "-selection", "clipboard"], input=err_text, text=True, encoding="utf-8")
             except Exception as ex:
                 print(f"[DEBUG] Clipboard copy failed: {ex}")
-            self.set_status("Error copied to clipboard!", ft.Colors.GREEN_400)
+            self.set_status(t("footer.status_copied"), ft.Colors.GREEN_400)
 
     def set_status(self, text: str, color=None, is_error: bool = False):
         self.status_text.value = text
@@ -154,5 +165,27 @@ class FooterBar:
 
         try:
             self.container.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.btn_convert.content = t("footer.btn_convert")
+        self.btn_open_file.content = t("footer.btn_open_file")
+        self.btn_open_folder.content = t("footer.btn_open_folder")
+        self.btn_copy_error.content = t("footer.btn_copy_error")
+        if self.status_text.value in ("Ready", "Sẵn sàng"):
+            self.status_text.value = t("footer.status_ready")
+
+        for ctrl in [self.btn_convert, self.btn_open_file, self.btn_open_folder, self.btn_copy_error, self.status_text]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
+        try:
+            if self.container.page:
+                self.container.update()
         except Exception:
             pass

@@ -7,6 +7,8 @@ import time
 import asyncio
 import flet as ft
 
+from src.i18n import t
+
 from src.services.conversion_service import convert_content, is_output_locked
 from src.utils.env import open_file_or_folder_foreground
 from src.ui_flet.state import AppState
@@ -31,7 +33,7 @@ class ConversionController:
         content = self.editor_view.get_text()
         if not content or not content.strip():
             self.footer_bar.set_status(
-                "Editor content is empty! Please type or load a document.",
+                t("status.empty_editor"),
                 ft.Colors.RED_400,
             )
             return
@@ -65,7 +67,7 @@ class ConversionController:
             if locked:
                 file_name = os.path.basename(out_path)
                 self.footer_bar.set_status(
-                    f"Cannot overwrite! File '{file_name}' is currently open in another program. Please close the file and try again.",
+                    t("status.file_locked", filename=file_name),
                     ft.Colors.RED_400,
                 )
                 self.page.update()
@@ -102,18 +104,57 @@ class ConversionController:
 
         file_name = os.path.basename(out_path)
 
-        def close_dialog(e, confirmed: bool):
-            print(f"[DEBUG] Closing overwrite dialog, confirmed={confirmed}")
+        # 1-Click Smart Auto-Rename unique path calculation
+        base_dir, orig_name = os.path.split(out_path)
+        name_no_ext, ext = os.path.splitext(orig_name)
+        counter = 1
+        new_path = os.path.join(base_dir, f"{name_no_ext}_{counter}{ext}")
+        while os.path.exists(new_path):
+            counter += 1
+            new_path = os.path.join(base_dir, f"{name_no_ext}_{counter}{ext}")
+        new_filename = os.path.basename(new_path)
+
+        def handle_cancel(e):
+            print(f"[DEBUG] Overwrite canceled by user.")
             dialog.open = False
+            self.footer_bar.set_status(
+                t("status.conversion_cancelled"),
+                ft.Colors.AMBER_400,
+            )
+            # Ensure File Path Bar is visible & focus on output path field for easy manual editing
+            if not self.file_path_bar.container.visible:
+                self.file_path_bar.container.visible = True
+
+            val = self.file_path_bar.out_path_text.value or ""
+            try:
+                if val:
+                    base_dir, filename = os.path.split(val)
+                    name_no_ext, ext = os.path.splitext(filename)
+                    start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
+                    end_idx = start_idx + len(name_no_ext)
+                    self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
+            except Exception as sel_ex:
+                print(f"[DEBUG] TextSelection error: {sel_ex}")
             self.page.update()
 
-            if confirmed:
-                on_confirm_callback()
-            else:
-                self.footer_bar.set_status(
-                    "Conversion cancelled: File overwrite rejected.",
-                    ft.Colors.AMBER_400,
-                )
+            try:
+                asyncio.create_task(self.file_path_bar.out_path_text.focus())
+            except Exception as ex:
+                print(f"[DEBUG] Failed to focus out_path_text: {ex}")
+
+        def handle_save_new(e):
+            print(f"[DEBUG] 1-Click Save as New selected: '{new_path}'")
+            dialog.open = False
+            self.state.out_path = new_path
+            self.file_path_bar.set_out_path(new_path)
+            self.page.update()
+            self.start_conversion_process(new_path)
+
+        def handle_overwrite(e):
+            print(f"[DEBUG] Overwrite confirmed for target file: '{out_path}'")
+            dialog.open = False
+            self.page.update()
+            on_confirm_callback()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -123,7 +164,7 @@ class ConversionController:
                         ft.Icons.WARNING_ROUNDED, color=ft.Colors.AMBER_400, size=24
                     ),
                     ft.Text(
-                        "Confirm File Overwrite",
+                        t("dialog.overwrite_title"),
                         weight=ft.FontWeight.BOLD,
                         size=18,
                         color=text_primary,
@@ -135,7 +176,7 @@ class ConversionController:
                 content=ft.Column(
                     controls=[
                         ft.Text(
-                            "The target output file already exists on disk:",
+                            t("dialog.overwrite_exists"),
                             size=13,
                             color=text_secondary,
                         ),
@@ -153,7 +194,7 @@ class ConversionController:
                             border=make_border(1, border_color),
                         ),
                         ft.Text(
-                            "Do you want to overwrite and replace this file?",
+                            t("dialog.overwrite_confirm"),
                             size=13,
                             color=text_secondary,
                         ),
@@ -161,18 +202,24 @@ class ConversionController:
                     tight=True,
                     spacing=12,
                 ),
-                width=420,
+                width=460,
             ),
             actions=[
                 ft.TextButton(
-                    "Cancel",
-                    on_click=lambda e: close_dialog(e, False),
+                    t("dialog.btn_cancel"),
+                    on_click=handle_cancel,
                     style=ft.ButtonStyle(color=text_secondary),
                 ),
+                ft.OutlinedButton(
+                    t("dialog.btn_save_new", filename=new_filename),
+                    icon=ft.Icons.COPY_ROUNDED,
+                    on_click=handle_save_new,
+                    style=ft.ButtonStyle(color=accent_color),
+                ),
                 ft.Button(
-                    "Overwrite / Replace",
+                    t("dialog.overwrite_btn"),
                     icon=ft.Icons.AUTORENEW_ROUNDED,
-                    on_click=lambda e: close_dialog(e, True),
+                    on_click=handle_overwrite,
                     style=ft.ButtonStyle(
                         color=ft.Colors.WHITE,
                         bgcolor=ft.Colors.RED_600,
@@ -215,15 +262,21 @@ class ConversionController:
             )
             self.page.update()
         except Exception as ex:
-            err_msg = str(ex)
+            from src.core.error_mapper import ErrorMapper
+            from src.ui_flet.components.message_dialog import show_message_dialog
+
+            doc_err = ErrorMapper.map_exception(ex, context_path=out_path, stage="write")
             timestamp = time.strftime("%H:%M:%S")
-            print(f"[LOG][SAVE/CONVERT][ERROR][{timestamp}] Conversion failed: {err_msg}")
+            print(f"[LOG][SAVE/CONVERT][ERROR][{timestamp}] Conversion failed: {doc_err.to_log_string()}")
+
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_status(
-                f"Conversion failed: {err_msg}", ft.Colors.RED_400
+                f"Lỗi chuyển đổi: {doc_err.title}", ft.Colors.RED_400
             )
             self.page.update()
+
+            show_message_dialog(self.page, doc_err)
 
     def open_converted_file(self, e=None):
         if self.state.last_converted_path and os.path.exists(

@@ -141,14 +141,90 @@ class MediaAssetManager:
 
     def export_assets(self, markdown_content: str, target_markdown_path: str) -> str:
         """
-        Ensures all images referenced in Markdown content are safely stored in AppData cache
-        and saved with absolute AppData paths so no local _media folders need to be created.
+        Ensures all images referenced in Markdown content are copied into a relative
+        `<doc_name>_assets` directory next to the target markdown file, rewriting image
+        links to portable relative paths (`./<doc_name>_assets/filename.png`).
+        Resolves both `@media/` cache URIs and external absolute disk paths.
         """
-        if not markdown_content:
+        if not markdown_content or "![" not in markdown_content or "](" not in markdown_content:
             return markdown_content
 
-        base_dir = os.path.dirname(target_markdown_path)
-        return self.import_local_images(markdown_content, base_dir)
+        import re
+
+        target_dir = os.path.dirname(target_markdown_path)
+        doc_stem = os.path.splitext(os.path.basename(target_markdown_path))[0]
+        if not doc_stem or doc_stem == ".":
+            doc_stem = "document"
+
+        assets_dir_name = f"{doc_stem}_assets"
+        assets_dir = os.path.join(target_dir, assets_dir_name)
+
+        def _get_file_hash(filepath: str) -> str:
+            try:
+                hasher = hashlib.md5()
+                with open(filepath, "rb") as f:
+                    for chunk in iter(lambda: f.read(65536), b""):
+                        hasher.update(chunk)
+                return hasher.hexdigest()
+            except Exception:
+                return ""
+
+        copied_hashes: dict[str, str] = {}  # hash -> final_filename mapping
+
+        def replacer(match):
+            alt = match.group(1)
+            src = match.group(2)
+
+            if src.startswith(("http://", "https://", "data:")):
+                return match.group(0)
+
+            resolved = self.resolve_uri(src)
+            if not os.path.exists(resolved) and target_dir:
+                candidate = os.path.join(target_dir, src)
+                if os.path.exists(candidate):
+                    resolved = candidate
+
+            if os.path.exists(resolved) and os.path.isfile(resolved):
+                try:
+                    os.makedirs(assets_dir, exist_ok=True)
+                    src_hash = _get_file_hash(resolved)
+                    
+                    # If this exact content hash was already copied to assets_dir in this run:
+                    if src_hash and src_hash in copied_hashes:
+                        final_filename = copied_hashes[src_hash]
+                        return f"![{alt}](./{assets_dir_name}/{final_filename})"
+
+                    base_filename = os.path.basename(resolved)
+                    name_stem, ext = os.path.splitext(base_filename)
+                    final_filename = base_filename
+                    dest_path = os.path.join(assets_dir, final_filename)
+
+                    # Deduplicate collisions with different file contents
+                    counter = 1
+                    while os.path.exists(dest_path):
+                        dest_hash = _get_file_hash(dest_path)
+                        if src_hash and dest_hash == src_hash:
+                            # Identical file already exists on disk
+                            break
+                        final_filename = f"{name_stem}_{counter}{ext}"
+                        dest_path = os.path.join(assets_dir, final_filename)
+                        counter += 1
+
+                    if not os.path.exists(dest_path):
+                        shutil.copy2(resolved, dest_path)
+
+                    if src_hash:
+                        copied_hashes[src_hash] = final_filename
+
+                    return f"![{alt}](./{assets_dir_name}/{final_filename})"
+                except Exception as e:
+                    print(f"[DEBUG] MediaAssetManager: Failed to export asset '{resolved}': {e}")
+                    return match.group(0)
+
+            return match.group(0)
+
+        image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+        return re.sub(image_pattern, replacer, markdown_content)
 
     DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
 

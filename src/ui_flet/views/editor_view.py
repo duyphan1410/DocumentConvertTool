@@ -3,6 +3,7 @@ Editor Workspace View component for editing document text content.
 """
 from typing import Callable, Optional
 import flet as ft
+from src.i18n import t
 from src.ui_flet.theme import STYLE, resolve_color, make_border
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 
@@ -28,26 +29,26 @@ class EditorView:
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
-            tooltip="Open Document (Ctrl+O)",
+            tooltip=t("editor.tooltip_open"),
             on_click=self.on_open_file,
         )
         self.btn_undo = ft.IconButton(
             ft.Icons.UNDO,
-            tooltip="Undo (Ctrl+Z)",
+            tooltip=t("editor.tooltip_undo"),
             on_click=self.on_undo,
         )
         self.btn_redo = ft.IconButton(
             ft.Icons.REDO,
-            tooltip="Redo (Ctrl+Y)",
+            tooltip=t("editor.tooltip_redo"),
             on_click=self.on_redo,
         )
         self.btn_clear_editor = ft.IconButton(
             ft.Icons.DELETE_SWEEP,
-            tooltip="Clear Editor",
+            tooltip=t("editor.tooltip_clear"),
             on_click=self.on_clear,
         )
 
-        self.title_text = ft.Text("Editor Buffer", weight=ft.FontWeight.W_600)
+        self.title_text = ft.Text(t("editor.title"), weight=ft.FontWeight.W_600)
 
         self.toolbar = ft.Row(
             controls=[
@@ -74,7 +75,7 @@ class EditorView:
             text_size=13,
             on_change=self.on_editor_changed,
             on_selection_change=self._on_selection_change,
-            hint_text="Document text content will appear here...",
+            hint_text=t("editor.hint"),
         )
 
 
@@ -100,16 +101,33 @@ class EditorView:
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
 
-    def set_word_wrap(self, enabled: bool):
-        """Toggles horizontal word wrap for the editor text field."""
-        if enabled:
+    def update_dynamic_width(self):
+        """Calculates dynamic width based on the longest line when word wrap is disabled."""
+        if getattr(self, "word_wrap_enabled", True):
             self.editor.width = None
             self.editor.expand = True
             self.editor_row.scroll = None
         else:
-            self.editor.width = 3500
-            self.editor.expand = False
-            self.editor_row.scroll = ft.ScrollMode.AUTO
+            val = self.editor.value or ""
+            lines = val.splitlines()
+            max_len = max([len(line) for line in lines], default=0)
+            char_w = (self.editor.text_size or 13) * 0.60
+            calc_w = int(max_len * char_w) + 40
+
+            # Only enforce explicit scroll width if content length exceeds standard panel bounds
+            if calc_w > 650:
+                self.editor.width = calc_w
+                self.editor.expand = False
+                self.editor_row.scroll = ft.ScrollMode.AUTO
+            else:
+                self.editor.width = None
+                self.editor.expand = True
+                self.editor_row.scroll = None
+
+    def set_word_wrap(self, enabled: bool):
+        """Toggles horizontal word wrap for the editor text field dynamically."""
+        self.word_wrap_enabled = enabled
+        self.update_dynamic_width()
         try:
             if self.container.page:
                 self.container.update()
@@ -179,8 +197,8 @@ class EditorView:
             pass
 
     def set_loading(self, filename: str = ""):
-        name_str = f"'{filename}'" if filename else "document"
-        self.editor.value = f"⏳ Loading {name_str}, please wait..."
+        name_str = f"'{filename}'" if filename else t("editor.loading_default")
+        self.editor.value = t("editor.loading", name=name_str)
         self.editor.read_only = True
         try:
             if self.editor.page:
@@ -193,6 +211,33 @@ class EditorView:
         self.editor.read_only = False
         self.selection_start = 0
         self.selection_end = 0
+        if not getattr(self, "word_wrap_enabled", True):
+            self.update_dynamic_width()
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+    def focus_editor(self):
+        """Focus the editor text field."""
+        try:
+            if self.editor.page:
+                import asyncio
+                res = self.editor.focus()
+                if asyncio.iscoroutine(res):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(res)
+                    except RuntimeError:
+                        pass
+                self.editor.update()
+        except Exception:
+            pass
+
+    def set_font_size(self, size: int):
+        """Dynamically update font size of editor text field."""
+        self.editor.text_size = size
         try:
             if self.editor.page:
                 self.editor.update()
@@ -228,6 +273,36 @@ class EditorView:
         self.editor.value = new_val
         self.editor.selection = ft.TextSelection(base_offset=new_start, extent_offset=new_end)
         self.selection_start, self.selection_end = new_start, new_end
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+
+    def insert_image_token(self, token: str):
+        """Inserts an image Markdown token into the editor, replacing selection if any, without leaving adjacent text highlighted."""
+        val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else len(val)
+        end = self.selection_end if self.selection_end is not None else start
+
+        start = max(0, min(start, len(val)))
+        end = max(start, min(end, len(val)))
+
+        # Ensure image token stands as a clean block item if inserted next to non-newline text
+        prefix_nl = "\n" if start > 0 and val[start - 1] != "\n" else ""
+        suffix_nl = "\n" if end < len(val) and val[end] != "\n" else ""
+        block_token = f"{prefix_nl}{token}{suffix_nl}"
+
+        # Replace selection if start < end, or insert at cursor 'start'
+        new_val = val[:start] + block_token + val[end:]
+        new_pos = start + len(block_token)
+
+        self.editor.value = new_val
+        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
+        self.selection_start, self.selection_end = new_pos, new_pos
+
         try:
             if self.editor.page:
                 self.editor.update()
@@ -288,6 +363,28 @@ class EditorView:
 
         # Title text accent color
         self.title_text.color = accent
+
+        try:
+            if self.container.page:
+                self.container.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh all text to current locale."""
+        self.title_text.value = t("editor.title")
+        self.btn_open_file.tooltip = t("editor.tooltip_open")
+        self.btn_undo.tooltip = t("editor.tooltip_undo")
+        self.btn_redo.tooltip = t("editor.tooltip_redo")
+        self.btn_clear_editor.tooltip = t("editor.tooltip_clear")
+        self.editor.hint_text = t("editor.hint")
+
+        for ctrl in [self.title_text, self.btn_open_file, self.btn_undo, self.btn_redo, self.btn_clear_editor, self.editor, self.toolbar]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
 
         try:
             if self.container.page:

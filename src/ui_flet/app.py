@@ -4,7 +4,10 @@ Pure Orchestrator connecting AppState, WorkspaceView, and specialized Controller
 """
 
 import os
+import asyncio
 import flet as ft
+
+from src.i18n import t, set_locale
 
 # Force document modules to load and register
 from src.core.registry import ModuleRegistry
@@ -21,6 +24,7 @@ from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.views.editor_view import EditorView
 from src.ui_flet.views.preview_view import MarkdownPreview
 from src.ui_flet.views.welcome_view import WelcomeView
+from src.ui_flet.views.loading_view import LoadingView
 from src.ui_flet.views.workspace_view import WorkspaceView
 from src.ui_flet.views.settings_view import SettingsView
 from src.ui_flet.views.help_view import HelpView
@@ -41,7 +45,7 @@ from src.ui_flet.controllers import (
 class DocumentConvertApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = f"Document Converter Workspace v{__version__}"
+        self.page.title = t("app.title", version=__version__)
         self.page.window.width = 1360
         self.page.window.height = 800
         self.page.window.min_width = 900
@@ -61,7 +65,6 @@ class DocumentConvertApp:
         # ── Test different window icons for Taskbar & OS Title Bar ───────────
         from src.utils.assets import resolve_icon_path
         icon_path = (
-            # Option 1: High-res 256x256 ICO chỉ nhận được file ico, nhưng vẫn bị mờ
             resolve_icon_path("icon256x256px.ico")
         )
         if icon_path:
@@ -72,6 +75,9 @@ class DocumentConvertApp:
 
         # Load persisted user settings into state before building UI
         settings_store.load_settings_into(self.state)
+
+        # Initialize i18n locale from saved settings
+        set_locale(self.state.language)
         if self.state.default_mode:
             self.state.current_mode = self.state.default_mode
 
@@ -88,18 +94,22 @@ class DocumentConvertApp:
         # Build UI Shell & Controllers
         self._build_controls()
 
-        # Register Global Keyboard Shortcuts (Ctrl+O)
+        # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+S, Ctrl+F, Ctrl+Z, Ctrl+Y)
         ShortcutManager.register(
-            self.page, on_open_file=self.file_controller.trigger_browse_input
+            self.page,
+            on_open_file=self.file_controller.trigger_browse_input,
+            on_save_convert=self.conversion_controller.on_convert_clicked,
+            on_find_replace=lambda: self.search_controller.toggle_search(True),
+            on_undo=self.editor_controller.perform_undo,
+            on_redo=self.editor_controller.perform_redo,
         )
 
         # Load & sync settings into UI controls (after controls are built)
         self.settings_controller.load_and_apply()
 
-        # Restore Draft or Show Welcome Screen
-        has_draft = self.file_controller.load_draft_if_exists()
-        if has_draft:
-            self._show_editor_view()
+        # Restore Draft asynchronously with loading view or Show Welcome Screen
+        if self.file_controller.has_draft_on_disk():
+            asyncio.create_task(self.file_controller.async_load_draft_if_exists())
         else:
             self._show_welcome_view()
 
@@ -129,6 +139,8 @@ class DocumentConvertApp:
             on_create_blank=lambda e: self._on_create_blank_note(e),
         )
 
+        self.loading_view = LoadingView()
+
         self.settings_view = SettingsView(
             state=self.state,
             on_palette_changed=lambda e: self.settings_controller.on_palette_changed(e),
@@ -138,6 +150,7 @@ class DocumentConvertApp:
             on_font_size_changed=lambda v: self.settings_controller.on_font_size_changed(v),
             on_default_mode_changed=lambda e: self.settings_controller.on_default_mode_changed(e),
             on_word_wrap_changed=lambda e: self.settings_controller.on_word_wrap_changed(e),
+            on_language_changed=lambda e: self.settings_controller.on_language_changed(e),
             on_apply=lambda e: self.settings_controller.apply_all(e),
             on_discard=lambda e: self.settings_controller.discard_all(e),
             on_close=lambda e: self._show_editor_view(),
@@ -216,6 +229,7 @@ class DocumentConvertApp:
         self.workspace_view = WorkspaceView(
             welcome_view=self.welcome_view,
             editor_workspace=self.editor_workspace,
+            loading_view=self.loading_view,
             settings_view=self.settings_view,
             help_view=self.help_view,
         )
@@ -235,6 +249,8 @@ class DocumentConvertApp:
             "footer_bar": self.footer_bar,
             "ribbon_bar": self.ribbon_bar,
             "welcome_view": self.welcome_view,
+            "loading_view": self.loading_view,
+            "workspace_view": self.workspace_view,
             "settings_view": self.settings_view,
             "help_view": self.help_view,
             "file_picker_in": self.file_picker_in,
@@ -260,8 +276,11 @@ class DocumentConvertApp:
         )
         self.settings_controller = SettingsController(self.page, self.state, app_controls)
 
-        # Back-reference so settings_controller can find theme_controller
+        # Back-reference so controllers can find theme_controller, file_controller, search_replace_bar, layout_controller
         app_controls["theme_controller"] = self.theme_controller
+        app_controls["file_controller"] = self.file_controller
+        app_controls["search_replace_bar"] = self.search_replace_bar
+        app_controls["layout_controller"] = self.layout_controller
 
         # 4. Assemble Page Tree
         self.page.add(
@@ -287,19 +306,19 @@ class DocumentConvertApp:
             title=ft.Row(
                 [
                     ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.ORANGE_400, size=20),
-                    ft.Text("Unsaved Settings", weight=ft.FontWeight.BOLD),
+                    ft.Text(t("dialog.unsaved_title"), weight=ft.FontWeight.BOLD),
                 ],
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             content=ft.Text(
-                "You have unsaved settings changes.\nDo you want to save them before leaving?",
+                t("dialog.unsaved_message"),
                 size=13,
             ),
             actions=[
-                ft.TextButton("Save",    on_click=lambda e: _close("save")),
-                ft.TextButton("Discard", on_click=lambda e: _close("discard")),
-                ft.TextButton("Cancel",  on_click=lambda e: _close("cancel")),
+                ft.TextButton(t("dialog.btn_save"),    on_click=lambda e: _close("save")),
+                ft.TextButton(t("dialog.btn_discard"), on_click=lambda e: _close("discard")),
+                ft.TextButton(t("dialog.btn_cancel"),  on_click=lambda e: _close("cancel")),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )

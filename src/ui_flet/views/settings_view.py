@@ -9,14 +9,21 @@ from __future__ import annotations
 from typing import Callable, Optional
 import flet as ft
 
-from src.ui_flet.constants import MODES
+from src.ui_flet.constants import MODES, MODE_DISPLAY_KEYS
+from src.i18n import t, get_available_locales
 from src.ui_flet.theme import PALETTES, resolve_color, make_border
 
 
 class SettingsView(ft.Container):
     """Full-workspace settings view with category navigation and preference panels."""
 
-    _CATEGORIES = ["Appearance", "Editor", "Conversion", "About"]
+    _CATEGORIES_KEYS = {
+        "Appearance": "settings.cat_appearance",
+        "Editor": "settings.cat_editor",
+        "Conversion": "settings.cat_conversion",
+        "About": "settings.cat_about",
+    }
+    _CATEGORIES = list(_CATEGORIES_KEYS.keys())
 
     def __init__(
         self,
@@ -28,6 +35,7 @@ class SettingsView(ft.Container):
         on_font_size_changed: Optional[Callable] = None,
         on_default_mode_changed: Optional[Callable] = None,
         on_word_wrap_changed: Optional[Callable] = None,
+        on_language_changed: Optional[Callable] = None,
         on_apply: Optional[Callable] = None,
         on_discard: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
@@ -42,6 +50,7 @@ class SettingsView(ft.Container):
         self._on_font_size_changed = on_font_size_changed
         self._on_default_mode_changed = on_default_mode_changed
         self._on_word_wrap_changed = on_word_wrap_changed
+        self._on_language_changed = on_language_changed
         self._on_apply = on_apply
         self._on_discard = on_discard
         self._on_close = on_close
@@ -53,19 +62,19 @@ class SettingsView(ft.Container):
 
         # ── Dirty bar (hidden until changes made) ────────────────────────────
         self._dirty_indicator = ft.Text(
-            "● Unsaved changes",
+            t("settings.dirty_label"),
             size=12,
             color=ft.Colors.ORANGE_400,
             italic=True,
         )
         self._btn_apply = ft.FilledButton(
-            "Apply",
+            t("settings.btn_apply"),
             icon=ft.Icons.SAVE_ROUNDED,
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
             on_click=self._on_apply_click,
         )
         self._btn_discard = ft.OutlinedButton(
-            "Discard",
+            t("settings.btn_discard"),
             icon=ft.Icons.UNDO_ROUNDED,
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
             on_click=self._on_discard_click,
@@ -95,7 +104,7 @@ class SettingsView(ft.Container):
             icon = self._category_icon(cat)
             btn = ft.TextButton(
                 content=ft.Row(
-                    [ft.Icon(icon, size=18), ft.Text(cat, size=13)],
+                    [ft.Icon(icon, size=18), ft.Text(t(self._CATEGORIES_KEYS[cat]), size=13)],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
@@ -125,15 +134,16 @@ class SettingsView(ft.Container):
         btn_close = ft.IconButton(
             icon=ft.Icons.CLOSE_ROUNDED,
             icon_size=20,
-            tooltip="Close Settings (Return to Editor)",
+            tooltip=t("settings.tooltip_close"),
             on_click=self._on_close_click,
         )
 
         # ── Page Header ──────────────────────────────────────────────────────
+        self._header_icon = ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.PRIMARY, size=22)
         header = ft.Row(
             [
-                ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.PRIMARY, size=22),
-                ft.Text("Settings", size=20, weight=ft.FontWeight.BOLD),
+                self._header_icon,
+                ft.Text(t("settings.title"), size=20, weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 btn_close,
             ],
@@ -162,22 +172,22 @@ class SettingsView(ft.Container):
         palette_val = getattr(self._state, "current_palette", "Deep Ocean") if self._state else "Deep Ocean"
         theme_val = getattr(self._state, "current_theme_mode", "System") if self._state else "System"
 
-        self._palette_dropdown = ft.Dropdown(
-            label="Color Palette",
+        self._palette_dropdown = self._style_dropdown(ft.Dropdown(
+            label=t("settings.section_palette"),
             value=palette_val,
             options=[ft.dropdown.Option(p) for p in PALETTES.keys()],
             width=260,
             dense=True,
-        )
+        ))
         self._palette_dropdown.on_change = self._on_palette_change
         self._palette_dropdown.on_select = self._on_palette_change
 
         self._theme_radio = ft.RadioGroup(
             content=ft.Row(
                 [
-                    ft.Radio(value="Dark", label="Dark"),
-                    ft.Radio(value="Light", label="Light"),
-                    ft.Radio(value="System", label="System"),
+                    ft.Radio(value="Dark", label=t("settings.theme_dark")),
+                    ft.Radio(value="Light", label=t("settings.theme_light")),
+                    ft.Radio(value="System", label=t("settings.theme_system")),
                 ],
                 spacing=12,
             ),
@@ -185,19 +195,41 @@ class SettingsView(ft.Container):
         )
         self._theme_radio.on_change = self._on_theme_mode_change
 
+        # ── Language Dropdown ────────────────────────────────────────────────
+        lang_val = getattr(self._state, "language", "en") if self._state else "en"
+        available = get_available_locales()
+        self._language_dropdown = self._style_dropdown(ft.Dropdown(
+            label=t("settings.section_language"),
+            value=lang_val,
+            options=[ft.dropdown.Option(loc["code"], loc["native_name"]) for loc in available],
+            width=260,
+            dense=True,
+        ))
+        self._language_dropdown.on_change = self._on_language_change
+        self._language_dropdown.on_select = self._on_language_change
+
         return ft.Column(
             [
-                self._section_title("Color Palette"),
+                self._section_title(t("settings.section_palette")),
                 ft.Text(
-                    "Changes preview immediately. Click Apply to save.",
+                    t("settings.palette_hint"),
                     size=12,
                     color=ft.Colors.OUTLINE,
                 ),
                 ft.Container(height=4),
                 self._palette_dropdown,
                 ft.Container(height=16),
-                self._section_title("Theme Mode"),
+                self._section_title(t("settings.section_theme")),
                 self._theme_radio,
+                ft.Container(height=16),
+                self._section_title(t("settings.section_language")),
+                ft.Text(
+                    t("settings.language_hint"),
+                    size=12,
+                    color=ft.Colors.OUTLINE,
+                ),
+                ft.Container(height=4),
+                self._language_dropdown,
             ],
             spacing=8,
         )
@@ -208,12 +240,12 @@ class SettingsView(ft.Container):
         autosave_val = getattr(self._state, "autosave_enabled", True) if self._state else True
         interval_val = str(getattr(self._state, "autosave_interval_sec", 30)) if self._state else "30"
 
-        self._font_size_label = ft.Text(f"Font Size: {font_size_val}px", size=13, weight=ft.FontWeight.W_500)
+        self._font_size_label = ft.Text(t("settings.font_size_label", size=font_size_val), size=13, weight=ft.FontWeight.W_500)
 
         # Live preview sample text with refined padding & border
         self._font_preview = ft.Container(
             content=ft.Text(
-                "Aa Bb Cc  123  — The quick brown fox jumps over the lazy dog.",
+                t("settings.font_preview"),
                 size=float(font_size_val),
                 font_family="Consolas",
                 color=ft.Colors.ON_SURFACE,
@@ -236,37 +268,37 @@ class SettingsView(ft.Container):
         )
 
         self._word_wrap_switch = ft.Switch(
-            label="Word Wrap",
+            label=t("settings.word_wrap"),
             value=word_wrap_val,
         )
         self._word_wrap_switch.on_change = self._on_word_wrap_change
 
         self._autosave_switch = ft.Switch(
-            label="Auto-Save Draft",
+            label=t("settings.autosave_label"),
             value=autosave_val,
         )
         self._autosave_switch.on_change = self._on_autosave_toggle
 
-        self._autosave_interval_dropdown = ft.Dropdown(
-            label="Auto-Save Interval",
+        self._autosave_interval_dropdown = self._style_dropdown(ft.Dropdown(
+            label=t("settings.autosave_interval"),
             value=interval_val,
             options=[
-                ft.dropdown.Option("5", "5 seconds"),
-                ft.dropdown.Option("15", "15 seconds"),
-                ft.dropdown.Option("30", "30 seconds"),
-                ft.dropdown.Option("60", "1 minute"),
-                ft.dropdown.Option("300", "5 minutes"),
+                ft.dropdown.Option("5", t("settings.interval_5s")),
+                ft.dropdown.Option("15", t("settings.interval_15s")),
+                ft.dropdown.Option("30", t("settings.interval_30s")),
+                ft.dropdown.Option("60", t("settings.interval_1m")),
+                ft.dropdown.Option("300", t("settings.interval_5m")),
             ],
             width=220,
             dense=True,
             disabled=not autosave_val,
-        )
+        ))
         self._autosave_interval_dropdown.on_change = self._on_autosave_interval_change
         self._autosave_interval_dropdown.on_select = self._on_autosave_interval_change
 
         return ft.Column(
             [
-                self._section_title("Editor Font"),
+                self._section_title(t("settings.section_font")),
                 ft.Container(
                     content=ft.Column(
                         [
@@ -279,13 +311,13 @@ class SettingsView(ft.Container):
                     padding=ft.Padding(left=4, top=0, right=0, bottom=0),
                 ),
                 ft.Container(height=16),
-                self._section_title("Text Options"),
+                self._section_title(t("settings.section_text")),
                 ft.Container(
                     content=self._word_wrap_switch,
                     padding=ft.Padding(left=4, top=0, right=0, bottom=0),
                 ),
                 ft.Container(height=16),
-                self._section_title("Auto-Save"),
+                self._section_title(t("settings.section_autosave")),
                 ft.Container(
                     content=ft.Column(
                         [
@@ -305,21 +337,21 @@ class SettingsView(ft.Container):
     def _build_conversion_panel(self) -> ft.Column:
         default_mode_val = getattr(self._state, "default_mode", "MD -> Excel") if self._state else "MD -> Excel"
 
-        self._default_mode_dropdown = ft.Dropdown(
-            label="Default Conversion Mode",
+        self._default_mode_dropdown = self._style_dropdown(ft.Dropdown(
+            label=t("settings.section_default_mode"),
             value=default_mode_val,
-            options=[ft.dropdown.Option(m) for m in MODES.keys()],
+            options=[ft.dropdown.Option(m, t(MODE_DISPLAY_KEYS.get(m, m))) for m in MODES.keys()],
             width=280,
             dense=True,
-        )
+        ))
         self._default_mode_dropdown.on_change = self._on_default_mode_change
         self._default_mode_dropdown.on_select = self._on_default_mode_change
 
         return ft.Column(
             [
-                self._section_title("Default Conversion Mode"),
+                self._section_title(t("settings.section_default_mode")),
                 ft.Text(
-                    "This mode is pre-selected every time you open the app.",
+                    t("settings.default_mode_hint"),
                     size=12,
                     color=ft.Colors.OUTLINE,
                 ),
@@ -355,14 +387,14 @@ class SettingsView(ft.Container):
 
         return ft.Column(
             [
-                self._section_title("About DocConvert Workspace"),
+                self._section_title(t("settings.section_about")),
                 ft.Row(
                     [
                         ft.Icon(ft.Icons.AUTO_AWESOME_ROUNDED, color=ft.Colors.PRIMARY, size=32),
                         ft.Column(
                             [
-                                ft.Text("DocConvert Workspace", size=16, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"Version {__version__}", size=13, color=ft.Colors.OUTLINE),
+                                ft.Text(t("settings.about_title"), size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text(t("settings.about_version", version=__version__), size=13, color=ft.Colors.OUTLINE),
                             ],
                             spacing=2,
                         ),
@@ -371,7 +403,7 @@ class SettingsView(ft.Container):
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 ft.Container(height=16),
-                self._section_title("Dependencies"),
+                self._section_title(t("settings.section_deps")),
                 *dep_rows,
             ],
             spacing=8,
@@ -418,7 +450,15 @@ class SettingsView(ft.Container):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _section_title(self, text: str) -> ft.Text:
-        return ft.Text(text, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.OUTLINE)
+        color = getattr(self, "_accent_primary", ft.Colors.PRIMARY)
+        return ft.Text(text, size=13, weight=ft.FontWeight.BOLD, color=color)
+
+    def _style_dropdown(self, dd: ft.Dropdown) -> ft.Dropdown:
+        if hasattr(self, "_accent_primary") and self._accent_primary:
+            dd.border_color = self._accent_primary
+            dd.focused_border_color = self._accent_primary
+            dd.label_style = ft.TextStyle(color=self._accent_primary, size=12)
+        return dd
 
     def _category_icon(self, category: str) -> str:
         return {
@@ -491,7 +531,7 @@ class SettingsView(ft.Container):
     def _on_font_size_slide(self, e):
         val = int(e.control.value)
         try:
-            self._font_size_label.value = f"Font Size: {val}px"
+            self._font_size_label.value = t("settings.font_size_label", size=val)
             self._font_preview.content.size = float(val)
             if self._font_size_label.page:
                 self._font_size_label.update()
@@ -513,16 +553,41 @@ class SettingsView(ft.Container):
             self._on_default_mode_changed(e)
         self.mark_dirty()
 
+    def _on_language_change(self, e):
+        if self._on_language_changed:
+            self._on_language_changed(e)
+        self.mark_dirty()
+
     # ─────────────────────────────────────────────────────────────────────────
     # Theme sync
     # ─────────────────────────────────────────────────────────────────────────
 
     def apply_palette(self, palette: dict, is_dark: bool):
-        """Sync background and border colors with the current palette."""
+        """Sync background, border, section titles, and dropdown styles with current palette."""
         bg = resolve_color(palette, "bg_component", is_dark)
         border = resolve_color(palette, "border_color", is_dark)
+        accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
+
+        self._accent_primary = accent_primary
         self.bgcolor = bg
         self.border = make_border(1, border)
+
+        if hasattr(self, "_header_icon") and self._header_icon:
+            self._header_icon.color = accent_primary
+
+        for dd_attr in [
+            "_palette_dropdown",
+            "_language_dropdown",
+            "_autosave_interval_dropdown",
+            "_default_mode_dropdown",
+        ]:
+            if hasattr(self, dd_attr):
+                dd = getattr(self, dd_attr)
+                if dd:
+                    self._style_dropdown(dd)
+
+        self._select_category(self._active_category, update=False)
+
         try:
             if self.page:
                 self.update()
@@ -534,3 +599,26 @@ class SettingsView(ft.Container):
         self._state = state
         self._select_category(self._active_category)
         self.mark_clean()
+
+    def update_locale(self):
+        """Refresh all text and active category panel in SettingsView."""
+        self._dirty_indicator.value = t("settings.dirty_label")
+        self._btn_apply.content = t("settings.btn_apply")
+        self._btn_discard.content = t("settings.btn_discard")
+        if hasattr(self, "content") and hasattr(self.content, "controls"):
+            header = self.content.controls[0]
+            if hasattr(header, "controls") and len(header.controls) > 1:
+                header.controls[1].value = t("settings.title")
+                if len(header.controls) > 3 and hasattr(header.controls[3], "tooltip"):
+                    header.controls[3].tooltip = t("settings.tooltip_close")
+
+        for cat, btn in self._nav_buttons.items():
+            if hasattr(btn, "content") and hasattr(btn.content, "controls") and len(btn.content.controls) > 1:
+                btn.content.controls[1].value = t(self._CATEGORIES_KEYS.get(cat, cat))
+
+        self._select_category(self._active_category, update=False)
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass

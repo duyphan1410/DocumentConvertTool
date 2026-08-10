@@ -3,6 +3,7 @@ File Path Bar component for displaying input document and destination output pat
 """
 from typing import Callable, Optional
 import flet as ft
+from src.i18n import t
 from src.ui_flet.theme import resolve_color, make_border
 
 
@@ -19,7 +20,7 @@ class FilePathBar:
 
         self.btn_browse_in = ft.IconButton(
             icon=ft.Icons.FOLDER_OPEN,
-            tooltip="Browse Input File",
+            tooltip=t("pathbar.tooltip_browse_in"),
             on_click=self.on_browse_in,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
@@ -28,16 +29,15 @@ class FilePathBar:
         )
 
         self.in_path_text = ft.TextField(
-            label="Input File Path",
+            label=t("pathbar.label_input"),
             value="",
-            read_only=True,
             expand=True,
             dense=True,
         )
 
         self.btn_browse_out = ft.IconButton(
             icon=ft.Icons.SAVE,
-            tooltip="Select Output Destination",
+            tooltip=t("pathbar.tooltip_browse_out"),
             on_click=self.on_browse_out,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
@@ -46,7 +46,7 @@ class FilePathBar:
         )
 
         self.out_path_text = ft.TextField(
-            label="Output Destination",
+            label=t("pathbar.label_output"),
             value="",
             expand=True,
             dense=True,
@@ -77,13 +77,19 @@ class FilePathBar:
         if self.out_path_text.page:
             self.out_path_text.update()
 
-    def set_out_label(self, label: str):
-        self.out_path_text.label = label
+    def set_out_label(self, label_or_ext: str):
+        if not label_or_ext:
+            return
+        ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        self.out_path_text.label = t("pathbar.out_label", ext=ext)
         if self.out_path_text.page:
             self.out_path_text.update()
 
-    def set_in_label(self, label: str):
-        self.in_path_text.label = label
+    def set_in_label(self, label_or_ext: str):
+        if not label_or_ext:
+            return
+        ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        self.in_path_text.label = t("pathbar.in_label", ext=ext)
         if self.in_path_text.page:
             self.in_path_text.update()
 
@@ -99,6 +105,19 @@ class FilePathBar:
         border = resolve_color(palette, "border_color", is_dark)
         self.container.bgcolor = bg
         self.container.border = make_border(1, border)
+        try:
+            self.container.update()
+        except Exception:
+            pass
+
+    def update_locale(self, in_ext: str = "", out_ext: str = ""):
+        """Refresh all text to current locale."""
+        self.btn_browse_in.tooltip = t("pathbar.tooltip_browse_in")
+        self.btn_browse_out.tooltip = t("pathbar.tooltip_browse_out")
+        if in_ext:
+            self.set_in_label(in_ext)
+        if out_ext:
+            self.set_out_label(out_ext)
         try:
             self.container.update()
         except Exception:

@@ -31,9 +31,15 @@ class SettingsController:
         self._sync_ribbon_dropdowns()
         self._sync_settings_view()
         self.apply_word_wrap()
+        from src.i18n import set_locale
+        set_locale(self.state.language)
+        self._rebuild_all_ui_text()
         theme_ctrl = self.app_controls.get("theme_controller")
         if theme_ctrl:
             theme_ctrl.update_theme_colors()
+        layout_ctrl = self.app_controls.get("layout_controller")
+        if layout_ctrl and hasattr(layout_ctrl, "apply_panel_visibility"):
+            layout_ctrl.apply_panel_visibility()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Explicit Apply / Discard
@@ -41,13 +47,14 @@ class SettingsController:
 
     def apply_all(self, e=None):
         """Persist current AppState settings to JSON. Called when user clicks Apply."""
+        from src.i18n import t
         save_settings(self.state)
         import time
         timestamp = time.strftime("%H:%M:%S")
         print(f"[LOG][SETTINGS][{timestamp}] Settings saved to settings.json")
         footer_bar = self.app_controls.get("footer_bar")
         if footer_bar:
-            footer_bar.set_status(f"Settings saved ({timestamp})", ft.Colors.GREEN_400)
+            footer_bar.set_status(t("settings.saved_status", timestamp=timestamp), ft.Colors.GREEN_400)
             try:
                 if self.page:
                     self.page.update()
@@ -68,8 +75,15 @@ class SettingsController:
         if theme_ctrl:
             theme_ctrl.update_theme_colors()
         self._sync_ribbon_dropdowns()
+        from src.i18n import set_locale
+        set_locale(self.state.language)
+        self._rebuild_all_ui_text()
         self._sync_settings_view()
         self.apply_word_wrap()
+        self.apply_font_size()
+        layout_ctrl = self.app_controls.get("layout_controller")
+        if layout_ctrl and hasattr(layout_ctrl, "apply_panel_visibility"):
+            layout_ctrl.apply_panel_visibility()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Individual setting handlers (preview-only, no JSON save)
@@ -163,17 +177,21 @@ class SettingsController:
         except (ValueError, TypeError):
             pass
 
-    def on_font_size_changed(self, value: int):
-        """Font size slider changed -> update EditorView text field (preview)."""
-        self.state.editor_font_size = value
+    def apply_font_size(self):
+        """Apply current font size from AppState to EditorView and MarkdownPreview."""
+        size = getattr(self.state, "editor_font_size", 13)
         editor_view = self.app_controls.get("editor_view")
-        if editor_view and hasattr(editor_view, "editor"):
-            try:
-                editor_view.editor.text_style = ft.TextStyle(size=value)
-                if editor_view.editor.page:
-                    editor_view.editor.update()
-            except Exception:
-                pass
+        if editor_view and hasattr(editor_view, "set_font_size"):
+            editor_view.set_font_size(size)
+
+        preview = self.app_controls.get("preview")
+        if preview and hasattr(preview, "set_font_size"):
+            preview.set_font_size(size)
+
+    def on_font_size_changed(self, value: int):
+        """Font size slider changed -> update AppState and EditorView text field."""
+        self.state.editor_font_size = value
+        self.apply_font_size()
 
     def on_default_mode_changed(self, e):
         """
@@ -221,6 +239,53 @@ class SettingsController:
                 preview.set_word_wrap(is_wrap)
             except Exception:
                 pass
+
+    def on_language_changed(self, e):
+        """Language dropdown changed -> set locale and refresh all UI text."""
+        new_lang = None
+        if e and hasattr(e, "control") and e.control is not None:
+            new_lang = getattr(e.control, "value", None)
+        if not new_lang:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_language_dropdown"):
+                new_lang = sv._language_dropdown.value
+        if new_lang:
+            self.state.language = new_lang
+            from src.i18n import set_locale
+            set_locale(new_lang)
+            self._rebuild_all_ui_text()
+
+    def _rebuild_all_ui_text(self):
+        """Walk all registered UI components and trigger update_locale()."""
+        from src.i18n import t
+        from src.__version__ import __version__
+        try:
+            self.page.title = t("app.title", version=__version__)
+        except Exception:
+            pass
+
+        for key in [
+            "ribbon_bar",
+            "welcome_view",
+            "editor_view",
+            "settings_view",
+            "file_path_bar",
+            "search_replace_bar",
+            "footer_bar",
+            "formatting_toolbar",
+        ]:
+            ctrl = self.app_controls.get(key)
+            if ctrl and hasattr(ctrl, "update_locale"):
+                try:
+                    ctrl.update_locale()
+                except Exception as ex:
+                    print(f"[DEBUG] Error updating locale for {key}: {ex}")
+
+        try:
+            if self.page:
+                self.page.update()
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal sync helpers

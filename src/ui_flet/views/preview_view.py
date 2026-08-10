@@ -10,6 +10,7 @@ import mimetypes
 import time
 import pathlib
 import flet as ft
+from src.i18n import t
 
 from src.services.media_asset_manager import MediaAssetManager
 
@@ -84,6 +85,57 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
     return result
 
 
+async def process_markdown_media_async(content: str, base_dir: str = None, progress_callback=None) -> str:
+    """
+    Asynchronously parses Markdown content and converts images to base64.
+    Yields control back to the asyncio loop between images so Flet UI animations remain smooth.
+    """
+    if not content:
+        return ""
+
+    import asyncio
+    t0 = time.time()
+    asset_mgr = MediaAssetManager()
+    image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+    matches = list(re.finditer(image_pattern, content))
+    if not matches:
+        return content
+
+    total_imgs = len(matches)
+    replacements = {}
+
+    for idx, match in enumerate(matches, 1):
+        alt_text = match.group(1)
+        uri = match.group(2)
+
+        if uri.startswith(("http://", "https://", "data:")):
+            continue
+
+        resolved_path = asset_mgr.resolve_uri(uri)
+        if not os.path.exists(resolved_path) and base_dir:
+            candidate = os.path.join(base_dir, uri)
+            if os.path.exists(candidate):
+                resolved_path = candidate
+
+        if os.path.exists(resolved_path):
+            base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path)
+            replacements[match.group(0)] = f"![{alt_text}]({base64_uri})"
+            if progress_callback:
+                try:
+                    progress_callback(idx, total_imgs)
+                except Exception:
+                    pass
+            await asyncio.sleep(0.005)
+
+    result = content
+    for old_token, new_token in replacements.items():
+        result = result.replace(old_token, new_token)
+
+    t_elapsed = time.time() - t0
+    print(f"[BENCHMARK] Processed {total_imgs} preview image links to Base64 asynchronously in {t_elapsed:.3f}s")
+    return result
+
+
 class MarkdownPreview(ft.Container):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -96,10 +148,10 @@ class MarkdownPreview(ft.Container):
         # Header elements — owned by MarkdownPreview for palette sync
         self.header_icon = ft.Icon(ft.Icons.PREVIEW, size=18)
         self.header_title = ft.Text(
-            "Live Document Preview",
+            t("preview.title"),
             weight=ft.FontWeight.W_600,
         )
-        self.doc_info_text = ft.Text("No document loaded.", size=12)
+        self.doc_info_text = ft.Text(t("preview.no_doc"), size=12)
 
         self.header_row = ft.Row(
             controls=[
@@ -112,7 +164,7 @@ class MarkdownPreview(ft.Container):
         )
 
         self.markdown = ft.Markdown(
-            value="*Document Preview Placeholder*",
+            value=t("preview.placeholder"),
             selectable=True,
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK,
@@ -141,12 +193,43 @@ class MarkdownPreview(ft.Container):
             expand=True,
         )
 
+    def show_loading(self, message: str = None):
+        """Displays subtle header loading status in MarkdownPreview."""
+        self.doc_info_text.value = f"⏳ {t('preview.loading_text')}"
+        try:
+            if self.doc_info_text.page:
+                self.doc_info_text.update()
+        except Exception:
+            pass
+
+    def hide_loading(self):
+        """No-op helper for compatibility."""
+        pass
+
     def set_word_wrap(self, enabled: bool):
         """Toggles soft line breaks in MarkdownPreview cleanly."""
         self.markdown.soft_line_break = enabled
         try:
             if self.page:
                 self.update()
+        except Exception:
+            pass
+
+    def set_font_size(self, size: int):
+        """Dynamically update font size scale of MarkdownPreview stylesheet."""
+        s = float(size)
+        self.markdown.md_style_sheet = ft.MarkdownStyleSheet(
+            p_text_style=ft.TextStyle(size=s),
+            h1_text_style=ft.TextStyle(size=s * 1.8, weight=ft.FontWeight.BOLD),
+            h2_text_style=ft.TextStyle(size=s * 1.5, weight=ft.FontWeight.BOLD),
+            h3_text_style=ft.TextStyle(size=s * 1.3, weight=ft.FontWeight.BOLD),
+            h4_text_style=ft.TextStyle(size=s * 1.1, weight=ft.FontWeight.BOLD),
+            code_text_style=ft.TextStyle(size=s * 0.95, font_family="Consolas"),
+            blockquote_text_style=ft.TextStyle(size=s, italic=True),
+        )
+        try:
+            if self.markdown.page:
+                self.markdown.update()
         except Exception:
             pass
 
@@ -237,6 +320,30 @@ class MarkdownPreview(ft.Container):
 
         try:
             self.update()
+        except Exception:
+            pass
+
+    def update_locale(self):
+        """Refresh header title, doc info text, and placeholder to current locale."""
+        self.header_title.value = t("preview.title")
+        if not self._last_raw_text:
+            self.doc_info_text.value = t("preview.no_doc")
+            self.markdown.value = t("preview.placeholder")
+        else:
+            words = len(self._last_raw_text.split())
+            chars = len(self._last_raw_text)
+            self.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+
+        for ctrl in [self.header_title, self.doc_info_text, self.markdown]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
+        try:
+            if self.page:
+                self.update()
         except Exception:
             pass
 

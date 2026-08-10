@@ -18,6 +18,7 @@ hiddenimports = [
     'src.ui_flet.components.search_replace_bar',
     'src.ui_flet.components.formatting_toolbar',
     'src.ui_flet.views.editor_view',
+    'src.ui_flet.views.loading_view',
     'src.ui_flet.views.preview_view',
     'src.ui_flet.views.welcome_view',
     'src.ui_flet.views.workspace_view',

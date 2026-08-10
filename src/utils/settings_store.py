@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 
 SETTINGS_KEYS = [
@@ -10,6 +10,10 @@ SETTINGS_KEYS = [
     "editor_font_size",
     "show_line_numbers",
     "word_wrap",
+    "language",
+    "show_preview",
+    "show_path_bar",
+    "show_status_bar",
 ]
 
 _appdata = os.getenv("APPDATA", os.path.expanduser("~"))

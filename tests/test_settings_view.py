@@ -1,4 +1,4 @@
-﻿"""
+"""
 Layer 1 + Layer 2 Tests for SettingsView and SettingsStore.
 Tests module import, class instantiation, and settings persistence round-trip.
 """
@@ -91,6 +91,9 @@ class TestSettingsStore(unittest.TestCase):
             editor_font_size=16,
             show_line_numbers=True,
             word_wrap=False,
+            show_preview=False,
+            show_path_bar=False,
+            show_status_bar=False,
         )
         self._store.save_settings(state_out)
 
@@ -105,6 +108,9 @@ class TestSettingsStore(unittest.TestCase):
         self.assertEqual(state_in.editor_font_size, 16)
         self.assertTrue(state_in.show_line_numbers)
         self.assertFalse(state_in.word_wrap)
+        self.assertFalse(state_in.show_preview)
+        self.assertFalse(state_in.show_path_bar)
+        self.assertFalse(state_in.show_status_bar)
 
     def test_load_missing_file_is_silent(self):
         """load_settings_into on non-existent file does not raise."""
@@ -122,6 +128,29 @@ class TestSettingsStore(unittest.TestCase):
         with open(self._store.SETTINGS_PATH, encoding="utf-8") as f:
             data = json.load(f)
         self.assertIn("current_palette", data)
+
+    def test_layout_controller_safe_save_skips_when_dirty(self):
+        """LayoutController._safe_save_settings skips saving to disk if SettingsView is dirty."""
+        from src.ui_flet.controllers.layout_controller import LayoutController
+        class DummySettingsView:
+            _is_dirty = True
+
+        state = self._make_state(current_palette="Nord")
+        # Save clean state first
+        self._store.save_settings(state)
+
+        # Mutate palette in state (dirty in SettingsView)
+        state.current_palette = "Cyberpunk"
+
+        app_controls = {"settings_view": DummySettingsView()}
+        lc = LayoutController(page=None, state=state, app_controls=app_controls)
+        lc._safe_save_settings()
+
+        # Reload from disk: palette should STILL be "Nord" because save was skipped due to dirty state
+        state_reload = self._make_state()
+        self._store.load_settings_into(state_reload)
+        self.assertEqual(state_reload.current_palette, "Nord")
+
 
 
 if __name__ == "__main__":

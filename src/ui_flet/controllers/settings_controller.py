@@ -54,7 +54,7 @@ class SettingsController:
         print(f"[LOG][SETTINGS][{timestamp}] Settings saved to settings.json")
         footer_bar = self.app_controls.get("footer_bar")
         if footer_bar:
-            footer_bar.set_status(t("settings.saved_status", timestamp=timestamp), ft.Colors.GREEN_400)
+            footer_bar.set_status_key("settings.saved_status", color=ft.Colors.GREEN_400, timestamp=timestamp)
             try:
                 if self.page:
                     self.page.update()

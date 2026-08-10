@@ -72,7 +72,7 @@ class FileController:
         self.editor_view.set_loading(filename)
         self.preview.set_content(f"*Loading {filename}...*")
         self.preview.doc_info_text.value = "Loading..."
-        self.footer_bar.set_status(t("status.file_loading", filename=filename), ft.Colors.AMBER_400)
+        self.footer_bar.set_status_key("status.file_loading", color=ft.Colors.AMBER_400, filename=filename)
         self.footer_bar.set_processing(True)
         self.page.update()
 
@@ -81,7 +81,7 @@ class FileController:
         t_extract = time.time() - t0
 
         if not res.success:
-            self.footer_bar.set_status(t("status.load_failed", error=res.error_short or "Lỗi tải tệp"), ft.Colors.RED_400)
+            self.footer_bar.set_status_key("status.load_failed", color=ft.Colors.RED_400, error=res.error_short or "Lỗi tải tệp", is_error=True)
             self.footer_bar.set_processing(False)
             self.page.update()
 
@@ -134,14 +134,18 @@ class FileController:
         print(f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s")
 
         if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.footer_bar.set_status(
-                t("status.file_truncated", limit=EDITOR_DISPLAY_LIMIT, duration=f"{t_total:.2f}"),
-                ft.Colors.ORANGE_400,
+            self.footer_bar.set_status_key(
+                "status.file_truncated",
+                color=ft.Colors.ORANGE_400,
+                limit=EDITOR_DISPLAY_LIMIT,
+                duration=f"{t_total:.2f}",
             )
         else:
-            self.footer_bar.set_status(
-                t("status.file_loaded", filename=os.path.basename(actual_path), duration=f"{t_total:.2f}"),
-                ft.Colors.GREEN_400,
+            self.footer_bar.set_status_key(
+                "status.file_loaded",
+                color=ft.Colors.GREEN_400,
+                filename=os.path.basename(actual_path),
+                duration=f"{t_total:.2f}",
             )
 
         self.footer_bar.set_processing(False)
@@ -199,7 +203,7 @@ class FileController:
         if workspace_view and hasattr(workspace_view, "show_loading"):
             workspace_view.show_loading(t("status.draft_loading"))
 
-        self.footer_bar.set_status(t("status.draft_loading"), ft.Colors.AMBER_400)
+        self.footer_bar.set_status_key("status.draft_loading", color=ft.Colors.AMBER_400)
         try:
             self.page.update()
         except Exception:
@@ -388,8 +392,8 @@ class FileController:
             print(f"[LOG][AUTO-SAVE][{timestamp}] Draft auto-saved ({len(text)} chars) -> {DRAFT_PATH}")
 
             if hasattr(self, "footer_bar") and self.footer_bar:
-                self.footer_bar.set_status(
-                    t("status.draft_autosaved", timestamp=timestamp), ft.Colors.GREEN_400
+                self.footer_bar.set_status_key(
+                    "status.draft_autosaved", color=ft.Colors.GREEN_400, timestamp=timestamp
                 )
                 try:
                     if self.page:

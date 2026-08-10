@@ -3,12 +3,22 @@ Translator Engine for DocConvert i18n system.
 Singleton-based, JSON locale files, flat dot-separated keys.
 """
 
+import sys
 import os
 import json
 from typing import Optional
 
 
-_LOCALES_DIR = os.path.join(os.path.dirname(__file__), "locales")
+def _get_locales_dir() -> str:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = getattr(sys, "_MEIPASS")
+        locales_path = os.path.join(meipass, "src", "i18n", "locales")
+        if os.path.isdir(locales_path):
+            return locales_path
+    return os.path.join(os.path.dirname(__file__), "locales")
+
+
+_LOCALES_DIR = _get_locales_dir()
 
 
 class Translator:

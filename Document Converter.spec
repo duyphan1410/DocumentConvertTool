@@ -3,6 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [
     ('assets', 'assets'),
+    ('src/i18n/locales', 'src/i18n/locales'),
 ]
 binaries = []
 hiddenimports = [
@@ -83,6 +84,7 @@ a = Analysis(
         'pdb',
         'flet.cli',
         'flet.pytest_plugin',
+        'flet.testing',
         'tkinter.test',
     ],
     noarchive=False,

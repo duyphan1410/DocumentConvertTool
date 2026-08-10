@@ -129,7 +129,13 @@ class FilePathBar:
             self._out_ext = out_ext if out_ext.startswith(".") else f".{out_ext}"
         self.in_path_text.label = t("pathbar.in_label", ext=self._in_ext)
         self.out_path_text.label = t("pathbar.out_label", ext=self._out_ext)
+        for ctrl in [self.in_path_text, self.out_path_text, self.btn_browse_in, self.btn_browse_out]:
+            try:
+                ctrl.update()
+            except Exception:
+                pass
         try:
-            self.container.update()
+            if self.container.page:
+                self.container.update()
         except Exception:
             pass

@@ -193,8 +193,7 @@ class FooterBar:
 
         for ctrl in [self.btn_convert, self.btn_open_file, self.btn_open_folder, self.btn_copy_error, self.status_text]:
             try:
-                if hasattr(ctrl, "page") and ctrl.page:
-                    ctrl.update()
+                ctrl.update()
             except Exception:
                 pass
 

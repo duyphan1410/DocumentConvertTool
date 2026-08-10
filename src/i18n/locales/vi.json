@@ -13,6 +13,7 @@
   "preview.title": "Xem trước tài liệu",
   "preview.no_doc": "Chưa tải tài liệu.",
   "preview.placeholder": "*Khung Xem trước tài liệu*",
+  "preview.loading_text": "Đang nạp bản xem trước...",
   "help.title": "Trợ giúp & Hướng dẫn",
   "help.tab_help": "Trợ giúp",
   "help.tab_guide": "Hướng dẫn sử dụng",
@@ -92,6 +93,8 @@
   "footer.status_copied": "Đã sao chép lỗi vào clipboard!",
   "pathbar.label_input": "Đường dẫn tệp đầu vào",
   "pathbar.label_output": "Đường dẫn đầu ra",
+  "pathbar.in_label": "Tệp {ext}",
+  "pathbar.out_label": "Lưu {ext}",
   "pathbar.tooltip_browse_in": "Duyệt tệp đầu vào",
   "pathbar.tooltip_browse_out": "Chọn đường dẫn đầu ra",
   "search.label_find": "Tìm",
@@ -185,6 +188,11 @@
   "status.file_truncated": "Tệp đã bị rút gọn (vượt quá {limit} ký tự) ({duration}s)",
   "status.load_failed": "Tải thất bại: {error}",
   "status.draft_loaded": "Đã tải bản nháp tự động ({timestamp})",
+  "status.draft_loading": "Đang khôi phục bản nháp tự động...",
+  "status.draft_loading_pct": "Đang khôi phục bản nháp tự động ({pct}%)...",
+  "status.draft_restored_file": "Đã khôi phục bản nháp từ tệp: {filename} ({duration}s)",
+  "status.draft_restored_missing": "Đã khôi phục nội dung nháp (Tệp gốc đã bị di chuyển hoặc xóa: {filename}) ({duration}s)",
+  "status.draft_restored_untitled": "Đã khôi phục bản nháp chưa lưu ({timestamp}) ({duration}s)",
   "status.draft_autosaved": "Đã tự động lưu bản nháp ({timestamp})",
   "dialog.unsaved_title": "Cài đặt chưa lưu",
   "dialog.unsaved_message": "Bạn có các thay đổi chưa được lưu.\nBạn có muốn lưu lại trước khi rời đi không?",
@@ -194,5 +202,6 @@
   "dialog.overwrite_title": "Xác nhận ghi đè tệp",
   "dialog.overwrite_exists": "Tệp đã tồn tại trên hệ thống:",
   "dialog.overwrite_confirm": "Bạn có muốn ghi đè và thay thế tệp này không?",
-  "dialog.overwrite_btn": "Ghi đè / Thay thế"
+  "dialog.overwrite_btn": "Ghi đè / Thay thế",
+  "dialog.btn_save_new": "Lưu tệp mới ({filename})"
 }

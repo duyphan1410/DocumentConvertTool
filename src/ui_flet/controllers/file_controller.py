@@ -1,6 +1,7 @@
 """
 File I/O Controller for Flet UI.
 Decouples document loading, image insertion, output path picking, and draft autosaving.
+Integrated with Production-Grade Error Handling and Draft Protection.
 """
 import os
 import time
@@ -8,9 +9,12 @@ import asyncio
 import flet as ft
 
 from src.i18n import t
-
+from src.core.errors import DocumentError
+from src.core.error_mapper import ErrorMapper
+from src.core.validator import validate_file_pipeline
 from src.services.file_loader import load_document
 from src.ui_flet.constants import DRAFT_PATH, EDITOR_DISPLAY_LIMIT, MODES
+from src.ui_flet.components.message_dialog import show_message_dialog, DialogType
 from src.ui_flet.native_dialogs import (
     pick_input_file_async,
     pick_output_file_async,
@@ -40,90 +44,138 @@ class FileController:
             page=self.page, picker=self.file_picker_in
         )
         if file_path:
-            # Mount Editor Workspace onto page tree immediately before updating controls
-            if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
-                self.app_controls["on_show_editor"]()
-            try:
-                self.ribbon_bar._select_tab("edit")
-            except Exception:
-                pass
+            await self.open_file_by_path(file_path)
 
-            filename = os.path.basename(file_path)
-            self.editor_view.set_loading(filename)
-            self.preview.set_content(f"*Loading {filename}...*")
-            self.preview.doc_info_text.value = "Loading..."
-            self.footer_bar.set_status(t("status.file_loading", filename=filename), ft.Colors.AMBER_400)
-            self.footer_bar.set_processing(True)
+    async def handle_dropped_files(self, file_paths: list[str]):
+        """
+        Pre-validates and handles dropped files from Drag & Drop event.
+        Opens the first valid document and notifies user if multiple files were dropped.
+        """
+        if not file_paths:
+            return
+
+        first_valid = None
+        last_error = None
+
+        for path in file_paths:
+            try:
+                valid_p = validate_file_pipeline(path)
+                first_valid = valid_p
+                break
+            except DocumentError as de:
+                if last_error is None:
+                    last_error = de
+            except Exception as exc:
+                if last_error is None:
+                    last_error = ErrorMapper.map_exception(exc, context_path=path, stage="read")
+
+        if not first_valid:
+            if last_error:
+                show_message_dialog(self.page, last_error)
+            return
+
+        if len(file_paths) > 1:
+            fn = os.path.basename(first_valid)
+            snack = ft.SnackBar(
+                content=ft.Text(f"Đã mở tệp đầu tiên '{fn}'. Hiện ứng dụng xử lý 1 tệp mỗi lần."),
+                bgcolor=ft.Colors.BLUE_700,
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
             self.page.update()
 
-            t0 = time.time()
-            res = await asyncio.to_thread(load_document, file_path)
-            t_extract = time.time() - t0
+        await self.open_file_by_path(first_valid)
 
-            if not res.success:
-                err_msg = res.error_short or "Failed to load document"
-                self.footer_bar.set_status(t("status.load_failed", error=err_msg), ft.Colors.RED_400)
-                self.footer_bar.set_processing(False)
-                self.page.update()
-                return
+    async def open_file_by_path(self, file_path: str):
+        """
+        Loads document from file_path into the editor workspace.
+        Handles errors gracefully using production MessageDialog.
+        """
+        if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
+            self.app_controls["on_show_editor"]()
+        try:
+            self.ribbon_bar.select_tab("edit", force=True)
+        except Exception:
+            pass
 
-            content = res.content
-            self.state.in_path = file_path
-            self.file_path_bar.set_in_path(file_path)
+        filename = os.path.basename(file_path)
+        self.editor_view.set_loading(filename)
+        self.preview.set_content(f"*Loading {filename}...*")
+        self.preview.doc_info_text.value = "Loading..."
+        self.footer_bar.set_status(t("status.file_loading", filename=filename), ft.Colors.AMBER_400)
+        self.footer_bar.set_processing(True)
+        self.page.update()
 
-            ext = os.path.splitext(file_path)[1].lower()
-            self.ribbon_bar.update_mode_options(ext)
-            self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+        t0 = time.time()
+        res = await asyncio.to_thread(load_document, file_path)
+        t_extract = time.time() - t0
 
-            out_ext = MODES[self.state.current_mode]["out_ext"]
-            base, _ = os.path.splitext(file_path)
-            self.state.out_path = f"{base}{out_ext}"
-            self.file_path_bar.set_out_path(self.state.out_path)
+        if not res.success:
+            self.footer_bar.set_status(t("status.load_failed", error=res.error_short or "Lỗi tải tệp"), ft.Colors.RED_400)
+            self.footer_bar.set_processing(False)
+            self.page.update()
 
-            self.state.full_content = content
-            self.state.undo_stack.clear()
-            self.state.redo_stack.clear()
-
-            if len(content) > EDITOR_DISPLAY_LIMIT:
-                self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+            if res.error:
+                show_message_dialog(self.page, res.error)
             else:
-                self.editor_view.set_text(content)
+                doc_err = ErrorMapper.map_exception(
+                    Exception(res.error_detail or "Không thể nạp nội dung tài liệu"),
+                    context_path=file_path,
+                    stage="read",
+                )
+                show_message_dialog(self.page, doc_err)
+            return
 
-            self.state.undo_stack.append(self.editor_view.get_text())
-            self.state.is_dirty = False
+        content = res.content
+        actual_path = res.path or file_path
+        self.state.in_path = actual_path
+        self.file_path_bar.set_in_path(actual_path)
 
-            words = len(content.split())
-            chars = len(content)
-            self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+        ext = os.path.splitext(actual_path)[1].lower()
+        self.ribbon_bar.update_mode_options(ext)
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
 
-            base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
-            self.preview.update_preview(content, base_dir=base_dir)
+        out_ext = MODES[self.state.current_mode]["out_ext"]
+        base, _ = os.path.splitext(actual_path)
+        self.state.out_path = f"{base}{out_ext}"
+        self.file_path_bar.set_out_path(self.state.out_path)
 
-            t_total = time.time() - t0
-            print(
-                f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s"
+        self.state.full_content = content
+        self.state.undo_stack.clear()
+        self.state.redo_stack.clear()
+
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+        else:
+            self.editor_view.set_text(content)
+
+        self.state.undo_stack.append(self.editor_view.get_text())
+        self.state.is_dirty = False
+
+        words = len(content.split())
+        chars = len(content)
+        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+
+        base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+        self.preview.update_preview(content, base_dir=base_dir)
+
+        t_total = time.time() - t0
+        print(f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s")
+
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.footer_bar.set_status(
+                t("status.file_truncated", limit=EDITOR_DISPLAY_LIMIT, duration=f"{t_total:.2f}"),
+                ft.Colors.ORANGE_400,
+            )
+        else:
+            self.footer_bar.set_status(
+                t("status.file_loaded", filename=os.path.basename(actual_path), duration=f"{t_total:.2f}"),
+                ft.Colors.GREEN_400,
             )
 
-            if len(content) > EDITOR_DISPLAY_LIMIT:
-                self.footer_bar.set_status(
-                    t("status.file_truncated", limit=EDITOR_DISPLAY_LIMIT, duration=f"{t_total:.2f}"),
-                    ft.Colors.ORANGE_400,
-                )
-            else:
-                self.footer_bar.set_status(
-                    t("status.file_loaded", filename=os.path.basename(file_path), duration=f"{t_total:.2f}"),
-                    ft.Colors.GREEN_400,
-                )
-
-            # Ensure active Ribbon tab switches to "Edit" on successful load
-            try:
-                self.ribbon_bar.select_tab("edit", force=True)
-            except Exception as ex:
-                print(f"[DEBUG] select_tab Edit error: {ex}")
-
-            self.footer_bar.set_processing(False)
-            self.perform_autosave()
-            self.page.update()
+        self.footer_bar.set_processing(False)
+        self.perform_autosave()
+        self.page.update()
 
     def trigger_browse_output(self, e=None):
         asyncio.create_task(self.async_browse_output())
@@ -186,21 +238,19 @@ class FileController:
         return False
 
     def perform_autosave(self):
+        """
+        Single Responsibility: Auto-saves current non-empty editor content to draft file.
+        NEVER deletes or clears the draft file when text is empty.
+        """
         if not getattr(self.state, "autosave_enabled", True):
             return
         try:
-            os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
             text = self.editor_view.get_text() if self.editor_view else ""
             if not text or not text.strip():
-                if os.path.exists(DRAFT_PATH):
-                    try:
-                        os.remove(DRAFT_PATH)
-                    except Exception:
-                        pass
-                timestamp = time.strftime("%H:%M:%S")
-                print(f"[LOG][AUTO-SAVE][{timestamp}] Draft cleared / removed")
+                # Safety Guard: Do not modify or clear draft file when editor text is empty
                 return
 
+            os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
             with open(DRAFT_PATH, "w", encoding="utf-8") as f:
                 f.write(text)
 
@@ -218,3 +268,16 @@ class FileController:
                     pass
         except Exception as e:
             print(f"[LOG][AUTO-SAVE][ERROR] Autosave error: {e}")
+
+    def clear_draft_file(self):
+        """
+        Single Responsibility: Explicitly removes the draft_autosave.md file from disk.
+        Only invoked when user explicitly executes 'Clear Content' action.
+        """
+        if os.path.exists(DRAFT_PATH):
+            try:
+                os.remove(DRAFT_PATH)
+                timestamp = time.strftime("%H:%M:%S")
+                print(f"[LOG][AUTO-SAVE][{timestamp}] Draft file explicitly removed from disk")
+            except Exception as e:
+                print(f"[LOG][AUTO-SAVE][ERROR] Failed to remove draft file: {e}")

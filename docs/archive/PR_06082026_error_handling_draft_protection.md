@@ -50,7 +50,7 @@ DocumentConvertTool/
 ## ✨ 3. Chi Tiết Các Tính Năng & Tối Ưu Hệ Thống
 
 ### 📋 1. Chuẩn Hóa Lỗi Domain (`DocumentError` & `ErrorCode`)
-- Định nghĩa 10 mã lỗi chuẩn hóa đại diện cho mọi tình huống sự cố tệp trên Desktop.
+- Định nghĩa 12 mã lỗi chuẩn hóa đại diện cho mọi tình huống sự cố tệp trên Desktop.
 - Mỗi đối tượng `DocumentError` tự tạo `Error ID` chuẩn `ERR-YYYYMMDD-XXXX` phục vụ vết nhật ký hỗ trợ kỹ thuật.
 
 #### Bảng Thống Kê Các Mã Lỗi & Hộp Thoại Modal Popup (`MessageDialog`)
@@ -67,7 +67,8 @@ DocumentConvertTool/
 | **8** | `CORRUPTED_STRUCTURE` | Tệp bị đổi đuôi giả mạo hoặc hỏng cấu trúc nén ZIP OOXML | **Cấu trúc tệp bị hỏng** | *"Hãy mở tệp bằng Microsoft Office và bấm Save As để tự động khôi phục cấu trúc tệp."* |
 | **9** | `PASSWORD_PROTECTED` | Tệp bị đặt mật khẩu bảo vệ hoặc là tệp nhị phân legacy .doc/.xls | **Tệp bị mã hóa hoặc đặt mật khẩu** | *"Vui lòng bỏ mật khẩu tệp trong MS Office và chọn định dạng .docx/.xlsx hiện đại."* |
 | **10** | `MISSING_DEPENDENCY` | Môi trường Python thiếu thư viện phụ thuộc (`pdfplumber`...) | **Thiếu thư viện phụ thuộc** | Hiển thị nút Sao chép lệnh `pip install <package>` (tự động ẩn nếu chạy từ bản `.exe`). |
-| **11** | `UNKNOWN_ERROR` | Ngoại lệ kỹ thuật phát sinh không lường trước (Fallback) | **Đã xảy ra lỗi không xác định** | Hiển thị nút **"Sao chép Log & Error ID"** (`ERR-YYYYMMDD-XXXX`) để gửi báo cáo sự cố. |
+| **11** | `CONVERSION_FAILED` | Lỗi tham số hoặc dữ liệu trong quá trình chuyển đổi tệp | **Lỗi tham số hoặc dữ liệu chuyển đổi** | *"Vui lòng kiểm tra lại tùy chọn chuyển đổi và nội dung dữ liệu đầu vào."* |
+| **12** | `UNKNOWN_ERROR` | Ngoại lệ kỹ thuật phát sinh không lường trước (Fallback) | **Đã xảy ra lỗi không xác định** | Hiển thị nút **"Sao chép Log & Error ID"** (`ERR-YYYYMMDD-XXXX`) để gửi báo cáo sự cố. |
 
 ### 🎭 2. Tầng Ánh Xạ Thông Minh `ErrorMapper`
 - Phân biệt rõ ngữ cảnh thao tác `stage`:

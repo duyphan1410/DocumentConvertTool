@@ -10,7 +10,6 @@
   "welcome.subtitle": "Convert and edit Markdown, Word, Excel, PDF, CSV, and HTML seamlessly",
   "welcome.btn_open": "Open Document",
   "welcome.btn_blank": "Create Blank Note",
-  "welcome.drag_drop_hint": "Drag & Drop any file into the window to open automatically",
   "preview.title": "Live Document Preview",
   "preview.no_doc": "No document loaded.",
   "preview.placeholder": "*Document Preview Placeholder*",

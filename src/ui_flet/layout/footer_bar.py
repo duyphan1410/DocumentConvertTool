@@ -19,31 +19,49 @@ class FooterBar:
         self.on_open_file = on_open_file
         self.on_open_folder = on_open_folder
 
+        self.btn_convert_text = ft.Text(t("footer.btn_convert"), color=ft.Colors.WHITE, weight=ft.FontWeight.W_600)
         self.btn_convert = ft.ElevatedButton(
-            t("footer.btn_convert"),
-            icon=ft.Icons.TRANSFORM,
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.TRANSFORM, color=ft.Colors.WHITE),
+                    self.btn_convert_text,
+                ],
+                spacing=8,
+                tight=True,
+            ),
             on_click=self.on_convert_clicked,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
                 padding=ft.Padding(left=24, top=16, right=24, bottom=16),
-                color=ft.Colors.WHITE,
             ),
         )
+        self.btn_open_file_text = ft.Text(t("footer.btn_open_file"))
         self.btn_open_file = ft.ElevatedButton(
-            t("footer.btn_open_file"),
-            icon=ft.Icons.OPEN_IN_NEW,
+            content=ft.Row(
+                controls=[ft.Icon(ft.Icons.OPEN_IN_NEW), self.btn_open_file_text],
+                spacing=6,
+                tight=True,
+            ),
             visible=False,
             on_click=self.on_open_file,
         )
+        self.btn_open_folder_text = ft.Text(t("footer.btn_open_folder"))
         self.btn_open_folder = ft.ElevatedButton(
-            t("footer.btn_open_folder"),
-            icon=ft.Icons.FOLDER_OPEN,
+            content=ft.Row(
+                controls=[ft.Icon(ft.Icons.FOLDER_OPEN), self.btn_open_folder_text],
+                spacing=6,
+                tight=True,
+            ),
             visible=False,
             on_click=self.on_open_folder,
         )
+        self.btn_copy_error_text = ft.Text(t("footer.btn_copy_error"))
         self.btn_copy_error = ft.ElevatedButton(
-            t("footer.btn_copy_error"),
-            icon=ft.Icons.COPY,
+            content=ft.Row(
+                controls=[ft.Icon(ft.Icons.COPY), self.btn_copy_error_text],
+                spacing=6,
+                tight=True,
+            ),
             visible=False,
             style=ft.ButtonStyle(color=ft.Colors.RED_400),
             on_click=self._on_copy_error,
@@ -182,16 +200,26 @@ class FooterBar:
 
     def update_locale(self):
         """Refresh all text to current locale."""
-        self.btn_convert.text = t("footer.btn_convert")
-        self.btn_open_file.text = t("footer.btn_open_file")
-        self.btn_open_folder.text = t("footer.btn_open_folder")
-        self.btn_copy_error.text = t("footer.btn_copy_error")
+        self.btn_convert_text.value = t("footer.btn_convert")
+        self.btn_open_file_text.value = t("footer.btn_open_file")
+        self.btn_open_folder_text.value = t("footer.btn_open_folder")
+        self.btn_copy_error_text.value = t("footer.btn_copy_error")
         if hasattr(self, "_current_status_key") and self._current_status_key:
             self.status_text.value = t(self._current_status_key, **self._current_status_kwargs)
         elif self.status_text.value in ("Ready", "Sẵn sàng", t("footer.status_ready")):
             self.status_text.value = t("footer.status_ready")
 
-        for ctrl in [self.btn_convert, self.btn_open_file, self.btn_open_folder, self.btn_copy_error, self.status_text]:
+        for ctrl in [
+            self.btn_convert_text,
+            self.btn_open_file_text,
+            self.btn_open_folder_text,
+            self.btn_copy_error_text,
+            self.status_text,
+            self.btn_convert,
+            self.btn_open_file,
+            self.btn_open_folder,
+            self.btn_copy_error,
+        ]:
             try:
                 ctrl.update()
             except Exception:

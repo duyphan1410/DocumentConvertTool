@@ -31,7 +31,6 @@ class FilePathBar:
         self.in_path_text = ft.TextField(
             label=t("pathbar.label_input"),
             value="",
-            read_only=True,
             expand=True,
             dense=True,
         )
@@ -78,13 +77,19 @@ class FilePathBar:
         if self.out_path_text.page:
             self.out_path_text.update()
 
-    def set_out_label(self, label: str):
-        self.out_path_text.label = label
+    def set_out_label(self, label_or_ext: str):
+        if not label_or_ext:
+            return
+        ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        self.out_path_text.label = t("pathbar.out_label", ext=ext)
         if self.out_path_text.page:
             self.out_path_text.update()
 
-    def set_in_label(self, label: str):
-        self.in_path_text.label = label
+    def set_in_label(self, label_or_ext: str):
+        if not label_or_ext:
+            return
+        ext = label_or_ext.split()[-1] if " " in label_or_ext else label_or_ext
+        self.in_path_text.label = t("pathbar.in_label", ext=ext)
         if self.in_path_text.page:
             self.in_path_text.update()
 
@@ -105,12 +110,14 @@ class FilePathBar:
         except Exception:
             pass
 
-    def update_locale(self):
+    def update_locale(self, in_ext: str = "", out_ext: str = ""):
         """Refresh all text to current locale."""
         self.btn_browse_in.tooltip = t("pathbar.tooltip_browse_in")
-        self.in_path_text.label = t("pathbar.label_input")
         self.btn_browse_out.tooltip = t("pathbar.tooltip_browse_out")
-        self.out_path_text.label = t("pathbar.label_output")
+        if in_ext:
+            self.set_in_label(in_ext)
+        if out_ext:
+            self.set_out_label(out_ext)
         try:
             self.container.update()
         except Exception:

@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.4.0)
+# Document Converter Workspace (v1.5.3)
 
 ![Python](<https://img.shields.io/badge/Python-3.12%20--%203.13-blue>)
 ![UI Framework](<https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple>)
-![Platform](<https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green>)
-![Version](https://img.shields.io/badge/Version-1.4.0-brightgreen)
+![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
+![Version](https://img.shields.io/badge/Version-1.5.3-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **Excel**, **Word**, **PDF**, **CSV**, and **HTML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.4.1) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.5.3) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -76,13 +76,12 @@ The output executable will be created at `dist/Document Converter.exe`.
 
 ---
 
-## 🗺️ Version Roadmap
+## 🗺️ Version History
 
 - **v1.0 — Core Engines**: Initial Word, Excel, CSV, PDF, HTML conversion modules.
 - **v1.3 — Flet Desktop Migration**: Responsive split-pane layout, 5-palette theme engine, async loader.
 - **v1.4 — Pure MVC & PDF Engine Polish**: 3-Tier MVC architecture (6 Controllers), Welcome Dashboard, Office Ribbon Bar, PDF list preservation & Vietnamese font fix.
-- **v1.6 — Production Error Handling & Draft Protection (Current)**: 10 `ErrorCode`s, `ErrorMapper`, `MessageDialog` modal UI with `safe_set_clipboard`, 30-day log rotation, single-responsibility autosave draft protection & timer safety.
-- **v2.0 — Studio Workspace (Planned)**: Activity Bar (48px), File Tree Explorer, Multi-Tab workspace, Web SaaS & Installer packaging.
+- **v1.5 — Error Handling, Draft Protection & Auto-Loading UX (Current)**: 10 `ErrorCode`s, autosave draft protection, 60fps async loading view, 1-click smart auto-rename & localized path bar.
 
 > [!NOTE]
 > Detailed developer documentation, technical architecture summaries, and feature logs are organized in the [`docs/`](docs/) directory.
@@ -91,6 +90,7 @@ The output executable will be created at `dist/Document Converter.exe`.
 
 ## ⚠️ Known Limitations
 
+* **Drag & Drop:** Dragging files directly from Windows File Explorer onto the application window is currently not supported in Flet Desktop; please use the **Open Document** button (`Ctrl+O`) to load files.
 * **Large Documents:** Document preview is optimized for smooth editing performance; full file contents are converted completely during processing.
 * **Complex Styles:** Advanced Office layout elements (floating text boxes, multi-column macros) are simplified into clean, standardized Markdown structures.
 

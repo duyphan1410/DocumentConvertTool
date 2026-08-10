@@ -13,6 +13,7 @@
   "preview.title": "Live Document Preview",
   "preview.no_doc": "No document loaded.",
   "preview.placeholder": "*Document Preview Placeholder*",
+  "preview.loading_text": "Loading preview...",
   "help.title": "Help & User Guide",
   "help.tab_help": "Help",
   "help.tab_guide": "User Guide",
@@ -92,6 +93,8 @@
   "footer.status_copied": "Error copied to clipboard!",
   "pathbar.label_input": "Input File Path",
   "pathbar.label_output": "Output Destination",
+  "pathbar.in_label": "File {ext}",
+  "pathbar.out_label": "Save {ext}",
   "pathbar.tooltip_browse_in": "Browse Input File",
   "pathbar.tooltip_browse_out": "Select Output Destination",
   "search.label_find": "Find",
@@ -185,6 +188,11 @@
   "status.file_truncated": "File truncated (>{limit} chars) ({duration}s)",
   "status.load_failed": "Load failed: {error}",
   "status.draft_loaded": "Loaded autosaved draft ({timestamp})",
+  "status.draft_loading": "Restoring auto-saved draft...",
+  "status.draft_loading_pct": "Restoring auto-saved draft ({pct}%)...",
+  "status.draft_restored_file": "Restored draft from file: {filename} ({duration}s)",
+  "status.draft_restored_missing": "Restored draft text (Original file moved or deleted: {filename}) ({duration}s)",
+  "status.draft_restored_untitled": "Restored untitled draft ({timestamp}) ({duration}s)",
   "status.draft_autosaved": "Auto-saved draft ({timestamp})",
   "dialog.unsaved_title": "Unsaved Settings",
   "dialog.unsaved_message": "You have unsaved settings changes.\nDo you want to save them before leaving?",
@@ -194,5 +202,6 @@
   "dialog.overwrite_title": "Confirm File Overwrite",
   "dialog.overwrite_exists": "The target output file already exists on disk:",
   "dialog.overwrite_confirm": "Do you want to overwrite and replace this file?",
-  "dialog.overwrite_btn": "Overwrite / Replace"
+  "dialog.overwrite_btn": "Overwrite / Replace",
+  "dialog.btn_save_new": "Save as new ({filename})"
 }

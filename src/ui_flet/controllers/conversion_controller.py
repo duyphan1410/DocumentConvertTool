@@ -104,18 +104,57 @@ class ConversionController:
 
         file_name = os.path.basename(out_path)
 
-        def close_dialog(e, confirmed: bool):
-            print(f"[DEBUG] Closing overwrite dialog, confirmed={confirmed}")
+        # 1-Click Smart Auto-Rename unique path calculation
+        base_dir, orig_name = os.path.split(out_path)
+        name_no_ext, ext = os.path.splitext(orig_name)
+        counter = 1
+        new_path = os.path.join(base_dir, f"{name_no_ext}_{counter}{ext}")
+        while os.path.exists(new_path):
+            counter += 1
+            new_path = os.path.join(base_dir, f"{name_no_ext}_{counter}{ext}")
+        new_filename = os.path.basename(new_path)
+
+        def handle_cancel(e):
+            print(f"[DEBUG] Overwrite canceled by user.")
             dialog.open = False
+            self.footer_bar.set_status(
+                t("status.conversion_cancelled"),
+                ft.Colors.AMBER_400,
+            )
+            # Ensure File Path Bar is visible & focus on output path field for easy manual editing
+            if not self.file_path_bar.container.visible:
+                self.file_path_bar.container.visible = True
+
+            val = self.file_path_bar.out_path_text.value or ""
+            try:
+                if val:
+                    base_dir, filename = os.path.split(val)
+                    name_no_ext, ext = os.path.splitext(filename)
+                    start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
+                    end_idx = start_idx + len(name_no_ext)
+                    self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
+            except Exception as sel_ex:
+                print(f"[DEBUG] TextSelection error: {sel_ex}")
             self.page.update()
 
-            if confirmed:
-                on_confirm_callback()
-            else:
-                self.footer_bar.set_status(
-                    t("status.conversion_cancelled"),
-                    ft.Colors.AMBER_400,
-                )
+            try:
+                asyncio.create_task(self.file_path_bar.out_path_text.focus())
+            except Exception as ex:
+                print(f"[DEBUG] Failed to focus out_path_text: {ex}")
+
+        def handle_save_new(e):
+            print(f"[DEBUG] 1-Click Save as New selected: '{new_path}'")
+            dialog.open = False
+            self.state.out_path = new_path
+            self.file_path_bar.set_out_path(new_path)
+            self.page.update()
+            self.start_conversion_process(new_path)
+
+        def handle_overwrite(e):
+            print(f"[DEBUG] Overwrite confirmed for target file: '{out_path}'")
+            dialog.open = False
+            self.page.update()
+            on_confirm_callback()
 
         dialog = ft.AlertDialog(
             modal=True,
@@ -163,18 +202,24 @@ class ConversionController:
                     tight=True,
                     spacing=12,
                 ),
-                width=420,
+                width=460,
             ),
             actions=[
                 ft.TextButton(
                     t("dialog.btn_cancel"),
-                    on_click=lambda e: close_dialog(e, False),
+                    on_click=handle_cancel,
                     style=ft.ButtonStyle(color=text_secondary),
+                ),
+                ft.OutlinedButton(
+                    t("dialog.btn_save_new", filename=new_filename),
+                    icon=ft.Icons.COPY_ROUNDED,
+                    on_click=handle_save_new,
+                    style=ft.ButtonStyle(color=accent_color),
                 ),
                 ft.Button(
                     t("dialog.overwrite_btn"),
                     icon=ft.Icons.AUTORENEW_ROUNDED,
-                    on_click=lambda e: close_dialog(e, True),
+                    on_click=handle_overwrite,
                     style=ft.ButtonStyle(
                         color=ft.Colors.WHITE,
                         bgcolor=ft.Colors.RED_600,

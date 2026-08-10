@@ -11,6 +11,7 @@ class WorkspaceView(ft.Container):
         self,
         welcome_view: WelcomeView,
         editor_workspace: ft.Row,
+        loading_view=None,
         settings_view=None,
         help_view=None,
         **kwargs,
@@ -18,11 +19,26 @@ class WorkspaceView(ft.Container):
         super().__init__(**kwargs)
         self.welcome_view = welcome_view
         self.editor_workspace = editor_workspace
+        self.loading_view = loading_view
         self.settings_view = settings_view
         self.help_view = help_view
 
         self.expand = True
         self.content = self.welcome_view
+
+    def show_loading(self, message: str = ""):
+        """Switch workspace to LoadingView."""
+        if self.loading_view:
+            if message:
+                self.loading_view.set_message(message)
+            if hasattr(self.loading_view, "update_locale"):
+                self.loading_view.update_locale()
+            self.content = self.loading_view
+            try:
+                if self.page:
+                    self.page.update()
+            except Exception:
+                pass
 
     def show_welcome(self, ribbon_bar=None):
         if hasattr(self.welcome_view, "update_locale"):

@@ -4,6 +4,7 @@ from typing import Union, Optional
 from src.core.errors import DocumentError, ErrorCode
 from src.utils.logger import log_error
 from src.ui_flet.theme import PALETTES, resolve_color, get_style_color
+from src.i18n import t
 
 
 class DialogType:
@@ -45,7 +46,7 @@ def show_message_dialog(
     else:
         doc_err = DocumentError(
             code=ErrorCode.UNKNOWN_ERROR if dialog_type == DialogType.ERROR else ErrorCode.FILE_EMPTY,
-            title=title or ("Thông báo" if dialog_type == DialogType.INFO else "Thông báo Lỗi"),
+            title=title or (t("dialog.info_title_default") if dialog_type == DialogType.INFO else t("dialog.error_title_default")),
             message=str(payload),
         )
 
@@ -110,7 +111,7 @@ def show_message_dialog(
         def copy_cmd(e):
             safe_set_clipboard(page, doc_err.install_command)
             snack = ft.SnackBar(
-                content=ft.Text(f"Đã sao chép lệnh: {doc_err.install_command}"),
+                content=ft.Text(t("dialog.install_cmd_copied_toast", command=doc_err.install_command)),
                 bgcolor=ft.Colors.GREEN_700,
             )
             page.overlay.append(snack)
@@ -122,7 +123,7 @@ def show_message_dialog(
             ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text("Lệnh cài đặt khuyến nghị:", size=12, weight=ft.FontWeight.BOLD, color=text_primary),
+                        ft.Text(t("dialog.install_cmd_label"), size=12, weight=ft.FontWeight.BOLD, color=text_primary),
                         ft.Row(
                             controls=[
                                 ft.Container(
@@ -139,7 +140,7 @@ def show_message_dialog(
                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.COPY_ROUNDED,
-                                    tooltip="Sao chép lệnh cài đặt",
+                                    tooltip=t("dialog.install_cmd_copy_tooltip"),
                                     icon_color=accent_color,
                                     on_click=copy_cmd,
                                 ),
@@ -171,11 +172,11 @@ def show_message_dialog(
 
         def toggle_details(e):
             detail_container.visible = not detail_container.visible
-            toggle_btn.text = "Thu gọn chi tiết kỹ thuật" if detail_container.visible else "Xem chi tiết kỹ thuật (Technical Details)"
+            toggle_btn.text = "Technical Details" if detail_container.visible else "Technical Details"
             dialog.update()
 
         toggle_btn = ft.TextButton(
-            text="Xem chi tiết kỹ thuật (Technical Details)",
+            text="Technical Details",
             icon=ft.Icons.CODE_ROUNDED,
             style=ft.ButtonStyle(color=text_secondary),
             on_click=toggle_details,
@@ -191,7 +192,7 @@ def show_message_dialog(
     def copy_full_log(e):
         safe_set_clipboard(page, doc_err.to_log_string())
         snack = ft.SnackBar(
-            content=ft.Text(f"Đã sao chép mã lỗi {doc_err.error_id} vào Clipboard!"),
+            content=ft.Text(t("dialog.details_copied_toast")),
             bgcolor=ft.Colors.BLUE_700,
         )
         page.overlay.append(snack)
@@ -226,12 +227,12 @@ def show_message_dialog(
         ),
         actions=[
             ft.TextButton(
-                "Sao chép Log & Error ID",
+                t("dialog.btn_copy_details"),
                 icon=ft.Icons.COPY_ALL_ROUNDED,
                 on_click=copy_full_log,
             ),
             ft.ElevatedButton(
-                "Đóng",
+                t("dialog.btn_close"),
                 on_click=close_dialog,
                 style=ft.ButtonStyle(
                     shape=ft.RoundedRectangleBorder(radius=6),

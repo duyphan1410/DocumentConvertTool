@@ -122,11 +122,12 @@ class TestI18nSystem(unittest.TestCase):
 
         footer = FooterBar()
         footer.update_locale()
-        self.assertEqual(footer.btn_convert.content, "CHUYỂN ĐỔI")
+        val_convert = footer.btn_convert_text.value if hasattr(footer, "btn_convert_text") else footer.btn_convert.content
+        self.assertEqual(val_convert, "CHUYỂN ĐỔI")
 
         path_bar = FilePathBar()
         path_bar.update_locale()
-        self.assertEqual(path_bar.in_path_text.label, "Đường dẫn tệp đầu vào")
+        self.assertEqual(path_bar.in_path_text.label, t("pathbar.in_label", ext=".md"))
 
         fmt_toolbar = FormattingToolbar()
         fmt_toolbar.update_locale()

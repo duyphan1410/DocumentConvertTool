@@ -262,8 +262,8 @@ class RibbonBar(ft.Container):
         self.border_radius = 10
         self.padding = ft.Padding(left=10, top=6, right=10, bottom=6)
 
-    def update_mode_options(self, input_ext: str = ""):
-        """Updates available modes in Ribbon mode dropdown."""
+    def update_mode_options(self, input_ext: str = "", preferred_mode: str = ""):
+        """Updates available modes in Ribbon mode dropdown, prioritizing preferred_mode if valid."""
         if not input_ext:
             valid_modes = list(MODES.keys())
         else:
@@ -271,7 +271,13 @@ class RibbonBar(ft.Container):
             if not valid_modes:
                 valid_modes = list(MODES.keys())
         self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
-        self.mode_dropdown.value = valid_modes[0]
+        if preferred_mode and preferred_mode in valid_modes:
+            self.mode_dropdown.value = preferred_mode
+        elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
+            pass
+        else:
+            self.mode_dropdown.value = valid_modes[0]
+
         if self.mode_dropdown.page:
             self.mode_dropdown.update()
         if self.on_mode_changed:

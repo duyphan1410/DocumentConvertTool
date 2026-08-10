@@ -4,6 +4,7 @@ Pure Orchestrator connecting AppState, WorkspaceView, and specialized Controller
 """
 
 import os
+import asyncio
 import flet as ft
 
 from src.i18n import t, set_locale
@@ -23,6 +24,7 @@ from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.views.editor_view import EditorView
 from src.ui_flet.views.preview_view import MarkdownPreview
 from src.ui_flet.views.welcome_view import WelcomeView
+from src.ui_flet.views.loading_view import LoadingView
 from src.ui_flet.views.workspace_view import WorkspaceView
 from src.ui_flet.views.settings_view import SettingsView
 from src.ui_flet.views.help_view import HelpView
@@ -63,7 +65,6 @@ class DocumentConvertApp:
         # ── Test different window icons for Taskbar & OS Title Bar ───────────
         from src.utils.assets import resolve_icon_path
         icon_path = (
-            # Option 1: High-res 256x256 ICO chỉ nhận được file ico, nhưng vẫn bị mờ
             resolve_icon_path("icon256x256px.ico")
         )
         if icon_path:
@@ -106,10 +107,9 @@ class DocumentConvertApp:
         # Load & sync settings into UI controls (after controls are built)
         self.settings_controller.load_and_apply()
 
-        # Restore Draft or Show Welcome Screen
-        has_draft = self.file_controller.load_draft_if_exists()
-        if has_draft:
-            self._show_editor_view()
+        # Restore Draft asynchronously with loading view or Show Welcome Screen
+        if self.file_controller.has_draft_on_disk():
+            asyncio.create_task(self.file_controller.async_load_draft_if_exists())
         else:
             self._show_welcome_view()
 
@@ -138,6 +138,8 @@ class DocumentConvertApp:
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
             on_create_blank=lambda e: self._on_create_blank_note(e),
         )
+
+        self.loading_view = LoadingView()
 
         self.settings_view = SettingsView(
             state=self.state,
@@ -227,6 +229,7 @@ class DocumentConvertApp:
         self.workspace_view = WorkspaceView(
             welcome_view=self.welcome_view,
             editor_workspace=self.editor_workspace,
+            loading_view=self.loading_view,
             settings_view=self.settings_view,
             help_view=self.help_view,
         )
@@ -246,6 +249,8 @@ class DocumentConvertApp:
             "footer_bar": self.footer_bar,
             "ribbon_bar": self.ribbon_bar,
             "welcome_view": self.welcome_view,
+            "loading_view": self.loading_view,
+            "workspace_view": self.workspace_view,
             "settings_view": self.settings_view,
             "help_view": self.help_view,
             "file_picker_in": self.file_picker_in,

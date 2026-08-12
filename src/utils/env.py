@@ -212,7 +212,7 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     else:
                         user32.ShowWindow(hwnd, SW_SHOW)
 
-                    # --- LAYER 2: SPI Lock Timeout Bypass + SetWindowPos TOPMOST Toggle + SetForegroundWindow ---
+                    # --- LAYER 2: SPI Lock Timeout Bypass + AttachThreadInput + SetWindowPos TOPMOST Toggle + SetForegroundWindow ---
                     old_timeout = ctypes.wintypes.DWORD()
                     user32.SystemParametersInfoW(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(old_timeout), 0)
 
@@ -222,13 +222,42 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                         pass
 
                     set_fg_success = False
+                    attached = False
+                    fg_thread_id = 0
+                    target_thread_id = 0
+
                     try:
                         user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(0), 0)
                         # Bring target window to absolute top of Z-order hierarchy
                         user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
                         user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+
+                        # Attach foreground thread input to target thread input to bypass OS lock for multi-process browsers (Chrome/Edge)
+                        curr_fg_hwnd = user32.GetForegroundWindow()
+                        if curr_fg_hwnd and curr_fg_hwnd != hwnd:
+                            fg_thread_id = user32.GetWindowThreadProcessId(curr_fg_hwnd, None)
+                            target_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+                            if fg_thread_id and target_thread_id and fg_thread_id != target_thread_id:
+                                attached = bool(user32.AttachThreadInput(fg_thread_id, target_thread_id, True))
+
+                        try:
+                            user32.BringWindowToTop(hwnd)
+                        except Exception:
+                            pass
+
                         set_fg_success = bool(user32.SetForegroundWindow(hwnd))
+
+                        try:
+                            user32.SwitchToThisWindow(hwnd, True)
+                        except Exception:
+                            pass
                     finally:
+                        if attached and fg_thread_id and target_thread_id:
+                            try:
+                                user32.AttachThreadInput(fg_thread_id, target_thread_id, False)
+                            except Exception:
+                                pass
+
                         user32.SystemParametersInfoW(
                             SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(old_timeout.value), 0
                         )

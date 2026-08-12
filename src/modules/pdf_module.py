@@ -700,7 +700,25 @@ class PDFModule(BaseDocumentModule):
             if out_dir and not os.path.exists(out_dir):
                 os.makedirs(out_dir, exist_ok=True)
 
-            pdf.save(out_path)
+            # Fix PyMuPDF TOC hierarchy level error if first heading is h2/h3 (hierarchy level of item 0 must be 1)
+            if hasattr(pdf, "toc") and pdf.toc:
+                try:
+                    min_lvl = pdf.toc[0][0]
+                    if min_lvl > 1:
+                        offset = min_lvl - 1
+                        pdf.toc = [(max(1, item[0] - offset), item[1], item[2]) for item in pdf.toc]
+                except Exception:
+                    pass
+
+            try:
+                pdf.save(out_path)
+            except Exception as save_err:
+                if "hierarchy level" in str(save_err) or "toc" in str(save_err).lower():
+                    pdf.toc = []
+                    pdf.save(out_path)
+                else:
+                    raise save_err
+
             return f"Exported successfully to {os.path.basename(out_path)}"
         except Exception as e:
             raise RuntimeError(f"PDF Export Error: Failed to generate PDF document. Detail: {str(e)}")

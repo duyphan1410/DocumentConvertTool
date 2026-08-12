@@ -172,11 +172,11 @@ def show_message_dialog(
 
         def toggle_details(e):
             detail_container.visible = not detail_container.visible
-            toggle_btn.text = "Technical Details" if detail_container.visible else "Technical Details"
+            toggle_btn.content = ft.Text("Technical Details" if detail_container.visible else "Technical Details")
             dialog.update()
 
         toggle_btn = ft.TextButton(
-            text="Technical Details",
+            content=ft.Text("Technical Details"),
             icon=ft.Icons.CODE_ROUNDED,
             style=ft.ButtonStyle(color=text_secondary),
             on_click=toggle_details,

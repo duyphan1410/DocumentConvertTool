@@ -389,9 +389,11 @@ class PPTXModule(BaseDocumentModule):
                     if hasattr(slide.shapes, "title") and slide.shapes.title:
                         slide.shapes.title.text = title_text
                     top_offset = Inches(1.6)
+                    start_top_offset = Inches(1.6)
                 else:
                     slide = prs.slides.add_slide(blank_layout)
                     top_offset = Inches(0.8)
+                    start_top_offset = Inches(0.8)
 
                 # Attach Slide Notes if present
                 if notes_text:
@@ -404,11 +406,12 @@ class PPTXModule(BaseDocumentModule):
                 max_slide_top = prs.slide_height - Inches(0.8)
 
                 def ensure_space(required_height=Inches(1.0)):
-                    nonlocal slide, top_offset
-                    if top_offset + required_height > max_slide_top:
+                    nonlocal slide, top_offset, start_top_offset
+                    if top_offset + required_height > max_slide_top and top_offset > start_top_offset:
                         print(f"[DEBUG] Slide content overflow warning: top_offset={top_offset} + {required_height} exceeds slide height, auto-creating continuation slide")
                         slide = prs.slides.add_slide(blank_layout)
                         top_offset = Inches(0.8)
+                        start_top_offset = Inches(0.8)
                         if notes_text:
                             try:
                                 slide.notes_slide.notes_text_frame.text = notes_text
@@ -549,7 +552,7 @@ class PPTXModule(BaseDocumentModule):
                         i += 1
                         continue
 
-                    # 4. Text Frame (Bullet lists & formatted paragraphs)
+                    # 4. Text Frame (Bullet lists & formatted paragraphs with pagination)
                     tx_lines = []
                     while i < len(content_lines):
                         l_str = content_lines[i].strip()
@@ -558,14 +561,32 @@ class PPTXModule(BaseDocumentModule):
                         tx_lines.append(content_lines[i])
                         i += 1
 
-                    if tx_lines:
-                        ensure_space(Inches(0.4 * len(tx_lines) + 0.3))
-                        txBox = slide.shapes.add_textbox(Inches(0.8), top_offset, Inches(11.7), Inches(0.4 * len(tx_lines)))
+                    while tx_lines:
+                        # If current slide has very little space left and already contains content, create continuation slide
+                        if top_offset > max_slide_top - Inches(1.2) and top_offset > start_top_offset:
+                            slide = prs.slides.add_slide(blank_layout)
+                            top_offset = Inches(0.8)
+                            start_top_offset = Inches(0.8)
+                            if notes_text:
+                                try:
+                                    slide.notes_slide.notes_text_frame.text = notes_text
+                                except Exception:
+                                    pass
+
+                        avail_height = max_slide_top - top_offset
+                        line_height = Inches(0.38)
+                        max_lines_fit = max(1, int((avail_height - Inches(0.2)) / line_height))
+
+                        chunk = tx_lines[:max_lines_fit]
+                        tx_lines = tx_lines[max_lines_fit:]
+
+                        box_height = Inches(0.38 * len(chunk) + 0.2)
+                        txBox = slide.shapes.add_textbox(Inches(0.8), top_offset, Inches(11.7), box_height)
                         tf = txBox.text_frame
                         tf.word_wrap = True
 
                         first_para = True
-                        for bl in tx_lines:
+                        for bl in chunk:
                             bl_str = bl.strip()
                             if not bl_str:
                                 continue
@@ -597,7 +618,7 @@ class PPTXModule(BaseDocumentModule):
                             font_sz = max(12, 18 - level * 2)
                             parse_formatted_runs(p, clean_text, default_size=font_sz)
 
-                        top_offset += Inches(0.4 * len(tx_lines) + 0.3)
+                        top_offset += box_height
 
             out_dir = os.path.dirname(out_path)
             if out_dir:

@@ -251,6 +251,15 @@ class ConversionController:
         print("[DEBUG] Overwrite dialog opened")
 
     def start_conversion_process(self, out_path: str):
+        self.state.is_processing = True
+        self.footer_bar.set_processing(True)
+        self.footer_bar.set_result_buttons_visible(False)
+        self.footer_bar.set_status_key(
+            "status.converting",
+            color=ft.Colors.AMBER_400,
+        )
+        self.page.update()
+
         task = asyncio.create_task(self._async_run_conversion_worker(out_path))
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
@@ -275,6 +284,33 @@ class ConversionController:
                 message=msg,
                 duration=f"{duration:.2f}",
             )
+
+            # Play completion chime sound on Windows
+            if os.name == "nt":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_OK)
+                except Exception:
+                    pass
+
+            # Display a clean SnackBar notification popup
+            try:
+                snack = ft.SnackBar(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE),
+                            ft.Text(f"{msg} ({duration:.2f}s)", color=ft.Colors.WHITE, weight=ft.FontWeight.W_600),
+                        ],
+                        spacing=8,
+                    ),
+                    bgcolor=ft.Colors.GREEN_700,
+                    duration=3500,
+                )
+                self.page.snack_bar = snack
+                self.page.snack_bar.open = True
+            except Exception as ex_snack:
+                print(f"[DEBUG] SnackBar error: {ex_snack}")
+
             self.page.update()
         except Exception as ex:
             from src.core.error_mapper import ErrorMapper
@@ -292,8 +328,16 @@ class ConversionController:
                 error=doc_err.title,
                 is_error=True,
             )
-            self.page.update()
 
+            # Play error chime sound on Windows
+            if os.name == "nt":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                except Exception:
+                    pass
+
+            self.page.update()
             show_message_dialog(self.page, doc_err)
 
     def open_converted_file(self, e=None):

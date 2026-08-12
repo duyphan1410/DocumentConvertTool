@@ -325,14 +325,13 @@ class HTMLModule(BaseDocumentModule):
                     html_body = "\n".join(f"<p>{l}</p>" if l.strip() else "<br/>" for l in lines)
             t_md2html = time.time() - t3
 
-            # HTML Template with beautiful modern CSS styles supporting both Light and Dark themes
-            # using system preference (prefers-color-scheme)
+            doc_title = os.path.basename(out_path)
             html_document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exported Document</title>
+    <title>{doc_title}</title>
     <style>
         :root {{
             --bg-color: #ffffff;

@@ -75,7 +75,7 @@ class RibbonBar(ft.Container):
             label="Conversion Mode",
             value=current_mode,
             options=[ft.dropdown.Option(m) for m in MODES.keys()],
-            width=175,
+            width=210,
             dense=True,
         )
         self.mode_dropdown.on_change = self.on_mode_changed

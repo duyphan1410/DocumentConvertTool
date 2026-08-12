@@ -5,6 +5,7 @@ Saves to %APPDATA%/DocConvert/settings.json only on explicit Apply (apply_all).
 """
 from __future__ import annotations
 
+import os
 import flet as ft
 from src.ui_flet.state import AppState
 from src.ui_flet.theme import PALETTES, apply_theme
@@ -48,6 +49,12 @@ class SettingsController:
     def apply_all(self, e=None):
         """Persist current AppState settings to JSON. Called when user clicks Apply."""
         from src.i18n import t
+        from src.ui_flet.constants import MODES
+        if self.state.default_mode and self.state.default_mode in MODES:
+            ext = os.path.splitext(self.state.in_path)[1].lower() if self.state.in_path else ""
+            if not ext or MODES[self.state.default_mode]["in_ext"] == ext:
+                self.state.current_mode = self.state.default_mode
+                self._sync_ribbon_dropdowns()
         save_settings(self.state)
         import time
         timestamp = time.strftime("%H:%M:%S")

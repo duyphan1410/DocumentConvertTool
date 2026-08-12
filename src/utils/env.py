@@ -291,6 +291,22 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     is_fg = (user32.GetForegroundWindow() == hwnd)
                     print(f"[DEBUG] Layer 2 SetForegroundWindow: {set_fg_success}, IsForeground: {is_fg}")
 
+                    # --- DELAYED RE-ASSERTION SAFETY NET (350ms) ---
+                    # Catches asynchronous Excel/Explorer workbook loading focus-steals (t=300-400ms)
+                    def reassert_foreground():
+                        try:
+                            if user32.IsWindow(hwnd) and user32.GetForegroundWindow() != hwnd:
+                                print(f"[DEBUG] Delayed re-assertion (350ms): Target HWND {hwnd} lost focus, re-activating...")
+                                user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                                user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                                user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                                user32.BringWindowToTop(hwnd)
+                                user32.SetForegroundWindow(hwnd)
+                        except Exception as ex:
+                            print(f"[DEBUG] Exception in delayed re-assertion for HWND {hwnd}: {ex}")
+
+                    threading.Timer(0.35, reassert_foreground).start()
+
                     if not is_fg:
                         print(f"[DEBUG] Target HWND {hwnd} placed in top Z-order, triggering Layer 4 FlashWindowEx fallback")
                         finfo = FLASHWINFO()

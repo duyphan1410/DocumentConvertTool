@@ -41,13 +41,11 @@ def setup_environment():
 def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     """
     Opens a file or folder and guarantees bringing the target application window
-    to foreground focus (Z-Index #1) using a 3-layer fallback architecture:
-    1. HWND Discovery: Strict window class-name filtering (OpusApp/XLMAIN/PPTFrameClass/CabinetWClass)
-       with a 2.0s polling retry loop. Window title is recorded only for debug output.
-    2. Primary Elevation: Temporary SPI_SETFOREGROUNDLOCKTIMEOUT bypass + SetForegroundWindow.
-       Includes AllowSetForegroundWindow(-1) as an auxiliary OS privilege hint.
-    3. Z-Order Fallback: SetWindowPos TOPMOST -> NOTOPMOST toggle if focus stolen by OS policy.
-    4. Notification Fallback: FlashWindowEx taskbar flash if foreground transfer remains restricted.
+    to foreground focus (Z-Index #1) using a 4-layer fallback architecture:
+    1. System Input Simulation: ALT key event tap (keybd_event VK_MENU) to instantly unlock Windows ForegroundLockTimeout.
+    2. HWND Discovery: Strict window title matching combined with target class priority.
+    3. Primary Elevation: Explicit AllowSetForegroundWindow(target_pid) + AttachThreadInput + SetForegroundWindow.
+    4. Notification Fallback: FlashWindowEx taskbar flash if OS restricts background focus transfer.
     """
     target_path = os.path.normpath(os.path.abspath(target_path))
     if not os.path.exists(target_path):
@@ -77,7 +75,10 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001
     SW_SHOW = 5
     SW_RESTORE = 9
+    SW_MAXIMIZE = 3
+    SW_SHOWMAXIMIZED = 3
 
+    HWND_TOP = ctypes.wintypes.HWND(0)
     HWND_TOPMOST = ctypes.wintypes.HWND(-1)
     HWND_NOTOPMOST = ctypes.wintypes.HWND(-2)
     SWP_NOSIZE = 0x0001
@@ -86,6 +87,9 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
 
     FLASHW_ALL = 0x0003
     FLASHW_TIMERNOFG = 0x000C
+    VK_MENU = 0x12
+    KEYEVENTF_EXTENDEDKEY = 0x0001
+    KEYEVENTF_KEYUP = 0x0002
 
     class FLASHWINFO(ctypes.Structure):
         _fields_ = [
@@ -96,7 +100,6 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             ("dwTimeout", ctypes.wintypes.DWORD),
         ]
 
-    # Set explicit ctypes argtypes & restypes for safety
     user32.SetWindowPos.argtypes = [
         ctypes.wintypes.HWND, ctypes.wintypes.HWND,
         ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -116,11 +119,14 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     user32.BringWindowToTop.argtypes = [ctypes.wintypes.HWND]
     user32.BringWindowToTop.restype = ctypes.wintypes.BOOL
 
-    user32.SwitchToThisWindow.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.BOOL]
-    user32.SwitchToThisWindow.restype = None
+    user32.keybd_event.argtypes = [ctypes.c_byte, ctypes.c_byte, ctypes.wintypes.DWORD, ctypes.c_size_t]
+    user32.keybd_event.restype = None
 
-    kernel32.GetCurrentThreadId.argtypes = []
-    kernel32.GetCurrentThreadId.restype = ctypes.wintypes.DWORD
+    # Pre-launch privilege grant while current Python thread holds foreground
+    try:
+        user32.AllowSetForegroundWindow(-1)
+    except Exception:
+        pass
 
     # Launch file or folder using native ShellExecute (os.startfile reuses existing processes)
     if is_folder:
@@ -129,26 +135,36 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     else:
         os.startfile(target_path)
 
-    # Determine target file/folder tokens for dynamic window discovery
     folder_name = ""
     file_name = os.path.basename(target_path).lower()
     file_stem = os.path.splitext(file_name)[0].lower()
+    ext = os.path.splitext(file_name)[1].lower()
 
     if is_folder:
         folder_dir = target_path if os.path.isdir(target_path) else os.path.dirname(target_path)
         folder_name = os.path.basename(folder_dir).lower()
 
-    # System desktop / shell classes to ignore
     system_shell_classes = {
         "progman", "workerw", "shell_traywnd", "searchhost",
         "startmenuexperiencehost", "windows.immersivecontextmenu"
     }
 
+    expected_classes = set()
+    if is_folder:
+        expected_classes = {"cabinetwclass", "explorer"}
+    elif ext in (".xlsx", ".xls", ".csv"):
+        expected_classes = {"xlmain"}
+    elif ext in (".docx", ".doc"):
+        expected_classes = {"opusapp"}
+    elif ext in (".pptx", ".ppt"):
+        expected_classes = {"pptframeclass"}
+    elif ext in (".pdf", ".html"):
+        expected_classes = {"chrome_widgetwin_1", "mozilla_window_class", "pdf_realm"}
+
     def poll_and_force_foreground():
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
 
-        # Polling retry loop: 20 iterations * 100ms = 2.0s timeout max
-        for attempt in range(20):
+        for attempt in range(25):
             time.sleep(0.1)
             found_hwnds = []
 
@@ -169,21 +185,24 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     user32.GetWindowTextW(hwnd, buff, length + 1)
                     title = buff.value.lower()
 
-                    # Exclude current AI Agent IDE workspace window
                     if "antigravity" in title:
                         return True
 
                     is_iconic = bool(user32.IsIconic(hwnd))
 
                     score = 0
-                    if is_folder and folder_name and folder_name in title:
-                        score = 100 if not is_iconic else 80
-                    elif not is_folder and file_name and file_name in title:
-                        score = 100 if not is_iconic else 80
-                    elif not is_folder and file_stem and len(file_stem) > 2 and file_stem in title:
-                        score = 90 if not is_iconic else 70
+                    if is_folder:
+                        if folder_name and folder_name in title:
+                            score = 100 if not is_iconic else 80
+                    else:
+                        if file_name and file_name in title:
+                            score = 100 if not is_iconic else 80
+                        elif file_stem and len(file_stem) > 2 and file_stem in title:
+                            score = 90 if not is_iconic else 70
 
                     if score > 0:
+                        if cls_name in expected_classes:
+                            score += 20
                         found_hwnds.append((score, hwnd, cls_name, title))
                 return True
 
@@ -191,11 +210,9 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             user32.EnumWindows(cb, 0)
 
             if found_hwnds:
-                # Sort by highest priority score first
                 found_hwnds.sort(key=lambda item: item[0], reverse=True)
                 _, hwnd, cls_name, win_title = found_hwnds[0]
 
-                # Fetch window title strictly for debug logging
                 length = user32.GetWindowTextLengthW(hwnd)
                 title = ""
                 if length > 0:
@@ -206,20 +223,28 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                 print(f"[DEBUG] Match target HWND {hwnd} (class: '{cls_name}', title: '{title}')")
 
                 try:
-                    # Restore window ONLY if minimized to prevent shrinking normal/maximized Explorer/Word windows
-                    if user32.IsIconic(hwnd):
-                        user32.ShowWindow(hwnd, SW_RESTORE)
-                    else:
-                        user32.ShowWindow(hwnd, SW_SHOW)
-
-                    # --- LAYER 2: SPI Lock Timeout Bypass + AttachThreadInput + SetWindowPos TOPMOST Toggle + SetForegroundWindow ---
-                    old_timeout = ctypes.wintypes.DWORD()
-                    user32.SystemParametersInfoW(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(old_timeout), 0)
-
+                    # 1. Unlock Windows OS ForegroundLockTimeout via simulated ALT key tap
                     try:
-                        user32.AllowSetForegroundWindow(-1)  # ASFW_CUSTOM = -1
+                        user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                        user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
                     except Exception:
                         pass
+
+                    # 2. Grant explicit foreground privilege to target process PID
+                    target_pid = ctypes.wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(target_pid))
+                    if target_pid.value:
+                        try:
+                            user32.AllowSetForegroundWindow(target_pid.value)
+                        except Exception:
+                            pass
+
+                    # 3. Maximize window (FULL SCREEN)
+                    user32.ShowWindow(hwnd, SW_MAXIMIZE)
+
+                    # 4. SPI Lock Timeout Bypass + AttachThreadInput + SetForegroundWindow
+                    old_timeout = ctypes.wintypes.DWORD()
+                    user32.SystemParametersInfoW(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(old_timeout), 0)
 
                     set_fg_success = False
                     attached = False
@@ -228,11 +253,8 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
 
                     try:
                         user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(0), 0)
-                        # Bring target window to absolute top of Z-order hierarchy
-                        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
-                        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                        user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
 
-                        # Attach foreground thread input to target thread input to bypass OS lock for multi-process browsers (Chrome/Edge)
                         curr_fg_hwnd = user32.GetForegroundWindow()
                         if curr_fg_hwnd and curr_fg_hwnd != hwnd:
                             fg_thread_id = user32.GetWindowThreadProcessId(curr_fg_hwnd, None)
@@ -246,11 +268,6 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                             pass
 
                         set_fg_success = bool(user32.SetForegroundWindow(hwnd))
-
-                        try:
-                            user32.SwitchToThisWindow(hwnd, True)
-                        except Exception:
-                            pass
                     finally:
                         if attached and fg_thread_id and target_thread_id:
                             try:
@@ -262,10 +279,18 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                             SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(old_timeout.value), 0
                         )
 
+                    # If initial SetForegroundWindow didn't activate, tap ALT again & retry
+                    if user32.GetForegroundWindow() != hwnd:
+                        try:
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                            set_fg_success = bool(user32.SetForegroundWindow(hwnd))
+                        except Exception:
+                            pass
+
                     is_fg = (user32.GetForegroundWindow() == hwnd)
                     print(f"[DEBUG] Layer 2 SetForegroundWindow: {set_fg_success}, IsForeground: {is_fg}")
 
-                    # --- LAYER 4: FlashWindowEx Taskbar Flash Fallback ---
                     if not is_fg:
                         print(f"[DEBUG] Target HWND {hwnd} placed in top Z-order, triggering Layer 4 FlashWindowEx fallback")
                         finfo = FLASHWINFO()
@@ -283,5 +308,3 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             print(f"[DEBUG] Timeout: no matching window found for '{target_path}'")
 
     threading.Thread(target=poll_and_force_foreground, daemon=True).start()
-
-

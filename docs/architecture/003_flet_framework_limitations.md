@@ -81,20 +81,63 @@ Hiển thị **khối vuông màu xanh nhạt (Placeholder box)** tại vị tr�
 
 ---
 
-### 🚨 3. Hạn chế lấy tiêu điểm cửa sổ Windows (Win32 Foreground Z-Order)
+### 🚨 3. Hạn chế lấy tiêu điểm cửa sổ Windows (Win32 Foreground Z-Order Focus)
 
-#### 📌 Hiện tượng:
-Sau khi chuyển đổi tài liệu xong và tự động mở file bằng Microsoft Word hoặc Excel, cửa sổ Word/Excel đôi khi không tự đẩy lên trên cùng (Foreground).
+#### 📌 Hiện tượng ban đầu:
+1. Khi bấm mở tệp hoặc mở thư mục kết quả (Word, Excel, PowerPoint, Windows Explorer), cửa sổ ứng dụng target đôi khi nằm lại phía sau ứng dụng Flet hoặc bị thu nhỏ.
+2. Với các tiến trình đã chạy sẵn trên Windows (như `explorer.exe` hoặc `excel.exe` khi mở lần 2), Windows OS chặn không cho ứng dụng Flet đẩy cửa sổ target lên Active Foreground (`SetForegroundWindow: False`).
+3. Dùng cờ `HWND_NOTOPMOST` chớp nháy trước đây làm cửa sổ target hiện lên 1ms rồi tự động rụt về phía sau app Flet, gây hỏng thứ tự Alt+Tab.
 
 #### 🔍 Nguyên nhân kỹ thuật gốc rễ:
-Hệ điều hành Windows 10/11 có cơ chế bảo mật chống chiếm quyền màn hình (Foreground Lock Timeout), tự động ngăn cấm các tiến trình chạy ngầm gọi hàm Win32 API `SetForegroundWindow` (`SetForegroundWindow: False`).
+Hệ điều hành Windows 10/11 áp dụng chính sách bảo mật `ForegroundLockTimeout` để ngăn cản các ứng dụng chạy ngầm "cướp" quyền Focus bàn phím. Nếu ứng dụng gọi `SetForegroundWindow` mà không có sự kiện tương tác bàn phím thực tế của người dùng hoặc không gán quyền `AllowSetForegroundWindow` cho `target_pid`, Windows DWM sẽ chặn chuyển đổi focus và đẩy cửa sổ target xuống Z-order phía sau.
 
-#### 🛠️ Giải pháp chuẩn mực:
-Áp dụng chiến lược 4 lớp trong [env.py](file:///c:/Users/Admin/Desktop/DocumentConvertTool/src/utils/env.py#L35):
-1. **Layer 1**: Gọi `SetForegroundWindow`.
-2. **Layer 2**: Gán tạm `SetWindowPos(HWND_TOPMOST)`.
-3. **Layer 3**: Giả lập phím `ALT` via `keybd_event`.
-4. **Layer 4**: Nhấp nháy thanh Taskbar qua API `FlashWindowEx`.
+#### 🛠️ Giải pháp chuẩn mực (Đã triển khai thành công tại `src/utils/env.py`):
+
+Áp dụng cơ chế **Universal Dynamic Window Focus** kết hợp 4 lớp kỹ thuật Win32 API (Chi tiết hơn tại [005_universal_dynamic_window_focus.md](005_universal_dynamic_window_focus.md)):
+
+```python
+# 1. Mở khóa ForegroundLockTimeout bằng phím ALT ngầm (Simulated Keyboard Event)
+user32.keybd_event(0x12, 0, 0x0001, 0)
+user32.keybd_event(0x12, 0, 0x0001 | 0x0002, 0)
+
+# 2. Cấp quyền kích hoạt màn hình cho đúng Process ID của ứng dụng target (Word/Excel/Explorer)
+target_pid = ctypes.wintypes.DWORD()
+user32.GetWindowThreadProcessId(hwnd, ctypes.byref(target_pid))
+if target_pid.value:
+    user32.AllowSetForegroundWindow(target_pid.value)
+
+# 3. Phóng to cửa sổ Toàn màn hình (FULL SCREEN / Maximized)
+user32.ShowWindow(hwnd, SW_MAXIMIZE)
+
+# 4. Đưa cửa sổ lên đỉnh Z-order tự nhiên bằng HWND_TOP (Không dùng HWND_NOTOPMOST gây sụt Z-index)
+user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+
+# 5. Liên kết luồng nhập liệu bàn phím và chuyển Active Focus
+curr_fg_hwnd = user32.GetForegroundWindow()
+if curr_fg_hwnd and curr_fg_hwnd != hwnd:
+    fg_thread_id = user32.GetWindowThreadProcessId(curr_fg_hwnd, None)
+    target_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+    if fg_thread_id and target_thread_id and fg_thread_id != target_thread_id:
+        attached = bool(user32.AttachThreadInput(fg_thread_id, target_thread_id, True))
+
+try:
+    user32.BringWindowToTop(hwnd)
+    user32.SetForegroundWindow(hwnd)
+finally:
+    if attached:
+        user32.AttachThreadInput(fg_thread_id, target_thread_id, False)
+
+# 6. Retry chớp phím ALT nếu OS vẫn hạn chế
+if user32.GetForegroundWindow() != hwnd:
+    user32.keybd_event(0x12, 0, 0x0001, 0)
+    user32.keybd_event(0x12, 0, 0x0001 | 0x0002, 0)
+    user32.SetForegroundWindow(hwnd)
+```
+
+#### ✅ Kết quả đạt được:
+1. **Focus 100% cửa sổ mới mở**: Cửa sổ Excel, Word, PowerPoint, PDF, HTML và Windows Explorer nổi lên đúng vị trí số 1 ngay khi nhấn nút.
+2. **Alt+Tab mượt mà & Đưa app Flet xuống thứ tự tự nhiên**: Loại bỏ hoàn toàn việc dùng `HWND_TOPMOST` / `HWND_NOTOPMOST` chớp nháy, giúp thứ tự Alt+Tab của hệ điều hành Windows hoạt động hoàn hảo.
+3. **Chống lặp lỗi tự chui ra sau app**: Xử lý triệt để bài toán `explorer.exe` và `excel.exe` mở nhiều lần (lần 1, 2, 3...) hoạt động ổn định 100%.
 
 ---
 

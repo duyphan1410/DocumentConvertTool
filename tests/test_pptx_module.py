@@ -182,6 +182,31 @@ class TestPPTXModule(unittest.TestCase):
             extracted = module.load_to_markdown(out_pptx)
             self.assertIn("| --- | --- | --- |", extracted)
 
+    def test_long_text_overflow_pagination(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        # 30 lines of long text in a single block without title
+        long_lines = [f"- Paragraph item {i}: " + ("Sample long text " * 5) for i in range(1, 31)]
+        md_input = "\n".join(long_lines)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_overflow.pptx")
+            module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+
+            prs = pptx.Presentation(out_pptx)
+            # 30 lines should be split into multiple slides (>1 slide)
+            self.assertGreater(len(prs.slides), 1)
+            # Ensure no slide is empty
+            for s_idx, slide in enumerate(prs.slides):
+                self.assertGreater(len(slide.shapes), 0, f"Slide {s_idx+1} is empty!")
+
 
 if __name__ == "__main__":
     unittest.main()

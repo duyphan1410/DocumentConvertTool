@@ -1,12 +1,12 @@
-# Document Converter Workspace (v1.5.3)
+# Document Converter Workspace (v1.6.0)
 
 ![Python](<https://img.shields.io/badge/Python-3.12%20--%203.13-blue>)
 ![UI Framework](<https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple>)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.5.3-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.6.0-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
-A modern desktop workspace for editing and converting documents between **Markdown**, **Excel**, **Word**, **PDF**, **CSV**, and **HTML** formats built with **Flet (Flutter for Python)**.
+A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, and **HTML** formats built with **Flet (Flutter for Python)**.
 
 ---
 
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.5.3) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.6.0) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -34,9 +34,10 @@ Download the latest standalone executable (no Python installation required):
 
 | Format | Import to Markdown (`➔ .md`) | Export from Markdown (`.md ➔`) | Highlights |
 | :--- | :---: | :---: | :--- |
+| **PowerPoint (`.pptx`)** | ✅ | ✅ | 16:9 Widescreen slides, auto-numbering, chart data extraction, legend padding, slide overflow protection, slide notes bullets |
 | **Word (`.docx`)** | ✅ | ✅ | Styled headings, clean structure, tables |
 | **Excel (`.xlsx`)** | ✅ | ✅ | Multi-sheet parsing, frozen headers, auto-filters |
-| **PDF (`.pdf`)** | ✅ | ✅ | Preserved list/bullet structure, Unicode Vietnamese fonts, `@media/` slide images |
+| **PDF (`.pdf`)** | ✅ | ✅ | Preserved list/bullet structure, Unicode Vietnamese fonts, PyMuPDF TOC normalization, `@media/` slide images |
 | **CSV (`.csv`)** | ✅ | ✅ | Delimiter auto-detection, clean Markdown table generation |
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 

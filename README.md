@@ -48,6 +48,7 @@ Download the latest standalone executable (no Python installation required):
 * **Office Ribbon Navbar**: 4-tab navigation (`File`, `Edit`, `View`, `Options`) with zero-layout-shift collapsing.
 * **Welcome Dashboard & Quick Open**: Instant onboarding card for new notes / quick document opening (`Ctrl+O`).
 * **Live Document Preview**: Real-time Base64 RAM cache & dynamic image scaling with zero UI freezing (`asyncio.to_thread`).
+* **Universal Dynamic Win32 Focus & Browser Elevation**: 100% dynamic title-based window matching and `AttachThreadInput` Win32 API thread input attachment for seamless active focus across all Windows editors and web browsers.
 * **Instant 5-Palette Theme Engine**: Deep Ocean, Violet Cyberpunk, Emerald Obsidian, Slate Minimal, Amber Gold.
 
 ---
@@ -82,7 +83,8 @@ The output executable will be created at `dist/Document Converter.exe`.
 - **v1.0 — Core Engines**: Initial Word, Excel, CSV, PDF, HTML conversion modules.
 - **v1.3 — Flet Desktop Migration**: Responsive split-pane layout, 5-palette theme engine, async loader.
 - **v1.4 — Pure MVC & PDF Engine Polish**: 3-Tier MVC architecture (6 Controllers), Welcome Dashboard, Office Ribbon Bar, PDF list preservation & Vietnamese font fix.
-- **v1.5 — Error Handling, Draft Protection & Auto-Loading UX (Current)**: 10 `ErrorCode`s, autosave draft protection, 60fps async loading view, 1-click smart auto-rename & localized path bar.
+- **v1.5 — Error Handling, Draft Protection & Auto-Loading UX**: 10 `ErrorCode`s, autosave draft protection, 60fps async loading view, 1-click smart auto-rename & localized path bar.
+- **v1.6 — PowerPoint Module, Universal Dynamic Focus & Browser Elevation (Current)**: Bi-directional PPTX ↔ MD engine (16:9 widescreen, auto-numbering, chart extraction, legend padding, slide overflow protection), 100% dynamic Win32 window focus & `AttachThreadInput` browser elevation.
 
 > [!NOTE]
 > Detailed developer documentation, technical architecture summaries, and feature logs are organized in the [`docs/`](docs/) directory.

@@ -326,42 +326,42 @@ class WordModule(BaseDocumentModule):
                             lines.insert(i + insert_offset, text_after)
                         continue
 
-                if src_url:
-                    img_path = asset_mgr.resolve_uri(src_url)
-                    if not os.path.isabs(img_path) or not os.path.exists(img_path):
-                        out_dir = os.path.dirname(out_path)
-                        candidate = os.path.join(out_dir, src_url)
-                        if os.path.exists(candidate) and os.path.isfile(candidate):
-                            img_path = candidate
-                        else:
-                            base_filename = os.path.basename(src_url)
-                            if os.path.exists(asset_mgr.cache_dir):
-                                for root, _, files in os.walk(asset_mgr.cache_dir):
-                                    if base_filename in files:
-                                        cand = os.path.join(root, base_filename)
-                                        if os.path.isfile(cand):
-                                            img_path = cand
-                                            break
-                    
-                    img_path = os.path.normpath(os.path.abspath(img_path))
-                    if os.path.exists(img_path) and os.path.isfile(img_path):
-                        try:
-                            p = doc.add_paragraph()
-                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            run = p.add_run()
-                            
-                            from PIL import Image as PILImage
-                            with PILImage.open(img_path) as pil_img:
-                                w_px, h_px = pil_img.size
-                                w_inches = min(5.8, max(1.5, w_px / 150.0))
+                    if src_url:
+                        img_path = asset_mgr.resolve_uri(src_url)
+                        if not os.path.isabs(img_path) or not os.path.exists(img_path):
+                            out_dir = os.path.dirname(out_path)
+                            candidate = os.path.join(out_dir, src_url)
+                            if os.path.exists(candidate) and os.path.isfile(candidate):
+                                img_path = candidate
+                            else:
+                                base_filename = os.path.basename(src_url)
+                                if os.path.exists(asset_mgr.cache_dir):
+                                    for root, _, files in os.walk(asset_mgr.cache_dir):
+                                        if base_filename in files:
+                                            cand = os.path.join(root, base_filename)
+                                            if os.path.isfile(cand):
+                                                img_path = cand
+                                                break
+                        
+                        img_path = os.path.normpath(os.path.abspath(img_path))
+                        if os.path.exists(img_path) and os.path.isfile(img_path):
+                            try:
+                                p = doc.add_paragraph()
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                run = p.add_run()
                                 
-                            run.add_picture(img_path, width=Inches(w_inches))
-                            p.paragraph_format.space_before = Pt(6)
-                            p.paragraph_format.space_after = Pt(6)
-                            i += 1
-                            continue
-                        except Exception as img_err:
-                            print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
+                                from PIL import Image as PILImage
+                                with PILImage.open(img_path) as pil_img:
+                                    w_px, h_px = pil_img.size
+                                    w_inches = min(5.8, max(1.5, w_px / 150.0))
+                                    
+                                run.add_picture(img_path, width=Inches(w_inches))
+                                p.paragraph_format.space_before = Pt(6)
+                                p.paragraph_format.space_after = Pt(6)
+                                i += 1
+                                continue
+                            except Exception as img_err:
+                                print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
 
             # Heading check (Fast string pre-check)
             if line.startswith("#"):

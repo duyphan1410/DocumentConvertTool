@@ -43,6 +43,7 @@ hiddenimports = [
     'src.modules.pdf_module',
     'src.modules.csv_module',
     'src.modules.html_module',
+    'src.modules.pptx_module',
 ]
 
 # Collect all binaries & data assets for Flet Desktop framework

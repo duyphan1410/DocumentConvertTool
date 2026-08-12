@@ -129,27 +129,22 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     else:
         os.startfile(target_path)
 
-    # Determine target window class names strictly by folder role OR file extension
-    target_classes = set()
+    # Determine target file/folder tokens for dynamic window discovery
     folder_name = ""
+    file_name = os.path.basename(target_path).lower()
+    file_stem = os.path.splitext(file_name)[0].lower()
+
     if is_folder:
         folder_dir = target_path if os.path.isdir(target_path) else os.path.dirname(target_path)
         folder_name = os.path.basename(folder_dir).lower()
-        target_classes.update(["cabinetwclass", "explorewclass"])
-    else:
-        ext = os.path.splitext(target_path)[1].lower()
-        if ext in (".doc", ".docx"):
-            target_classes.add("opusapp")
-        elif ext in (".xls", ".xlsx", ".csv"):
-            target_classes.add("xlmain")
-        elif ext in (".ppt", ".pptx"):
-            target_classes.add("pptframeclass")
+
+    # System desktop / shell classes to ignore
+    system_shell_classes = {
+        "progman", "workerw", "shell_traywnd", "searchhost",
+        "startmenuexperiencehost", "windows.immersivecontextmenu"
+    }
 
     def poll_and_force_foreground():
-        if not target_classes:
-            print(f"[DEBUG] No target window classes for '{target_path}' — skip Win32 foreground polling")
-            return
-
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
 
         # Polling retry loop: 20 iterations * 100ms = 2.0s timeout max
@@ -163,25 +158,33 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     user32.GetClassNameW(hwnd, class_buff, 256)
                     cls_name = class_buff.value.lower()
 
-                    if target_classes and cls_name in target_classes:
-                        length = user32.GetWindowTextLengthW(hwnd)
-                        title = ""
-                        if length > 0:
-                            buff = ctypes.create_unicode_buffer(length + 1)
-                            user32.GetWindowTextW(hwnd, buff, length + 1)
-                            title = buff.value.lower()
+                    if cls_name in system_shell_classes:
+                        return True
 
-                        is_iconic = bool(user32.IsIconic(hwnd))
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length <= 0:
+                        return True
 
-                        # Priority scoring to prefer matching folder name + non-minimized windows
-                        if is_folder and folder_name and folder_name in title:
-                            score = 100 if not is_iconic else 80
-                        elif not is_iconic:
-                            score = 50
-                        else:
-                            score = 10
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.lower()
 
-                        found_hwnds.append((score, hwnd, cls_name))
+                    # Exclude current AI Agent IDE workspace window
+                    if "antigravity" in title:
+                        return True
+
+                    is_iconic = bool(user32.IsIconic(hwnd))
+
+                    score = 0
+                    if is_folder and folder_name and folder_name in title:
+                        score = 100 if not is_iconic else 80
+                    elif not is_folder and file_name and file_name in title:
+                        score = 100 if not is_iconic else 80
+                    elif not is_folder and file_stem and len(file_stem) > 2 and file_stem in title:
+                        score = 90 if not is_iconic else 70
+
+                    if score > 0:
+                        found_hwnds.append((score, hwnd, cls_name, title))
                 return True
 
             cb = WNDENUMPROC(enum_windows_callback)
@@ -190,7 +193,7 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             if found_hwnds:
                 # Sort by highest priority score first
                 found_hwnds.sort(key=lambda item: item[0], reverse=True)
-                _, hwnd, cls_name = found_hwnds[0]
+                _, hwnd, cls_name, win_title = found_hwnds[0]
 
                 # Fetch window title strictly for debug logging
                 length = user32.GetWindowTextLengthW(hwnd)
@@ -248,7 +251,7 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     print(f"[DEBUG] Exception forcing foreground for HWND {hwnd}: {ex}")
                 break
         else:
-            print(f"[DEBUG] Timeout: no matching window found for target_classes={target_classes}")
+            print(f"[DEBUG] Timeout: no matching window found for '{target_path}'")
 
     threading.Thread(target=poll_and_force_foreground, daemon=True).start()
 

@@ -26,6 +26,8 @@ class BaseDocumentModule(ABC):
             dep_lower = dep.lower()
             if dep_lower == "python-docx":
                 import_name = "docx"
+            elif dep_lower == "python-pptx":
+                import_name = "pptx"
             elif dep_lower == "markdown-pdf":
                 import_name = "markdown_pdf"
             elif dep_lower == "pymupdf":

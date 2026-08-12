@@ -272,7 +272,7 @@ class ConversionController:
             self.footer_bar.set_status_key(
                 "status.conversion_success",
                 color=ft.Colors.GREEN_400,
-                filename=os.path.basename(out_path),
+                message=msg,
                 duration=f"{duration:.2f}",
             )
             self.page.update()

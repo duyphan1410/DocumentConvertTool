@@ -375,6 +375,7 @@ class SettingsView(ft.Container):
         deps = [
             ("flet", "0.86.4"),
             ("python-docx", "required for Word"),
+            ("python-pptx", "required for PowerPoint"),
             ("openpyxl", "required for Excel"),
             ("weasyprint / reportlab", "required for PDF"),
             ("mistune", "required for Markdown"),

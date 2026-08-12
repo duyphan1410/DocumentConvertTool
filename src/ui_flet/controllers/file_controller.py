@@ -234,11 +234,21 @@ class FileController:
                 self.state.in_path = ""
                 self.file_path_bar.set_in_path("")
 
-        # 2. Restore Conversion Mode
-        if saved_mode and saved_mode in MODES:
-            self.state.current_mode = saved_mode
-            self.ribbon_bar.mode_dropdown.value = saved_mode
-            mode_cfg = MODES[saved_mode]
+        # 2. Restore & Filter Conversion Mode by File Extension (matching OpenFile logic)
+        ext = os.path.splitext(self.state.in_path)[1].lower() if self.state.in_path else ""
+        def_mode = getattr(self.state, "default_mode", "")
+
+        if def_mode and def_mode in MODES and (not ext or MODES[def_mode]["in_ext"] == ext):
+            preferred_mode = def_mode
+        elif saved_mode and saved_mode in MODES and (not ext or MODES[saved_mode]["in_ext"] == ext):
+            preferred_mode = saved_mode
+        else:
+            preferred_mode = def_mode or saved_mode
+
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+        if self.state.current_mode in MODES:
+            mode_cfg = MODES[self.state.current_mode]
             self.file_path_bar.set_in_label(mode_cfg["in_label"])
             self.file_path_bar.set_out_label(mode_cfg["out_label"])
 

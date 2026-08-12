@@ -219,13 +219,13 @@ def validate_file_pipeline(path: str) -> str:
                 suggestion="Vui lòng lưu lại tệp với mã hóa UTF-8.",
             )
 
-    elif ext in (".docx", ".xlsx"):
+    elif ext in (".docx", ".xlsx", ".pptx"):
         if first_bytes == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
             raise DocumentError(
                 code=ErrorCode.PASSWORD_PROTECTED,
                 title="Tệp bị mã hóa hoặc đặt mật khẩu",
-                message=f"Tệp '{os.path.basename(clean_path)}' bị đặt mật khẩu hoặc lưu ở định dạng cũ .doc/.xls đổi tên.",
-                suggestion="Vui lòng bỏ mật khẩu tệp trong Microsoft Office và đảm bảo chọn định dạng .docx/.xlsx hiện đại.",
+                message=f"Tệp '{os.path.basename(clean_path)}' bị đặt mật khẩu hoặc lưu ở định dạng cũ .doc/.xls/.ppt đổi tên.",
+                suggestion="Vui lòng bỏ mật khẩu tệp trong Microsoft Office và đảm bảo chọn định dạng .docx/.xlsx/.pptx hiện đại.",
             )
         elif not first_bytes.startswith(b"PK\x03\x04"):
             raise DocumentError(
@@ -258,6 +258,13 @@ def validate_file_pipeline(path: str) -> str:
                         title="Thiếu cấu trúc Excel OOXML",
                         message="Tệp là kho ZIP nhưng thiếu thành phần xl/ workbook.",
                         suggestion="Hãy kiểm tra lại tệp Excel đầu vào.",
+                    )
+                if ext == ".pptx" and not any(n.startswith("ppt/") for n in namelist):
+                    raise DocumentError(
+                        code=ErrorCode.CORRUPTED_STRUCTURE,
+                        title="Thiếu cấu trúc PowerPoint OOXML",
+                        message="Tệp là kho ZIP nhưng thiếu thành phần ppt/ presentation.",
+                        suggestion="Hãy kiểm tra lại tệp PowerPoint đầu vào.",
                     )
         except zipfile.BadZipFile:
             raise DocumentError(

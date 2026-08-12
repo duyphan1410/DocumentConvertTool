@@ -15,7 +15,7 @@ Tích hợp tính năng kéo thả tệp (`Drag & Drop`) trực tiếp từ Wind
 
 ## 2. 🔬 Phương Pháp Thực Nghiệm & Đo Lường (Phase 0 Spike)
 
-Kịch bản thực nghiệm độc lập được viết tại [spike_dnd.py](file:///C:/Users/Admin/.gemini/antigravity-ide/brain/51e10bf4-f3b5-4f4f-8d20-9e9d824c32be/scratch/spike_dnd.py) để kiểm tra tính khả thi của `RegisterDragDrop` trên cửa sổ Flet đang chạy.
+Kịch bản thực nghiệm độc lập được viết tại `spike_dnd.py` để kiểm tra tính khả thi của `RegisterDragDrop` trên cửa sổ Flet đang chạy.
 
 ### Mã Nguồn Kịch Bản Spike
 
@@ -108,11 +108,11 @@ async def flet_main(page: ft.Page):
 Mặc dù tính năng chưa thể kích hoạt trực tiếp qua `pywin32`, toàn bộ cấu trúc mã nguồn đã được tổ chức sẵn sàng để kích hoạt ngay khi Flet ra mắt phiên bản hỗ trợ Drag & Drop native:
 
 1. **Giao diện Overlay phủ toàn màn hình**:
-   [drag_drop_overlay.py](file:///c:/Users/Admin/Desktop/DocumentConvertTool/src/ui_flet/components/drag_drop_overlay.py) (Đã sẵn sàng trong `main_stack`).
+   [drag_drop_overlay.py](../../src/ui_flet/components/drag_drop_overlay.py) (Đã sẵn sàng trong `main_stack`).
 2. **Bộ điều khiển Controller xử lý danh sách tệp**:
-   [file_controller.py](file:///c:/Users/Admin/Desktop/DocumentConvertTool/src/ui_flet/controllers/file_controller.py) (Hàm `handle_dropped_files()` đã sẵn sàng lọc tệp & nạp tự động qua pipeline `open_file_by_path()`).
+   [file_controller.py](../../src/ui_flet/controllers/file_controller.py) (Hàm `handle_dropped_files()` đã sẵn sàng lọc tệp & nạp tự động qua pipeline `open_file_by_path()`).
 3. **Tài liệu Kế hoạch triển khai**:
-   [implementation_plan.md](file:///C:/Users/Admin/.gemini/antigravity-ide/brain/51e10bf4-f3b5-4f4f-8d20-9e9d824c32be/implementation_plan.md) đóng vai trò là Blueprint tham chiếu đầy đủ.
+   `implementation_plan.md` đóng vai trò là Blueprint tham chiếu đầy đủ.
 
 ---
 

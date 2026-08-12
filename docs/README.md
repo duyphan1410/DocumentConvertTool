@@ -13,20 +13,26 @@ docs/
 │   ├── 001_portable_image_pipeline.md
 │   ├── 002_overwrite_dialog_logic.md
 │   ├── 003_flet_framework_limitations.md
-│   └── 004_win32_native_drag_drop_research.md
+│   ├── 004_win32_native_drag_drop_research.md
+│   └── 005_universal_dynamic_window_focus.md
 ├── roadmaps/                             # Feature roadmaps & UI specifications
 │   ├── product_roadmap.md
 │   └── studio_workspace_roadmap.md
 ├── releases/                             # Version changelogs & release notes
-│   └── v1.5.0.md
+│   ├── v1.5.0.md
+│   ├── v1.5.3.md
+│   ├── v1.6.0.md
+│   └── v1.6.0_en.md
 └── archive/                              # PR completion snapshots & refactoring logs
-    ├── PR_06082026_error_handling_draft_protection.md
-    ├── PR_06082026_settings_help_ribbon_ui.md
-    ├── conversion_performance_analysis.md
-    ├── focus_zorder_analysis.md
-    ├── project_summary.md
-    ├── refactoring_summary.md
-    └── ribbon_ui_summary.md
+    ├── 20260729_refactoring_summary.md
+    ├── 20260730_conversion_performance_analysis.md
+    ├── 20260730_project_summary.md
+    ├── 20260730_ribbon_ui_summary.md
+    ├── 20260731_focus_zorder_analysis.md
+    ├── 20260806_error_handling_draft_protection.md
+    ├── 20260806_settings_help_ribbon_ui.md
+    ├── 20260810_auto_draft_loading_ux_summary.md
+    └── 20260812_pptx_conversion.md
 ```
 
 ---
@@ -35,32 +41,37 @@ docs/
 
 ### 🏛️ 1. Architecture Decision Records (`docs/architecture/`)
 
-- [001_portable_image_pipeline.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/architecture/001_portable_image_pipeline.md): Automatic relative/absolute image path resolver for portable Markdown media assets.
-- [002_overwrite_dialog_logic.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/architecture/002_overwrite_dialog_logic.md): Flet 0.86.4 Desktop modal dialog pattern & safe file overwrite protection logic.
-- [003_flet_framework_limitations.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/architecture/003_flet_framework_limitations.md): Catalog of Flet framework constraints, icon naming rules, and API compatibility directives.
-- [004_win32_native_drag_drop_research.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/architecture/004_win32_native_drag_drop_research.md): Empirical spike report on Win32 OLE `RegisterDragDrop` 2-Process boundary limitation and `desktop_drop` Flutter runner custom build guide.
+- [001_portable_image_pipeline.md](architecture/001_portable_image_pipeline.md): Automatic relative/absolute image path resolver for portable Markdown media assets.
+- [002_overwrite_dialog_logic.md](architecture/002_overwrite_dialog_logic.md): Flet 0.86.4 Desktop modal dialog pattern & safe file overwrite protection logic.
+- [003_flet_framework_limitations.md](architecture/003_flet_framework_limitations.md): Catalog of Flet framework constraints, icon naming rules, and API compatibility directives.
+- [004_win32_native_drag_drop_research.md](architecture/004_win32_native_drag_drop_research.md): Empirical spike report on Win32 OLE `RegisterDragDrop` 2-Process boundary limitation and `desktop_drop` Flutter runner custom build guide.
+- [005_universal_dynamic_window_focus.md](architecture/005_universal_dynamic_window_focus.md): Universal 100% dynamic window title matching & Win32 `AttachThreadInput` browser elevation solution.
 
 ---
 
 ### 🗺️ 2. Product Roadmaps (`docs/roadmaps/`)
 
-- [product_roadmap.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/roadmaps/product_roadmap.md): Master product development roadmap and planned milestones.
-- [studio_workspace_roadmap.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/roadmaps/studio_workspace_roadmap.md): Design specifications for the upcoming Studio Workspace interface.
+- [product_roadmap.md](roadmaps/product_roadmap.md): Master product development roadmap and planned milestones.
+- [studio_workspace_roadmap.md](roadmaps/studio_workspace_roadmap.md): Design specifications for the upcoming Studio Workspace interface.
 
 ---
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
-- [v1.5.0.md](file:///c:/Users/Admin/Desktop/DocumentConvertTool/docs/releases/v1.5.0.md): Version 1.5.0 Release Notes (Ribbon UI, Theme/Palette hot-swapping, i18n localization, and Global Shortcut Manager).
+- [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Chart footprint extraction, text overflow pagination, and Universal Dynamic Window Focus).
+- [v1.5.3.md](releases/v1.5.3.md): Version 1.5.3 Release Notes (Async draft restoration UX, 60fps LoadingView, 1-Click Smart Auto-Rename, and Exact Filename Highlight).
+- [v1.5.0.md](releases/v1.5.0.md): Version 1.5.0 Release Notes (Ribbon UI, Theme/Palette hot-swapping, i18n localization, and Global Shortcut Manager).
 
 ---
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
-- `PR_06082026_error_handling_draft_protection.md`: Pull Request summary for production error mapper & draft autosave protection.
-- `PR_06082026_settings_help_ribbon_ui.md`: Pull Request summary for Ribbon Bar tabs, Settings View, and Help View.
-- `conversion_performance_analysis.md`: Benchmark analysis for multi-format extraction and conversion engines.
-- `focus_zorder_analysis.md`: Modal dialog focus management and Z-order stacking investigation.
-- `project_summary.md`: Initial project setup and CTk -> Flet migration overview.
-- `refactoring_summary.md`: Summary of 3-Tier MVC architecture refactoring.
-- `ribbon_ui_summary.md`: Layout architecture design notes for Microsoft Office-style Ribbon UI.
+- [20260812_pptx_conversion.md](archive/20260812_pptx_conversion.md): PowerPoint bi-directional conversion engine & dynamic window focus integration log.
+- [20260810_auto_draft_loading_ux_summary.md](archive/20260810_auto_draft_loading_ux_summary.md): Auto-draft restoration UX, background image pre-loading, and smart overwrite modal.
+- [20260806_error_handling_draft_protection.md](archive/20260806_error_handling_draft_protection.md): Production error mapper & draft autosave protection.
+- [20260806_settings_help_ribbon_ui.md](archive/20260806_settings_help_ribbon_ui.md): Ribbon Bar tabs, Settings View, and Help View.
+- [20260731_focus_zorder_analysis.md](archive/20260731_focus_zorder_analysis.md): Modal dialog focus management and Z-order stacking investigation.
+- [20260730_conversion_performance_analysis.md](archive/20260730_conversion_performance_analysis.md): Benchmark analysis for multi-format extraction and conversion engines.
+- [20260730_project_summary.md](archive/20260730_project_summary.md): Initial project setup and CTk -> Flet migration overview.
+- [20260730_ribbon_ui_summary.md](archive/20260730_ribbon_ui_summary.md): Layout architecture design notes for Microsoft Office-style Ribbon UI.
+- [20260729_refactoring_summary.md](archive/20260729_refactoring_summary.md): Summary of 3-Tier MVC architecture refactoring.

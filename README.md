@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.6.1)
+# Document Converter Workspace (v1.6.2)
 
 ![Python](<https://img.shields.io/badge/Python-3.12%20--%203.13-blue>)
 ![UI Framework](<https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple>)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.6.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.6.2-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, and **HTML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.6.1) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.6.2) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 

@@ -31,6 +31,8 @@ MODES = {
     "CSV -> MD":    {"in_ext": ".csv",  "out_ext": ".md",   "in_label": "File .csv",  "out_label": "Save .md"},
     "PDF -> MD":    {"in_ext": ".pdf",  "out_ext": ".md",   "in_label": "File .pdf",  "out_label": "Save .md"},
     "HTML -> MD":   {"in_ext": ".html", "out_ext": ".md",   "in_label": "File .html", "out_label": "Save .md"},
+    "MD -> PowerPoint": {"in_ext": ".md",   "out_ext": ".pptx", "in_label": "File .md",   "out_label": "Save .pptx"},
+    "PowerPoint -> MD": {"in_ext": ".pptx", "out_ext": ".md",   "in_label": "File .pptx", "out_label": "Save .md"},
 }
 
 # i18n display labels for mode dropdown — maps internal key → locale key
@@ -45,6 +47,8 @@ MODE_DISPLAY_KEYS = {
     "CSV -> MD":    "mode.csv_to_md",
     "PDF -> MD":    "mode.pdf_to_md",
     "HTML -> MD":   "mode.html_to_md",
+    "MD -> PowerPoint": "mode.md_to_pptx",
+    "PowerPoint -> MD": "mode.pptx_to_md",
 }
 
 IN_FILETYPES = {
@@ -54,6 +58,7 @@ IN_FILETYPES = {
     ".csv":  ["csv"],
     ".pdf":  ["pdf"],
     ".html": ["html", "htm"],
+    ".pptx": ["pptx"],
 }
 
 OUT_FILETYPES = {
@@ -63,4 +68,5 @@ OUT_FILETYPES = {
     ".csv":  ["csv"],
     ".pdf":  ["pdf"],
     ".html": ["html", "htm"],
+    ".pptx": ["pptx"],
 }

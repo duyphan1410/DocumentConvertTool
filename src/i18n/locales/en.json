@@ -178,6 +178,8 @@
   "mode.csv_to_md": "CSV → MD",
   "mode.pdf_to_md": "PDF → MD",
   "mode.html_to_md": "HTML → MD",
+  "mode.md_to_pptx": "MD → PowerPoint",
+  "mode.pptx_to_md": "PowerPoint → MD",
   "status.empty_editor": "Editor content is empty! Please type or load a document.",
   "status.file_locked": "Cannot overwrite! File '{filename}' is currently open in another program. Please close the file and try again.",
   "status.conversion_cancelled": "Conversion cancelled: File overwrite rejected.",

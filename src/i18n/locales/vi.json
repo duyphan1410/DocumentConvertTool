@@ -178,6 +178,8 @@
   "mode.csv_to_md": "CSV → MD",
   "mode.pdf_to_md": "PDF → MD",
   "mode.html_to_md": "HTML → MD",
+  "mode.md_to_pptx": "MD → PowerPoint",
+  "mode.pptx_to_md": "PowerPoint → MD",
   "status.empty_editor": "Trình soạn trống! Vui lòng nhập hoặc mở tài liệu.",
   "status.file_locked": "Không thể ghi đè! Tệp '{filename}' đang được mở bởi chương trình khác. Vui lòng đóng tệp và thử lại.",
   "status.conversion_cancelled": "Đã huỷ chuyển đổi: Từ chối ghi đè tệp.",

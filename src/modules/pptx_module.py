@@ -315,13 +315,24 @@ class PPTXModule(BaseDocumentModule):
         """
         Converts Markdown text into a PowerPoint presentation (.pptx).
         Parses headings, bullet levels, bold/italic styles, tables, charts, images, and slide notes.
-        Splits slides strictly by '\\n\\n---\\n\\n' markers.
+        Splits slides strictly by '\n\n---\n\n' markers, or automatically segments by major section headings.
+        Note: When a long bullet list is chunked across slides, sub-bullets may start at the top of a new slide without their parent header bullet (known aesthetic trade-off for auto-paginated slides).
         """
         try:
+            from src.core.converters import prepare_markdown_for_export
+            markdown_content = prepare_markdown_for_export(markdown_content)
+
             import pptx
+            import math
             from pptx.util import Inches, Pt
             from pptx.chart.data import CategoryChartData
             from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+            try:
+                from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
+            except ImportError:
+                MSO_ANCHOR = None
+                MSO_AUTO_SIZE = None
+                PP_ALIGN = None
             from src.services.media_asset_manager import MediaAssetManager
 
             asset_mgr = MediaAssetManager()
@@ -331,12 +342,61 @@ class PPTXModule(BaseDocumentModule):
             prs.slide_height = Inches(7.5)
             blank_layout = prs.slide_layouts[6]  # Blank slide layout
 
-            slide_blocks = [s.strip() for s in markdown_content.split("\n\n---\n\n") if s.strip()]
+            def split_markdown_into_slide_blocks(content: str) -> list[str]:
+                """
+                Splits markdown into slide blocks.
+                If explicit '\n\n---\n\n' dividers exist, split strictly by them.
+                Otherwise, auto-segment by major Markdown headings (#, ##, ###) into separate slides.
+                """
+                if "\n\n---\n\n" in content:
+                    blocks = [s.strip() for s in content.split("\n\n---\n\n") if s.strip()]
+                    if blocks:
+                        return blocks
+
+                lines = content.split("\n")
+                blocks = []
+                current = []
+                in_code = False
+
+                for l in lines:
+                    stripped = l.strip()
+                    if stripped.startswith("```"):
+                        in_code = not in_code
+                        current.append(l)
+                        continue
+
+                    is_notes_heading = bool(re.match(r"^#{1,3}\s*Notes:", stripped, re.IGNORECASE))
+                    is_heading = not in_code and bool(re.match(r"^#{1,3}\s+\S+", stripped)) and not is_notes_heading
+                    if is_heading and current:
+                        non_empty = [x for x in current if x.strip()]
+                        if len(non_empty) >= 2:
+                            blocks.append("\n".join(current).strip())
+                            current = []
+                    current.append(l)
+
+                if current:
+                    blocks.append("\n".join(current).strip())
+
+                return [b for b in blocks if b.strip()]
+
+            slide_blocks = split_markdown_into_slide_blocks(markdown_content)
 
             if not slide_blocks:
                 slide_blocks = [markdown_content.strip()]
 
-            def parse_formatted_runs(paragraph, text: str, default_size=18):
+            def get_visual_line_count(text: str, level: int = 0) -> int:
+                """
+                Estimates visual wrapped line count for a paragraph line based on character count,
+                taking into account text frame width (~11.7 in) and level indentations.
+                Note: Estimate visual line count (approximate, accounts for bold/code formatting and character width variance).
+                """
+                clean = text.strip()
+                if not clean:
+                    return 1
+                chars_per_line = max(35, 75 - level * 5)
+                return max(1, math.ceil(len(clean) / chars_per_line))
+
+            def parse_formatted_runs(paragraph, text: str, default_size=16, force_bold=False):
                 """Parses inline bold/italic/code markdown text and appends runs to PPTX paragraph."""
                 tokens = re.split(r"(\*\*\*.*?\*\*\*|\*\*.*?\*\*|\*.*?\*|`.*?`)", text)
                 for token in tokens:
@@ -344,6 +404,8 @@ class PPTXModule(BaseDocumentModule):
                         continue
                     run = paragraph.add_run()
                     run.font.size = Pt(default_size)
+                    if force_bold:
+                        run.font.bold = True
 
                     if token.startswith("***") and token.endswith("***") and len(token) > 6:
                         run.text = token[3:-3]
@@ -358,6 +420,7 @@ class PPTXModule(BaseDocumentModule):
                     elif token.startswith("`") and token.endswith("`") and len(token) > 2:
                         run.text = token[1:-1]
                         run.font.name = "Consolas"
+                        run.font.size = Pt(max(15, default_size))
                     else:
                         run.text = token
 
@@ -373,23 +436,73 @@ class PPTXModule(BaseDocumentModule):
 
                 title_text = None
                 content_lines = []
+                in_block_code = False
 
-                for l in lines:
+                for idx, l in enumerate(lines):
                     stripped = l.strip()
-                    if not title_text and (stripped.startswith("# ") or stripped.startswith("## ")):
+                    if stripped.startswith("```"):
+                        in_block_code = not in_block_code
+                        content_lines.append(l)
+                        continue
+                    if not title_text and not in_block_code and idx < 3 and (stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("### ")):
                         title_text = re.sub(r"^#+\s*", "", stripped)
                     elif re.match(r"^\*\s*\(?Empty Slide.*\)?\s*\*$", stripped, re.IGNORECASE):
                         continue
                     else:
                         content_lines.append(l)
 
+                def calc_title_geometry(title: str) -> tuple:
+                    """
+                    Calculates (body_top_offset, actual_title_height, title_font_size) based on title string length.
+                    Snaps title box height tightly to actual title content height and leaves a clean gap for body text.
+                    """
+                    if not title:
+                        return Inches(0.8), Inches(0.0), 32
+                    length = len(title)
+                    if length > 75:
+                        title_lines = 3
+                        font_sz = 20
+                    elif length > 40:
+                        title_lines = 2
+                        font_sz = 22
+                    else:
+                        title_lines = 1
+                        font_sz = 26
+
+                    title_height = Inches(0.42 * title_lines + 0.1)
+                    body_top_offset = Inches(0.5) + title_height + Inches(0.4)
+                    return body_top_offset, title_height, font_sz
+
                 if title_text:
                     title_layout = prs.slide_layouts[5]  # Title Only layout
                     slide = prs.slides.add_slide(title_layout)
+                    initial_offset, actual_title_h, title_font_sz = calc_title_geometry(title_text)
                     if hasattr(slide.shapes, "title") and slide.shapes.title:
-                        slide.shapes.title.text = title_text
-                    top_offset = Inches(1.6)
-                    start_top_offset = Inches(1.6)
+                        title_shape = slide.shapes.title
+                        title_shape.text = title_text
+                        try:
+                            title_shape.left = Inches(0.8)
+                            title_shape.top = Inches(0.5)
+                            title_shape.width = Inches(11.7)
+                            title_shape.height = actual_title_h
+                            tf_t = title_shape.text_frame
+                            tf_t.word_wrap = True
+                            tf_t.margin_top = Inches(0.0)
+                            tf_t.margin_bottom = Inches(0.0)
+                            tf_t.margin_left = Inches(0.0)
+                            tf_t.margin_right = Inches(0.0)
+                            for p in tf_t.paragraphs:
+                                if PP_ALIGN is not None:
+                                    try:
+                                        p.alignment = PP_ALIGN.LEFT
+                                    except Exception:
+                                        pass
+                                for r in p.runs:
+                                    r.font.size = Pt(title_font_sz)
+                        except Exception:
+                            pass
+                    top_offset = initial_offset
+                    start_top_offset = initial_offset
                 else:
                     slide = prs.slides.add_slide(blank_layout)
                     top_offset = Inches(0.8)
@@ -405,18 +518,55 @@ class PPTXModule(BaseDocumentModule):
                 # Overflow protection threshold
                 max_slide_top = prs.slide_height - Inches(0.8)
 
+                def create_continuation_slide():
+                    """Helper to create unified continuation slide with snapped title height and left alignment."""
+                    nonlocal slide, top_offset, start_top_offset
+                    if title_text:
+                        title_layout = prs.slide_layouts[5]
+                        slide = prs.slides.add_slide(title_layout)
+                        cont_title = f"{title_text} (Cont.)"
+                        c_offset, actual_title_h, c_font_sz = calc_title_geometry(cont_title)
+                        if hasattr(slide.shapes, "title") and slide.shapes.title:
+                            title_shape = slide.shapes.title
+                            title_shape.text = cont_title
+                            try:
+                                title_shape.left = Inches(0.8)
+                                title_shape.top = Inches(0.5)
+                                title_shape.width = Inches(11.7)
+                                title_shape.height = actual_title_h
+                                tf_t = title_shape.text_frame
+                                tf_t.word_wrap = True
+                                tf_t.margin_top = Inches(0.0)
+                                tf_t.margin_bottom = Inches(0.0)
+                                tf_t.margin_left = Inches(0.0)
+                                tf_t.margin_right = Inches(0.0)
+                                for p in tf_t.paragraphs:
+                                    if PP_ALIGN is not None:
+                                        try:
+                                            p.alignment = PP_ALIGN.LEFT
+                                        except Exception:
+                                            pass
+                                    for r in p.runs:
+                                        r.font.size = Pt(c_font_sz)
+                            except Exception:
+                                pass
+                        top_offset = c_offset
+                        start_top_offset = c_offset
+                    else:
+                        slide = prs.slides.add_slide(blank_layout)
+                        top_offset = Inches(0.8)
+                        start_top_offset = Inches(0.8)
+                    if notes_text:
+                        try:
+                            slide.notes_slide.notes_text_frame.text = notes_text
+                        except Exception:
+                            pass
+
                 def ensure_space(required_height=Inches(1.0)):
                     nonlocal slide, top_offset, start_top_offset
                     if top_offset + required_height > max_slide_top and top_offset > start_top_offset:
                         print(f"[DEBUG] Slide content overflow warning: top_offset={top_offset} + {required_height} exceeds slide height, auto-creating continuation slide")
-                        slide = prs.slides.add_slide(blank_layout)
-                        top_offset = Inches(0.8)
-                        start_top_offset = Inches(0.8)
-                        if notes_text:
-                            try:
-                                slide.notes_slide.notes_text_frame.text = notes_text
-                            except Exception:
-                                pass
+                        create_continuation_slide()
 
                 # Process content lines (detecting tables, charts, images, bullet lists, paragraphs)
                 i = 0
@@ -519,27 +669,79 @@ class PPTXModule(BaseDocumentModule):
                                 except Exception as chart_ex:
                                     print(f"[DEBUG] Failed to create chart from footprint: {chart_ex}")
 
-                            # Fallback: Create native PowerPoint Table
-                            row_count = len(rows_data)
-                            col_count = max(len(r) for r in rows_data) if rows_data else 1
-                            ensure_space(Inches(0.5 * row_count + 0.3))
+                            # Native PowerPoint Table with Continuation & Cumulative Height Slicing
+                            header_row = rows_data[0]
+                            data_rows = rows_data[1:]
+                            num_cols = max(len(r) for r in rows_data) if rows_data else 1
+                            col_char_capacities = [max(20, int(75 / num_cols))] * num_cols
 
-                            table_shape = slide.shapes.add_table(row_count, col_count, Inches(0.8), top_offset, Inches(11.7), Inches(0.4 * row_count))
-                            table = table_shape.table
-                            for r_idx, row in enumerate(rows_data):
-                                for c_idx, val in enumerate(row):
-                                    if c_idx < col_count:
-                                        table.cell(r_idx, c_idx).text = val.replace("<br>", "\n")
-                            top_offset += Inches(0.5 * row_count + 0.3)
+                            def calc_row_h(row: list[str]) -> float:
+                                max_lines = 1
+                                for c_idx, cell in enumerate(row):
+                                    cap = col_char_capacities[c_idx] if c_idx < len(col_char_capacities) else 25
+                                    clean_cell = re.sub(r"\*\*|\*|`", "", cell.replace("<br>", "\n")).strip()
+                                    cell_lines = sum(max(1, math.ceil(len(l_str) / cap)) for l_str in clean_cell.split("\n"))
+                                    max_lines = max(max_lines, cell_lines)
+                                return Inches(0.26 * max_lines + 0.18)
+
+                            rendered_once = False
+                            while data_rows or not rendered_once:
+                                avail = max_slide_top - top_offset - Inches(0.4)
+                                header_h = calc_row_h(header_row)
+
+                                slice_data_rows = []
+                                used_h = header_h
+
+                                while data_rows:
+                                    next_r_h = calc_row_h(data_rows[0])
+                                    if used_h + next_r_h > avail and slice_data_rows:
+                                        break
+                                    slice_data_rows.append(data_rows.pop(0))
+                                    used_h += next_r_h
+
+                                table_slice = [header_row] + slice_data_rows
+                                row_count = len(table_slice)
+                                col_count = num_cols
+
+                                ensure_space(used_h + Inches(0.2))
+
+                                table_shape = slide.shapes.add_table(row_count, col_count, Inches(0.8), top_offset, Inches(11.7), used_h)
+                                table = table_shape.table
+                                for r_idx, row in enumerate(table_slice):
+                                    for c_idx, val in enumerate(row):
+                                        if c_idx < col_count:
+                                            cell = table.cell(r_idx, c_idx)
+                                            if MSO_ANCHOR is not None:
+                                                try:
+                                                    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+                                                except Exception:
+                                                    pass
+                                            cell.text = ""  # Clear default text
+                                            tf = cell.text_frame
+                                            tf.word_wrap = True
+                                            cell_text = val.replace("<br>", "\n")
+                                            lines_in_cell = cell_text.split("\n")
+                                            for l_idx, c_line in enumerate(lines_in_cell):
+                                                p = tf.paragraphs[0] if l_idx == 0 else tf.add_paragraph()
+                                                if r_idx == 0:
+                                                    parse_formatted_runs(p, c_line, default_size=15, force_bold=True)
+                                                else:
+                                                    parse_formatted_runs(p, c_line, default_size=15)
+
+                                top_offset += used_h + Inches(0.5)
+                                rendered_once = True
+                                if data_rows:
+                                    ensure_space(Inches(2.0))
                             pending_chart_type = None
                         continue
 
                     # 3. Markdown Image Detection (![alt](path))
-                    img_match = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", stripped)
+                    img_match = re.match(r"^!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)$", stripped, re.IGNORECASE)
                     if img_match:
                         img_uri = img_match.group(2)
-                        resolved = asset_mgr.resolve_uri(img_uri)
-                        if not os.path.exists(resolved) and os.path.exists(img_uri):
+                        out_dir = os.path.dirname(out_path) if out_path else None
+                        resolved = asset_mgr.resolve_uri(img_uri, base_dir=out_dir)
+                        if not os.path.exists(resolved) and img_uri and os.path.exists(img_uri):
                             resolved = img_uri
 
                         if os.path.exists(resolved):
@@ -553,43 +755,123 @@ class PPTXModule(BaseDocumentModule):
                         continue
 
                     # 4. Text Frame (Bullet lists & formatted paragraphs with pagination)
+                    # Sub-heading + Table cohesion check: If starting with a sub-heading and next block is a table, ensure room for BOTH!
+                    is_sub_heading = bool(re.match(r"^#{1,6}\s+", stripped)) or (stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4) or bool(re.match(r"^\*\*Mục\s+\d+", stripped, re.IGNORECASE))
+                    if is_sub_heading and i + 1 < len(content_lines) and content_lines[i + 1].strip().startswith("|"):
+                        ensure_space(Inches(2.8))
+
                     tx_lines = []
                     while i < len(content_lines):
                         l_str = content_lines[i].strip()
-                        if not l_str or (l_str.startswith("|") and l_str.endswith("|")) or re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", l_str):
+                        if l_str.startswith("```"):
+                            # Include code block fence boundary lines in tx_lines for clean code parsing
+                            tx_lines.append(content_lines[i])
+                            i += 1
+                            continue
+                        if not l_str or (l_str.startswith("|") and l_str.endswith("|")) or re.match(r"^!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)$", l_str, re.IGNORECASE):
                             break
                         tx_lines.append(content_lines[i])
                         i += 1
 
                     while tx_lines:
-                        # If current slide has very little space left and already contains content, create continuation slide
-                        if top_offset > max_slide_top - Inches(1.2) and top_offset > start_top_offset:
-                            slide = prs.slides.add_slide(blank_layout)
-                            top_offset = Inches(0.8)
-                            start_top_offset = Inches(0.8)
-                            if notes_text:
-                                try:
-                                    slide.notes_slide.notes_text_frame.text = notes_text
-                                except Exception:
-                                    pass
+                        # Explicit check: If starting with a sub-heading or if remaining space is very small, trigger continuation slide
+                        first_str = tx_lines[0].strip() if tx_lines else ""
+                        is_heading_start = bool(re.match(r"^#{1,6}\s+", first_str)) or (first_str.startswith("**") and first_str.endswith("**") and len(first_str) > 4) or bool(re.match(r"^\*\*Mục\s+\d+", first_str, re.IGNORECASE))
+
+                        if (top_offset > max_slide_top - Inches(1.2) or (is_heading_start and max_slide_top - top_offset < Inches(2.2))) and top_offset > start_top_offset:
+                            create_continuation_slide()
 
                         avail_height = max_slide_top - top_offset
-                        line_height = Inches(0.38)
-                        max_lines_fit = max(1, int((avail_height - Inches(0.2)) / line_height))
+                        line_height = Inches(0.24)
+                        max_lines_fit = max(1, int((avail_height - Inches(0.1)) / line_height))
 
-                        chunk = tx_lines[:max_lines_fit]
-                        tx_lines = tx_lines[max_lines_fit:]
+                        chunk = []
+                        accumulated_visual_lines = 0
+                        for bl in tx_lines:
+                            leading_spaces = len(bl) - len(bl.lstrip(" "))
+                            line_lvl = min(8, leading_spaces // 2)
+                            v_lines = get_visual_line_count(bl, line_lvl)
 
-                        box_height = Inches(0.38 * len(chunk) + 0.2)
+                            if accumulated_visual_lines + v_lines > max_lines_fit and chunk:
+                                break
+                            chunk.append(bl)
+                            accumulated_visual_lines += v_lines
+
+                        # Atomic Unit Grouping: If chunk stopped midway, check if a new bold sub-header (e.g. **Project Name**) started inside chunk
+                        if len(chunk) > 1:
+                            # Search for bold sub-header lines in chunk (excluding lines inside code blocks and list items)
+                            bold_indices = []
+                            c_in_code = False
+                            for idx, item in enumerate(chunk):
+                                s_item = item.strip()
+                                if s_item.startswith("```"):
+                                    c_in_code = not c_in_code
+                                    continue
+                                is_list_item = bool(re.match(r"^(?:[*\-+]|\d+\.)\s+", s_item))
+                                is_standalone_subheader = not is_list_item and (re.match(r"^#{1,6}\s+", s_item) or (s_item.startswith("**") and s_item.endswith("**") and len(s_item) > 4))
+                                if not c_in_code and is_standalone_subheader:
+                                    bold_indices.append(idx)
+
+                            # If a sub-header started inside the chunk (at index > 0), rewind chunk to before that sub-header so the section remains intact!
+                            if bold_indices and bold_indices[-1] > 0:
+                                last_bold_idx = bold_indices[-1]
+                                chunk = chunk[:last_bold_idx]
+                                accumulated_visual_lines = sum(get_visual_line_count(item, min(8, (len(item) - len(item.lstrip(" "))) // 2)) for item in chunk)
+
+                        # Intro Line + Code Block Cohesion Rewind:
+                        # If chunk ends with an introductory line (ending with ':') right before a code block, rewind chunk so the intro line and code block stay together on the next slide
+                        if len(chunk) > 0 and len(chunk) < len(tx_lines):
+                            last_item = chunk[-1].strip()
+                            next_item = tx_lines[len(chunk)].strip()
+                            if (last_item.endswith(":") or last_item.endswith(":**")) and next_item.startswith("```"):
+                                chunk.pop()
+                                accumulated_visual_lines = sum(get_visual_line_count(item, min(8, (len(item) - len(item.lstrip(" "))) // 2)) for item in chunk)
+
+                        if not chunk and tx_lines:
+                            first_bl = tx_lines[0]
+                            chunk = [first_bl]
+                            leading_spaces = len(first_bl) - len(first_bl.lstrip(" "))
+                            accumulated_visual_lines = get_visual_line_count(first_bl, min(8, leading_spaces // 2))
+
+                        tx_lines = tx_lines[len(chunk):]
+
+                        # Dynamic base font size scaling to utilize vertical slide space (16pt minimum for normal body text)
+                        if accumulated_visual_lines <= 8:
+                            base_font_sz = 18
+                        else:
+                            base_font_sz = 16
+
+                        # Exact content height calculation to snap textbox height to content (no oversized bounding box!)
+                        box_height = Inches(0.28 * accumulated_visual_lines + 0.15)
                         txBox = slide.shapes.add_textbox(Inches(0.8), top_offset, Inches(11.7), box_height)
                         tf = txBox.text_frame
                         tf.word_wrap = True
+                        # Remove internal text box padding so box boundary snaps tightly to text content
+                        try:
+                            tf.margin_top = Inches(0.0)
+                            tf.margin_bottom = Inches(0.0)
+                            tf.margin_left = Inches(0.0)
+                            tf.margin_right = Inches(0.0)
+                        except Exception:
+                            pass
+
+                        if MSO_AUTO_SIZE is not None:
+                            try:
+                                tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+                            except Exception:
+                                pass
 
                         first_para = True
+                        in_code_block = False
                         for bl in chunk:
                             bl_str = bl.strip()
                             if not bl_str:
                                 continue
+
+                            # Detect Code Block Fence lines (```python, ```csv, ```)
+                            if bl_str.startswith("```"):
+                                in_code_block = not in_code_block
+                                continue  # Skip code fence marker line!
 
                             if first_para:
                                 p = tf.paragraphs[0]
@@ -600,6 +882,55 @@ class PPTXModule(BaseDocumentModule):
                             leading_spaces = len(bl) - len(bl.lstrip(" "))
                             level = min(8, leading_spaces // 2)
                             p.level = level
+
+                            # If inside code block, format line as code (Consolas font, no heading matching!)
+                            if in_code_block:
+                                p.level = 0
+                                clean_code_line = re.sub(r"^[*\-+]\s+", "", bl_str)
+                                try:
+                                    p.space_before = Pt(2)
+                                    p.space_after = Pt(2)
+                                except Exception:
+                                    pass
+                                parse_formatted_runs(p, f"`{clean_code_line}`", default_size=16)
+                                continue
+
+                            # Heading line detection inside body text (e.g. # H1, ## H2, ### H3, #### H4)
+                            # Must be unindented (leading_spaces <= 2) and not inside code block
+                            h_match = re.match(r"^(#{1,6})\s+(.*)$", bl_str) if (leading_spaces <= 2 and not in_code_block) else None
+                            if h_match:
+                                h_lvl = len(h_match.group(1))
+                                clean_text = h_match.group(2)
+                                # Distinct typography hierarchy per heading level (scaled upwards from 16pt base)
+                                if h_lvl == 1:
+                                    h_size = 28
+                                elif h_lvl == 2:
+                                    h_size = 25
+                                elif h_lvl == 3:
+                                    h_size = 22
+                                else:
+                                    h_size = 20
+
+                                p.level = 0
+                                try:
+                                    p.space_before = Pt(14)
+                                    p.space_after = Pt(6)
+                                except Exception:
+                                    pass
+                                parse_formatted_runs(p, clean_text, default_size=h_size, force_bold=True)
+                                continue
+
+                            # Bold sub-header line (e.g. **Project Name – Subtitle** or Mục 4.x)
+                            is_bold_subheader = (bl_str.startswith("**") and bl_str.endswith("**") and len(bl_str) > 4) or bool(re.match(r"^\*\*Mục\s+\d+", bl_str, re.IGNORECASE))
+                            if is_bold_subheader or (bl_str.startswith("**") and "**" in bl_str[2:] and not bl_str.startswith("- ") and not bl_str.startswith("* ") and not bl_str.startswith("• ")):
+                                p.level = 0
+                                try:
+                                    p.space_before = Pt(12)
+                                    p.space_after = Pt(4)
+                                except Exception:
+                                    pass
+                                parse_formatted_runs(p, bl_str, default_size=max(20, base_font_sz + 3), force_bold=True)
+                                continue
 
                             # Preserve list formatting (Numbered lists vs Bullet dots)
                             is_numbered = bool(re.match(r"^\d+\.\s+", bl_str))
@@ -615,7 +946,13 @@ class PPTXModule(BaseDocumentModule):
                             else:
                                 clean_text = bl_str
 
-                            font_sz = max(12, 18 - level * 2)
+                            # Base font size starts at 16pt minimum for normal body text & sub-bullets
+                            font_sz = max(16, base_font_sz - (level if base_font_sz > 16 else 0))
+                            try:
+                                p.space_before = Pt(2)
+                                p.space_after = Pt(8)
+                            except Exception:
+                                pass
                             parse_formatted_runs(p, clean_text, default_size=font_sz)
 
                         top_offset += box_height

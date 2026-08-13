@@ -37,6 +37,39 @@ def save_markdown_from_text(content: str, out_path: str) -> str:
     return f"Markdown file saved successfully -> {os.path.basename(out_path)}"
 
 
+def prepare_markdown_for_export(text: str) -> str:
+    """
+    Preprocesses Markdown text prior to document export across all modules (HTML, PDF, PPTX, Word):
+    1. Standardizes bullet characters (•, ·, ⁃, ▪) into clean Markdown list items (- ).
+    2. Prevents the Markdown 'Lazy List Continuation Trap':
+       Inserts a blank line if a bold title line (e.g., **Social Network Website**) or header line
+       immediately follows a list item without a blank line, breaking out of the <ul> list.
+    """
+    if not text:
+        return text
+
+    # 1. Convert bullet symbols (•, ·, ⁃, ▪) into -
+    text = re.sub(r'^[•·⁃▪]\s*', '- ', text, flags=re.MULTILINE)
+    text = re.sub(r'\s+[•·⁃▪]\s+', '\n- ', text)
+
+    # 2. Prevent Markdown list continuation trap
+    lines = text.split('\n')
+    new_lines = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        is_list_item = stripped.startswith('- ') or stripped.startswith('* ') or bool(re.match(r'^\d+\.\s', stripped))
+        if is_list_item:
+            in_list = True
+            new_lines.append(line)
+        else:
+            if in_list and (stripped.startswith('**') or stripped.startswith('###') or stripped.startswith('##') or stripped.startswith('#')):
+                new_lines.append('')
+                in_list = False
+            new_lines.append(line)
+    return '\n'.join(new_lines)
+
+
 class TextSegment:
     def __init__(self, text: str, bold: bool = False, italic: bool = False, strike: bool = False, underline: bool = False, code: bool = False, url: str = None, is_image: bool = False):
         self.text = text
@@ -57,7 +90,7 @@ def parse_inline(text: str, bold: bool = False, italic: bool = False, strike: bo
     # Ordered to match more specific/longer patterns first
     patterns = [
         # Image: ![alt](url)
-        (re.compile(r'!\[([^\]]*?)\]\(([^)]*?)\)'), lambda m: {"url": m.group(2), "is_image": True}),
+        (re.compile(r'!\[([^\]]*?)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', re.IGNORECASE), lambda m: {"url": m.group(2), "is_image": True}),
         # Link: [text](url)
         (re.compile(r'\[([^\]]*?)\]\(([^)]*?)\)'), lambda m: {"url": m.group(2)}),
         # Bold-Italic: ***text*** or ___text___

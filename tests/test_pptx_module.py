@@ -207,6 +207,57 @@ class TestPPTXModule(unittest.TestCase):
             for s_idx, slide in enumerate(prs.slides):
                 self.assertGreater(len(slide.shapes), 0, f"Slide {s_idx+1} is empty!")
 
+    def test_long_paragraph_chunking(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        # Markdown with very long paragraphs (each >300 chars) that wrap visually into multiple lines
+        p1 = "Paragraph 1: " + ("This is a long sentence with detailed information about topic A. " * 8)
+        p2 = "Paragraph 2: " + ("This is another long sentence detailing complex systems and workflows. " * 8)
+        p3 = "Paragraph 3: " + ("Final paragraph discussing architectural trade-offs and future developments. " * 8)
+        md_input = f"## Big Content Slide\n\n{p1}\n\n{p2}\n\n{p3}"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_long_paragraphs.pptx")
+            module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+
+            prs = pptx.Presentation(out_pptx)
+            # Long paragraphs should wrap visually and split into multiple slides when exceeding height
+            self.assertGreaterEqual(len(prs.slides), 1)
+            extracted = module.load_to_markdown(out_pptx)
+            self.assertIn("Paragraph 1", extracted)
+            self.assertIn("Paragraph 2", extracted)
+            self.assertIn("Paragraph 3", extracted)
+
+    def test_header_only_table_infinite_loop_protection(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        # Table with header row and separator row, but 0 data rows
+        md_input = "## Header Only Table\n| Col1 | Col2 |\n| --- | --- |\n"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_header_only_table.pptx")
+            # Should complete without infinite loop hanging
+            res = module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+            self.assertIn("Saved to PowerPoint", res)
+
+            prs = pptx.Presentation(out_pptx)
+            self.assertEqual(len(prs.slides), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

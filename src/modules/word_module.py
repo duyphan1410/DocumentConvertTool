@@ -192,6 +192,10 @@ class WordModule(BaseDocumentModule):
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text to formatted Word document."""
         import docx
+        import re
+        from src.core.converters import prepare_markdown_for_export
+        markdown_content = prepare_markdown_for_export(markdown_content)
+
         from docx import Document
         from docx.shared import Pt, RGBColor
         from docx.oxml.ns import qn
@@ -307,7 +311,7 @@ class WordModule(BaseDocumentModule):
 
             # Image check (Fast string pre-check before running regex)
             if "!" in line or "<img" in line:
-                img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+                img_match_md = re.search(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', line, re.IGNORECASE)
                 img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
                 match = img_match_md or img_match_html
                 if match:
@@ -327,12 +331,13 @@ class WordModule(BaseDocumentModule):
                         continue
 
                     if src_url:
-                        img_path = asset_mgr.resolve_uri(src_url)
+                        out_dir = os.path.dirname(out_path) if out_path else None
+                        img_path = asset_mgr.resolve_uri(src_url, base_dir=out_dir)
                         if not os.path.isabs(img_path) or not os.path.exists(img_path):
-                            out_dir = os.path.dirname(out_path)
-                            candidate = os.path.join(out_dir, src_url)
-                            if os.path.exists(candidate) and os.path.isfile(candidate):
-                                img_path = candidate
+                            if out_dir:
+                                candidate = os.path.normpath(os.path.abspath(os.path.join(out_dir, src_url)))
+                                if os.path.exists(candidate) and os.path.isfile(candidate):
+                                    img_path = candidate
                             else:
                                 base_filename = os.path.basename(src_url)
                                 if os.path.exists(asset_mgr.cache_dir):
@@ -377,6 +382,7 @@ class WordModule(BaseDocumentModule):
 
             # Table check (Fast string pre-check)
             if "|" in line and not re.match(r"^[\|\s\-:]+$", line.strip()):
+                start_i = i
                 table_lines = []
                 while i < len(lines) and "|" in lines[i]:
                     table_lines.append(lines[i].strip())
@@ -405,7 +411,10 @@ class WordModule(BaseDocumentModule):
                             else:
                                 set_font(run, size=11)
                     doc.add_paragraph()
-                continue
+                    continue
+                else:
+                    # Not a valid Markdown table! Reset index back to process line as standard text
+                    i = start_i
 
             # Bullet List check
             sline = line.lstrip()

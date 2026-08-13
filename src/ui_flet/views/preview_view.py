@@ -67,9 +67,9 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
         if uri.startswith(("http://", "https://", "data:")):
             return f"![{alt_text}]({uri})"
 
-        resolved_path = asset_mgr.resolve_uri(uri)
+        resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir)
         if not os.path.exists(resolved_path) and base_dir:
-            candidate = os.path.join(base_dir, uri)
+            candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, uri)))
             if os.path.exists(candidate):
                 resolved_path = candidate
 
@@ -78,7 +78,7 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
             return f"![{alt_text}]({base64_uri})"
         return f"![{alt_text}]({uri})"
 
-    image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
     result = re.sub(image_pattern, replace_image_match, content)
     t_elapsed = time.time() - t0
     print(f"[BENCHMARK] Processed {img_count} preview image links to Base64 in {t_elapsed:.3f}s")
@@ -96,7 +96,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
-    image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
     matches = list(re.finditer(image_pattern, content))
     if not matches:
         return content
@@ -111,9 +111,9 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
         if uri.startswith(("http://", "https://", "data:")):
             continue
 
-        resolved_path = asset_mgr.resolve_uri(uri)
+        resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir)
         if not os.path.exists(resolved_path) and base_dir:
-            candidate = os.path.join(base_dir, uri)
+            candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, uri)))
             if os.path.exists(candidate):
                 resolved_path = candidate
 

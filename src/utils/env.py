@@ -195,10 +195,16 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                         if folder_name and folder_name in title:
                             score = 100 if not is_iconic else 80
                     else:
+                        # Check exact file_name (including extension, e.g. "resume.docx")
                         if file_name and file_name in title:
-                            score = 100 if not is_iconic else 80
+                            score = 200 if not is_iconic else 180
                         elif file_stem and len(file_stem) > 2 and file_stem in title:
-                            score = 90 if not is_iconic else 70
+                            # Reject title if it contains a DIFFERENT document extension (e.g. ignore .html when opening .docx)
+                            other_exts = {".pdf", ".html", ".htm", ".docx", ".doc", ".xlsx", ".pptx"} - {ext}
+                            if any(o_ext in title for o_ext in other_exts):
+                                score = 0
+                            else:
+                                score = 90 if not is_iconic else 70
 
                     if score > 0:
                         if cls_name in expected_classes:
@@ -239,8 +245,11 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                         except Exception:
                             pass
 
-                    # 3. Maximize window (FULL SCREEN)
-                    user32.ShowWindow(hwnd, SW_MAXIMIZE)
+                    # 3. Restore window state if minimized
+                    if user32.IsIconic(hwnd):
+                        user32.ShowWindow(hwnd, SW_RESTORE)
+                    else:
+                        user32.ShowWindow(hwnd, SW_SHOW)
 
                     # 4. SPI Lock Timeout Bypass + AttachThreadInput + SetForegroundWindow
                     old_timeout = ctypes.wintypes.DWORD()

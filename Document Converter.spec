@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 datas = [
     ('assets', 'assets'),
@@ -44,20 +44,44 @@ hiddenimports = [
     'src.modules.csv_module',
     'src.modules.html_module',
     'src.modules.pptx_module',
+    # Third-party document conversion libraries
+    'docx',
+    'pptx',
+    'openpyxl',
+    'mammoth',
+    'pdfplumber',
+    'fitz',
+    'pymupdf',
+    'pdfminer',
+    'pdfminer.high_level',
+    'pdfminer.layout',
+    'pypdfium2',
+    'markdown_pdf',
+    'markdown2',
+    'bs4',
+    'PIL',
+    'cryptography',
 ]
 
-# Collect all binaries & data assets for Flet Desktop framework
+# Collect binaries & data assets for Flet Desktop framework
 tmp_ret = collect_all('flet')
 datas += tmp_ret[0]
 binaries += tmp_ret[1]
 hiddenimports += tmp_ret[2]
 
-# PDF processing libraries — must collect data files (cmap, etc.)
-for pkg in ['fitz', 'pdfplumber', 'pdfminer', 'mammoth']:
-    tmp_ret = collect_all(pkg)
-    datas += tmp_ret[0]
-    binaries += tmp_ret[1]
-    hiddenimports += tmp_ret[2]
+# Collect essential data files for PDF & document processing libraries (fast & lightweight)
+for pkg in ['pdfminer', 'pdfplumber', 'pypdfium2', 'fitz']:
+    try:
+        datas += collect_data_files(pkg)
+    except Exception:
+        pass
+
+# Collect submodules for PDF engines
+for pkg in ['pdfminer', 'fitz']:
+    try:
+        hiddenimports += collect_submodules(pkg)
+    except Exception:
+        pass
 
 a = Analysis(
     ['run.py'],
@@ -74,22 +98,17 @@ a = Analysis(
         'matplotlib',
         'scipy',
         'onnxruntime',
-        'cryptography',
-        'setuptools',
-        'distutils',
-        'unittest',
         'pytest',
-        'wheel',
-        'pip',
-        'pkg_resources',
-        'pdb',
         'flet.cli',
         'flet.pytest_plugin',
         'flet.testing',
-        'tkinter.test',
+        'unittest',
+        'pydoc',
+        'IPython',
+        'jupyter',
     ],
     noarchive=False,
-    optimize=0,
+    optimize=1,
 )
 pyz = PYZ(a.pure)
 
@@ -104,7 +123,15 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=[
+        'pdfium.dll',
+        'mupdf.dll',
+        'flet.dll',
+        'libmpv-2.dll',
+        'pdfium',
+        'fitz',
+        '_fitz',
+    ],
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
@@ -114,3 +141,4 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets/icons/app_icon.ico'],
 )
+

@@ -66,6 +66,7 @@ class RibbonBar(ft.Container):
         self.on_show_editor = on_show_editor
         self.search_replace_bar = search_replace_bar
         self._search_visible = False
+        self._search_toggling = False  # re-entrant guard for toggle_search
 
         self.is_expanded = True
         self.active_tab = "edit"
@@ -243,7 +244,7 @@ class RibbonBar(ft.Container):
         self.help_tab_content = ft.Container(height=0)
 
         self.panel_container = ft.Container(
-            content=self.file_tab_content,
+            content=self.edit_tab_content,
             padding=ft.Padding(left=12, top=2, right=12, bottom=2),
             height=60,
             alignment=ft.alignment.Alignment(-1.0, 0.0),
@@ -261,6 +262,9 @@ class RibbonBar(ft.Container):
         self.content = self.main_column
         self.border_radius = 10
         self.padding = ft.Padding(left=10, top=6, right=10, bottom=6)
+
+        # Synchronize default active tab highlight and panel content at startup
+        self._update_tab_highlights()
 
     def update_mode_options(self, input_ext: str = "", preferred_mode: str = ""):
         """Updates available modes in Ribbon mode dropdown, prioritizing preferred_mode if valid."""
@@ -288,10 +292,15 @@ class RibbonBar(ft.Container):
 
     def select_tab(self, tab_name: str, force: bool = False):
         """Programmatically or manually select a ribbon tab. If force=True, never toggle-collapse."""
-        # Click active tab again to toggle collapse/expand unless force=True
-        if not force and self.active_tab == tab_name and self.panel_container.visible:
-            self._toggle_collapse(None)
-            return
+        # Click active tab again to toggle collapse/expand or close settings/help unless force=True
+        if not force and self.active_tab == tab_name:
+            if tab_name in ("settings", "help"):
+                if self.on_show_editor:
+                    self.on_show_editor()
+                return
+            elif self.panel_container.visible:
+                self._toggle_collapse(None)
+                return
 
         self.active_tab = tab_name
         self.is_expanded = True
@@ -383,6 +392,7 @@ class RibbonBar(ft.Container):
         self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_UP if self.is_expanded else ft.Icons.KEYBOARD_ARROW_DOWN
         if self.on_ribbon_toggle:
             self.on_ribbon_toggle()
+        self._update_tab_highlights()
         try:
             self.update()
         except Exception:
@@ -402,36 +412,54 @@ class RibbonBar(ft.Container):
 
     def toggle_search(self, visible: Optional[bool] = None):
         """Programmatically toggle or set search panel visibility in Ribbon Bar."""
-        if visible is None:
-            visible = not self._search_visible
-        
-        self._search_visible = visible
-        if self.active_tab != "edit":
-            self._select_tab("edit")
-            
-        if self._search_visible:
-            self._ensure_find_row_in_edit()
-            self.panel_container.height = None
-            if self.search_replace_bar:
-                self.search_replace_bar.focus_search_input()
-        else:
-            self._remove_find_row_from_edit()
-            self.panel_container.height = 60
-            if self.search_replace_bar:
-                self.search_replace_bar.results_container.visible = False
-                try:
-                    if self.search_replace_bar.results_container.page:
-                        self.search_replace_bar.results_container.update()
-                except Exception:
-                    pass
-
-        if self.on_toggle_search:
-            self.on_toggle_search(self._search_visible)
-            
+        # Guard against re-entrant / spammed calls while a toggle is still processing.
+        if self._search_toggling:
+            return
+        self._search_toggling = True
         try:
-            self.update()
-        except Exception:
-            pass
+            currently_viewing_find = (
+                self.active_tab == "edit"
+                and self.panel_container.visible
+            )
+            if visible is None:
+                # Only close if user is actively on Edit tab seeing the Find bar.
+                # If they've switched to another tab, Ctrl+F always re-opens.
+                if currently_viewing_find:
+                    visible = not self._search_visible
+                else:
+                    visible = True
+
+            self._search_visible = visible
+            # Re-open Edit tab only when not currently viewing it.
+            if not currently_viewing_find:
+                self._select_tab("edit")
+
+            if self._search_visible:
+                self._ensure_find_row_in_edit()
+                self.panel_container.height = None
+                if self.search_replace_bar:
+                    self.search_replace_bar.focus_search_input()
+            else:
+                self._remove_find_row_from_edit()
+                self.panel_container.height = 60
+                if self.search_replace_bar:
+                    self.search_replace_bar.results_container.visible = False
+                    try:
+                        if self.search_replace_bar.results_container.page:
+                            self.search_replace_bar.results_container.update()
+                    except Exception:
+                        pass
+
+            if self.on_toggle_search:
+                self.on_toggle_search(self._search_visible)
+
+            try:
+                self.update()
+            except Exception:
+                pass
+        finally:
+            self._search_toggling = False
+
 
     def _on_search_click(self, e):
         """Toggle Find & Replace panel in Edit tab."""
@@ -486,7 +514,11 @@ class RibbonBar(ft.Container):
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark) if palette else ft.Colors.PRIMARY
 
         for tab_name, btn in self._tabs_map.items():
-            is_active = (tab_name == self.active_tab)
+            if tab_name in ("settings", "help"):
+                is_active = (tab_name == self.active_tab)
+            else:
+                is_active = (tab_name == self.active_tab and self.panel_container.visible)
+
             if is_active:
                 btn.style = ft.ButtonStyle(
                     shape=ft.RoundedRectangleBorder(radius=8),

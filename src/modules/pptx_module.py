@@ -146,13 +146,19 @@ class PPTXModule(BaseDocumentModule):
                 run.font.bold = True
             if seg.italic:
                 run.font.italic = True
-            if seg.underline:
+            if seg.underline or (seg.url and not seg.is_image):
                 run.font.underline = True
             if seg.strike:
                 try:
                     run.font.strike = True
                 except Exception:
                     pass
+
+            if seg.url and not seg.is_image:
+                try:
+                    run.hyperlink.address = seg.url
+                except Exception as ex:
+                    print(f"[DEBUG] Failed to set PPTX run hyperlink: {ex}")
 
     @staticmethod
     def _calc_title_geometry(title: str, inches_cls) -> tuple:

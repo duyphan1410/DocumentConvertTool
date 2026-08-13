@@ -277,6 +277,34 @@ class TestPPTXModule(unittest.TestCase):
         self.assertIn("Slide 1", blocks[0])
         self.assertIn("Slide 2", blocks[1])
 
+    def test_pptx_hyperlink_handling(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        md_input = "## Link Slide\n- Check out [Google Link](https://google.com) for details."
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_link.pptx")
+            module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+
+            prs = pptx.Presentation(out_pptx)
+            slide = prs.slides[0]
+            found_hyperlink = False
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for p in shape.text_frame.paragraphs:
+                        for run in p.runs:
+                            if hasattr(run, "hyperlink") and run.hyperlink and run.hyperlink.address == "https://google.com":
+                                found_hyperlink = True
+                                self.assertEqual(run.text, "Google Link")
+                                break
+            self.assertTrue(found_hyperlink, "Hyperlink https://google.com must be created on PPTX run")
+
 
 if __name__ == "__main__":
     unittest.main()

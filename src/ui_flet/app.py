@@ -99,7 +99,7 @@ class DocumentConvertApp:
             self.page,
             on_open_file=self.file_controller.trigger_browse_input,
             on_save_convert=self.conversion_controller.on_convert_clicked,
-            on_find_replace=lambda: self.search_controller.toggle_search(True),
+            on_find_replace=lambda: self.search_controller.toggle_search(),
             on_undo=self.editor_controller.perform_undo,
             on_redo=self.editor_controller.perform_redo,
         )
@@ -153,12 +153,12 @@ class DocumentConvertApp:
             on_language_changed=lambda e: self.settings_controller.on_language_changed(e),
             on_apply=lambda e: self.settings_controller.apply_all(e),
             on_discard=lambda e: self.settings_controller.discard_all(e),
-            on_close=lambda e: self._show_editor_view(),
+            on_close=lambda e: self._show_editor_view(auto_select_edit=False),
         )
 
         self.help_view = HelpView(
             on_get_started=lambda e: self._on_get_started(e),
-            on_close=lambda e: self._show_editor_view(),
+            on_close=lambda e: self._show_editor_view(auto_select_edit=False),
         )
 
         self.ribbon_bar = RibbonBar(

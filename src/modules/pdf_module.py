@@ -4,6 +4,14 @@ import re
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 
+# PyInstaller static analyzer hints
+try:
+    import pdfplumber
+    import fitz
+    import markdown_pdf
+except ImportError:
+    pass
+
 class PDFModule(BaseDocumentModule):
     @property
     def name(self) -> str:
@@ -248,30 +256,13 @@ class PDFModule(BaseDocumentModule):
                             for _ in range(3):
                                 line_text = re.sub(r'\*\*(.*?)\*\*([^\s\*]{1,3})\*\*(.*?)\*\*', r'**\1\2\3**', line_text)
                                 line_text = re.sub(r'\*\*(.*?)\*\*\s*\*\*(.*?)\*\*', r'**\1 \2**', line_text)
+
+                            # Convert bullet symbols (•, ·, ⁃, ▪) into clean Markdown list items (- )
+                            if re.search(r'[•·⁃▪]', line_text):
+                                line_text = re.sub(r'^[•·⁃▪]\s*', '- ', line_text)
+                                line_text = re.sub(r'\s+[•·⁃▪]\s+', '\n- ', line_text)
                             
                     line_texts.append(line_text)
-                    
-                    # Check if current item is a genuine continuation line of the previous list item
-                    is_continuation = (
-                        prev_item["is_list_item"] and 
-                        not item["is_list_item"] and 
-                        not item["is_heading"] and 
-                        gap_y <= normal_gap and 
-                        item["x0"] > min_x0 + 10 and
-                        item["x0"] >= prev_item["x0"]
-                    )
-
-                    if is_continuation:
-                        if prev_item["is_list_item"] and not prev_item["cleaned"].strip():
-                            # Standalone bullet symbol on its own line: merge cleanly with 1 space
-                            line_texts[-1] = line_texts[-1].rstrip() + " " + item["raw"].lstrip()
-                        else:
-                            line_texts[-1] += " " + item["raw"].strip()
-                    else:
-                        # If transitioning from a list block to a non-list paragraph/sub-heading, insert a blank line separator
-                        if prev_item["is_list_item"] and not item["is_list_item"] and not item["is_heading"]:
-                            line_texts.append("")
-                        line_texts.append(item["text"])
 
                 return "\n".join(line_texts)
 
@@ -485,13 +476,16 @@ class PDFModule(BaseDocumentModule):
                     return "*(Empty PDF)*"
                 return result.text_content
             except Exception as inner_e:
-                raise RuntimeError(f"PDF Ingestion Error: Failed to extract text layer from PDF file. Detail: {str(inner_e)}")
+                raise RuntimeError(f"PDF Ingestion Error: Failed to extract text layer from PDF file. Detail: {str(e)}")
 
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text to formatted PDF document using markdown-pdf."""
         import shutil
         import re
         try:
+            from src.core.converters import prepare_markdown_for_export
+            markdown_content = prepare_markdown_for_export(markdown_content)
+
             from src.services.media_asset_manager import MediaAssetManager
             asset_mgr = MediaAssetManager()
             session_dir = asset_mgr.get_session_dir()
@@ -534,7 +528,7 @@ class PDFModule(BaseDocumentModule):
                 return f'{prefix}src="{new_src}"{suffix}'
 
             if "!" in markdown_content or "<img" in markdown_content:
-                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', resolve_img_markdown, markdown_content)
+                processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', resolve_img_markdown, markdown_content, flags=re.IGNORECASE)
                 processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
             else:
                 processed_md = markdown_content
@@ -624,9 +618,19 @@ class PDFModule(BaseDocumentModule):
             }
             th, td {
                 border: 1px solid #d0d7de;
-                padding: 7px 12px;
+                padding: 6px 10px;
                 text-align: left;
                 vertical-align: top;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+            }
+            th p, td p {
+                margin: 0;
+                padding: 0;
+            }
+            th ul, td ul, th ol, td ol {
+                margin: 4px 0;
+                padding-left: 18px;
             }
             th {
                 background-color: #f6f8fa;

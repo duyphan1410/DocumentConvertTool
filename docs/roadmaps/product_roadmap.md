@@ -40,6 +40,7 @@
 | **Portable Markdown Image Links** | `src/services/media_asset_manager.py` | Sửa lỗi tệp Markdown xuất từ tệp có hình chỉ app nội bộ đọc được; chuẩn hóa đường dẫn ảnh tương đối `<doc_name>_assets/` giúp VS Code & IDE khác preview bình thường. | ✅ Completed |
 | **Edit Ribbon Add Image Instant Preview** | `src/ui_flet/controllers/file_controller.py` | Sửa lỗi tính năng Add Image trên thanh Edit Ribbon sau khi chọn & gắn link ảnh chưa tự động trigger render xem trước (Instant Preview) lên màn hình preview ngay. | ✅ Completed |
 | **Image Settings Dialog & Format Tab** | `src/ui_flet/views/editor_view.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh Width/Height HTML) và bổ sung Contextual Format Tab trên thanh Ribbon Bar khi thao tác với hình ảnh. | ⏳ Planned |
+| **Folder Mode (`--onedir`) & Inno Setup Installer** | `Document Converter.spec` / Packaging | Chuyển đổi đóng gói từ Single-file (`--onefile`) sang Thư mục (`--onedir`) kết hợp bộ tạo cài đặt Inno Setup (`Setup.exe`) giúp mở ứng dụng tức thì (< 0.5s) và trải nghiệm cài đặt chuyên nghiệp. | ⏳ Planned (v2.0) |
 
 
 ---

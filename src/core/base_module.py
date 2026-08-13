@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import importlib
+import sys
 
 class BaseDocumentModule(ABC):
     @property
@@ -21,6 +22,10 @@ class BaseDocumentModule(ABC):
 
     def check_dependencies(self) -> list[str]:
         """Checks if all required dependencies are installed. Returns a list of missing dependencies."""
+        if getattr(sys, "frozen", False):
+            # In a frozen PyInstaller executable, all dependencies are pre-bundled during build time.
+            return []
+
         missing = []
         for dep in self.required_dependencies:
             dep_lower = dep.lower()

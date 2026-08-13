@@ -25,6 +25,26 @@ class SearchController:
         self.editor_view = editor_view
         self.ribbon_bar = ribbon_bar
 
+    def toggle_search(self, visible=None):
+        """Toggle or set search panel visibility for keyboard shortcuts (Ctrl+F / Ctrl+H).
+        Pass visible=None to toggle, True to open, False to close.
+        """
+        if self.ribbon_bar:
+            self.ribbon_bar.toggle_search(visible)
+            # ribbon_bar.toggle_search manages focus internally; derive open state from ribbon flag
+            opening = self.ribbon_bar._search_visible
+        else:
+            if visible is None:
+                visible = not (self.search_bar and self.search_bar.find_container.visible)
+            self.toggle_search_panel(visible)
+            opening = visible
+
+        if opening and self.search_bar:
+            try:
+                self.search_bar.focus_search_input()
+            except Exception:
+                pass
+
     def toggle_search_panel(self, e=None):
         if isinstance(e, bool):
             if not e:

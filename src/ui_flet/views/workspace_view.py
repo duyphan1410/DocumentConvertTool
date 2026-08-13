@@ -66,7 +66,13 @@ class WorkspaceView(ft.Container):
         self.content = self.editor_workspace
         if auto_select_edit and ribbon_bar:
             try:
-                ribbon_bar._select_tab("edit")
+                ribbon_bar.select_tab("edit", force=True)
+            except Exception:
+                pass
+        elif ribbon_bar and getattr(ribbon_bar, "active_tab", None) in ("settings", "help"):
+            try:
+                ribbon_bar.active_tab = "edit"
+                ribbon_bar._update_tab_highlights()
             except Exception:
                 pass
         try:

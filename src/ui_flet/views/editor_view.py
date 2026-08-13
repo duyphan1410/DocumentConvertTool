@@ -219,6 +219,72 @@ class EditorView:
         except Exception:
             pass
 
+    def set_text_with_selection(self, text: str, start: int, end: int, focus: bool = True):
+        """Updates editor text then defers selection to next event loop tick to avoid Flutter cursor-reset on value change."""
+        import asyncio
+
+        clean_text = (text or "").replace("\r\n", "\n")
+        self.editor.value = clean_text
+        self.editor.read_only = False
+        self.selection_start = start
+        self.selection_end = end
+
+        if not getattr(self, "word_wrap_enabled", True):
+            self.update_dynamic_width()
+
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+        # Defer the selection update to the next event loop tick so Flutter
+        # has processed the new value before we set the cursor position.
+        # Scale delay slightly for large documents.
+        delay = 0.05 + min(0.1, len(clean_text) / 500_000)
+
+        async def _apply_selection():
+            await asyncio.sleep(delay)
+            # Re-read self.editor.value in case Flet normalised line endings.
+            raw_val = self.editor.value or ""
+            lf_val = raw_val.replace("\r\n", "\n")
+            text_len = len(lf_val)
+            s = max(0, min(start, text_len))
+            e = max(s, min(end, text_len))
+
+            def lf_to_utf16(lf_offset: int) -> int:
+                raw_idx = len(raw_val)
+                lf_count = 0
+                for i, char in enumerate(raw_val):
+                    if lf_count == lf_offset:
+                        raw_idx = i
+                        break
+                    if char != "\r":
+                        lf_count += 1
+                return len(raw_val[:raw_idx].encode("utf-16-le")) // 2
+
+            utf16_start = lf_to_utf16(s)
+            utf16_end = lf_to_utf16(e)
+
+            self.editor.selection = ft.TextSelection(base_offset=utf16_start, extent_offset=utf16_end)
+            self.selection_start, self.selection_end = s, e
+            try:
+                if self.editor.page:
+                    if focus:
+                        res = self.editor.focus()
+                        if asyncio.iscoroutine(res):
+                            await res
+                    self.editor.update()
+            except Exception:
+                pass
+
+        try:
+            if self.editor.page:
+                self.editor.page.run_task(_apply_selection)
+        except Exception:
+            pass
+
+
     def focus_editor(self):
         """Focus the editor text field."""
         try:

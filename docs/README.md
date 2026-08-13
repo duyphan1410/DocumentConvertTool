@@ -14,7 +14,9 @@ docs/
 │   ├── 002_overwrite_dialog_logic.md
 │   ├── 003_flet_framework_limitations.md
 │   ├── 004_win32_native_drag_drop_research.md
-│   └── 005_universal_dynamic_window_focus.md
+│   ├── 005_universal_dynamic_window_focus.md
+│   ├── 006_parentheses_image_path_resolution_fix.md
+│   └── 007_module_architecture_and_pptx_refactoring.md
 ├── roadmaps/                             # Feature roadmaps & UI specifications
 │   ├── product_roadmap.md
 │   └── studio_workspace_roadmap.md
@@ -32,7 +34,8 @@ docs/
     ├── 20260806_error_handling_draft_protection.md
     ├── 20260806_settings_help_ribbon_ui.md
     ├── 20260810_auto_draft_loading_ux_summary.md
-    └── 20260812_pptx_conversion.md
+    ├── 20260812_pptx_conversion.md
+    └── 20260813_pptx_module_refactoring_and_table_deduplication.md
 ```
 
 ---
@@ -46,6 +49,8 @@ docs/
 - [003_flet_framework_limitations.md](architecture/003_flet_framework_limitations.md): Catalog of Flet framework constraints, icon naming rules, and API compatibility directives.
 - [004_win32_native_drag_drop_research.md](architecture/004_win32_native_drag_drop_research.md): Empirical spike report on Win32 OLE `RegisterDragDrop` 2-Process boundary limitation and `desktop_drop` Flutter runner custom build guide.
 - [005_universal_dynamic_window_focus.md](architecture/005_universal_dynamic_window_focus.md): Universal 100% dynamic window title matching & Win32 `AttachThreadInput` browser elevation solution.
+- [006_parentheses_image_path_resolution_fix.md](architecture/006_parentheses_image_path_resolution_fix.md): Parentheses image path resolution fix for MediaAssetManager.
+- [007_module_architecture_and_pptx_refactoring.md](architecture/007_module_architecture_and_pptx_refactoring.md): Document Module architecture, structural un-nesting of PPTXModule, and Markdown table parsing deduplication.
 
 ---
 
@@ -58,7 +63,7 @@ docs/
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
-- [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Chart footprint extraction, text overflow pagination, and Universal Dynamic Window Focus).
+- [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Architecture Refactoring, Table Parsing Deduplication, Word/PDF Formatting Fixes, and Universal Dynamic Window Focus).
 - [v1.5.3.md](releases/v1.5.3.md): Version 1.5.3 Release Notes (Async draft restoration UX, 60fps LoadingView, 1-Click Smart Auto-Rename, and Exact Filename Highlight).
 - [v1.5.0.md](releases/v1.5.0.md): Version 1.5.0 Release Notes (Ribbon UI, Theme/Palette hot-swapping, i18n localization, and Global Shortcut Manager).
 
@@ -66,6 +71,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260813_pptx_module_refactoring_and_table_deduplication.md](archive/20260813_pptx_module_refactoring_and_table_deduplication.md): Refactoring log for PPTX un-nesting, table parsing deduplication, and cell formatting fixes.
 - [20260812_pptx_conversion.md](archive/20260812_pptx_conversion.md): PowerPoint bi-directional conversion engine & dynamic window focus integration log.
 - [20260810_auto_draft_loading_ux_summary.md](archive/20260810_auto_draft_loading_ux_summary.md): Auto-draft restoration UX, background image pre-loading, and smart overwrite modal.
 - [20260806_error_handling_draft_protection.md](archive/20260806_error_handling_draft_protection.md): Production error mapper & draft autosave protection.

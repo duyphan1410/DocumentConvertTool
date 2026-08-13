@@ -207,6 +207,106 @@ class TestPPTXModule(unittest.TestCase):
             for s_idx, slide in enumerate(prs.slides):
                 self.assertGreater(len(slide.shapes), 0, f"Slide {s_idx+1} is empty!")
 
+    def test_long_paragraph_chunking(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        # Markdown with very long paragraphs (each >300 chars) that wrap visually into multiple lines
+        p1 = "Paragraph 1: " + ("This is a long sentence with detailed information about topic A. " * 8)
+        p2 = "Paragraph 2: " + ("This is another long sentence detailing complex systems and workflows. " * 8)
+        p3 = "Paragraph 3: " + ("Final paragraph discussing architectural trade-offs and future developments. " * 8)
+        md_input = f"## Big Content Slide\n\n{p1}\n\n{p2}\n\n{p3}"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_long_paragraphs.pptx")
+            module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+
+            prs = pptx.Presentation(out_pptx)
+            # Long paragraphs should wrap visually and split into multiple slides when exceeding height
+            self.assertGreaterEqual(len(prs.slides), 1)
+            extracted = module.load_to_markdown(out_pptx)
+            self.assertIn("Paragraph 1", extracted)
+            self.assertIn("Paragraph 2", extracted)
+            self.assertIn("Paragraph 3", extracted)
+
+    def test_header_only_table_infinite_loop_protection(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        # Table with header row and separator row, but 0 data rows
+        md_input = "## Header Only Table\n| Col1 | Col2 |\n| --- | --- |\n"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_header_only_table.pptx")
+            # Should complete without infinite loop hanging
+    def test_parse_table_rows_helper(self):
+        from src.core.converters import parse_table_rows
+        lines = [
+            "| Col A | Col B |",
+            "| --- | --- |",
+            "| Val 1 | Val 2 |",
+            "| Val 3 |"
+        ]
+        rows = parse_table_rows(lines)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0], ["Col A", "Col B"])
+        self.assertEqual(rows[1], ["Val 1", "Val 2"])
+        self.assertEqual(rows[2], ["Val 3", ""])  # Padded to max_cols
+
+    def test_pptx_helper_methods(self):
+        from src.modules.pptx_module import PPTXModule
+        # Test visual line count
+        lines_count = PPTXModule._get_visual_line_count("Short text", level=0)
+        self.assertEqual(lines_count, 1)
+
+        # Test slide splitting
+        md = "## Slide 1\nContent 1\n\n---\n\n## Slide 2\nContent 2"
+        blocks = PPTXModule._split_markdown_into_slide_blocks(md)
+        self.assertEqual(len(blocks), 2)
+        self.assertIn("Slide 1", blocks[0])
+        self.assertIn("Slide 2", blocks[1])
+
+    def test_pptx_hyperlink_handling(self):
+        try:
+            import pptx
+        except ImportError:
+            self.skipTest("python-pptx not installed")
+
+        from src.modules.pptx_module import PPTXModule
+        module = PPTXModule()
+
+        md_input = "## Link Slide\n- Check out [Google Link](https://google.com) for details."
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_pptx = os.path.join(tmp_dir, "test_link.pptx")
+            module.save_from_markdown(md_input, out_pptx)
+            self.assertTrue(os.path.exists(out_pptx))
+
+            prs = pptx.Presentation(out_pptx)
+            slide = prs.slides[0]
+            found_hyperlink = False
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for p in shape.text_frame.paragraphs:
+                        for run in p.runs:
+                            if hasattr(run, "hyperlink") and run.hyperlink and run.hyperlink.address == "https://google.com":
+                                found_hyperlink = True
+                                self.assertEqual(run.text, "Google Link")
+                                break
+            self.assertTrue(found_hyperlink, "Hyperlink https://google.com must be created on PPTX run")
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

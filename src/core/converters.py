@@ -1,6 +1,23 @@
 import os
 import re
 
+def parse_table_rows(table_lines: list[str]) -> list[list[str]]:
+    """
+    Parses a list of raw pipe-delimited Markdown table lines into clean row data.
+    Filters out separator lines (|---|---|), strips cell whitespace, and normalizes row lengths.
+    """
+    data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l.strip())]
+    if not data_lines:
+        return []
+    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in data_lines]
+    # Filter empty elements if trailing/leading pipe split produced empty strings, while preserving inner cells
+    clean_rows = []
+    for r in rows:
+        clean_rows.append([c for c in r])
+    max_cols = max((len(r) for r in clean_rows), default=0)
+    return [r + [""] * (max_cols - len(r)) for r in clean_rows]
+
+
 def parse_md_tables(content: str) -> list:
     tables, lines, i = [], content.split("\n"), 0
     while i < len(lines):
@@ -17,13 +34,9 @@ def parse_md_tables(content: str) -> list:
             while i < len(lines) and "|" in lines[i]:
                 table_lines.append(lines[i].strip())
                 i += 1
-            data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l)]
-            if len(data_lines) < 2:
-                continue
-            rows = [[c.strip() for c in l.split("|") if c.strip()] for l in data_lines]
-            max_cols = max(len(r) for r in rows)
-            rows = [r + [""] * (max_cols - len(r)) for r in rows]
-            tables.append((table_name, rows))
+            rows = parse_table_rows(table_lines)
+            if len(rows) >= 2:
+                tables.append((table_name, rows))
         else:
             i += 1
     return tables
@@ -35,6 +48,39 @@ def save_markdown_from_text(content: str, out_path: str) -> str:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(final_content)
     return f"Markdown file saved successfully -> {os.path.basename(out_path)}"
+
+
+def prepare_markdown_for_export(text: str) -> str:
+    """
+    Preprocesses Markdown text prior to document export across all modules (HTML, PDF, PPTX, Word):
+    1. Standardizes bullet characters (•, ·, ⁃, ▪) into clean Markdown list items (- ).
+    2. Prevents the Markdown 'Lazy List Continuation Trap':
+       Inserts a blank line if a bold title line (e.g., **Social Network Website**) or header line
+       immediately follows a list item without a blank line, breaking out of the <ul> list.
+    """
+    if not text:
+        return text
+
+    # 1. Convert bullet symbols (•, ·, ⁃, ▪) into -
+    text = re.sub(r'^[•·⁃▪]\s*', '- ', text, flags=re.MULTILINE)
+    text = re.sub(r'\s+[•·⁃▪]\s+', '\n- ', text)
+
+    # 2. Prevent Markdown list continuation trap
+    lines = text.split('\n')
+    new_lines = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        is_list_item = stripped.startswith('- ') or stripped.startswith('* ') or bool(re.match(r'^\d+\.\s', stripped))
+        if is_list_item:
+            in_list = True
+            new_lines.append(line)
+        else:
+            if in_list and (stripped.startswith('**') or stripped.startswith('###') or stripped.startswith('##') or stripped.startswith('#')):
+                new_lines.append('')
+                in_list = False
+            new_lines.append(line)
+    return '\n'.join(new_lines)
 
 
 class TextSegment:
@@ -57,7 +103,7 @@ def parse_inline(text: str, bold: bool = False, italic: bool = False, strike: bo
     # Ordered to match more specific/longer patterns first
     patterns = [
         # Image: ![alt](url)
-        (re.compile(r'!\[([^\]]*?)\]\(([^)]*?)\)'), lambda m: {"url": m.group(2), "is_image": True}),
+        (re.compile(r'!\[([^\]]*?)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', re.IGNORECASE), lambda m: {"url": m.group(2), "is_image": True}),
         # Link: [text](url)
         (re.compile(r'\[([^\]]*?)\]\(([^)]*?)\)'), lambda m: {"url": m.group(2)}),
         # Bold-Italic: ***text*** or ___text___

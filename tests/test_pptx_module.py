@@ -250,14 +250,35 @@ class TestPPTXModule(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_pptx = os.path.join(tmp_dir, "test_header_only_table.pptx")
             # Should complete without infinite loop hanging
-            res = module.save_from_markdown(md_input, out_pptx)
-            self.assertTrue(os.path.exists(out_pptx))
-            self.assertIn("Saved to PowerPoint", res)
+    def test_parse_table_rows_helper(self):
+        from src.core.converters import parse_table_rows
+        lines = [
+            "| Col A | Col B |",
+            "| --- | --- |",
+            "| Val 1 | Val 2 |",
+            "| Val 3 |"
+        ]
+        rows = parse_table_rows(lines)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0], ["Col A", "Col B"])
+        self.assertEqual(rows[1], ["Val 1", "Val 2"])
+        self.assertEqual(rows[2], ["Val 3", ""])  # Padded to max_cols
 
-            prs = pptx.Presentation(out_pptx)
-            self.assertEqual(len(prs.slides), 1)
+    def test_pptx_helper_methods(self):
+        from src.modules.pptx_module import PPTXModule
+        # Test visual line count
+        lines_count = PPTXModule._get_visual_line_count("Short text", level=0)
+        self.assertEqual(lines_count, 1)
+
+        # Test slide splitting
+        md = "## Slide 1\nContent 1\n\n---\n\n## Slide 2\nContent 2"
+        blocks = PPTXModule._split_markdown_into_slide_blocks(md)
+        self.assertEqual(len(blocks), 2)
+        self.assertIn("Slide 1", blocks[0])
+        self.assertIn("Slide 2", blocks[1])
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

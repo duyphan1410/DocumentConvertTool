@@ -618,9 +618,19 @@ class PDFModule(BaseDocumentModule):
             }
             th, td {
                 border: 1px solid #d0d7de;
-                padding: 7px 12px;
+                padding: 6px 10px;
                 text-align: left;
                 vertical-align: top;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+            }
+            th p, td p {
+                margin: 0;
+                padding: 0;
+            }
+            th ul, td ul, th ol, td ol {
+                margin: 4px 0;
+                padding-left: 18px;
             }
             th {
                 background-color: #f6f8fa;

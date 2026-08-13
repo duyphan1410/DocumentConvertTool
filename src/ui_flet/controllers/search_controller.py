@@ -25,6 +25,10 @@ class SearchController:
         self.editor_view = editor_view
         self.ribbon_bar = ribbon_bar
 
+    def toggle_search(self, visible: bool = True):
+        """Toggle or set search panel visibility for keyboard shortcuts."""
+        self.toggle_search_panel(visible)
+
     def toggle_search_panel(self, e=None):
         if isinstance(e, bool):
             if not e:

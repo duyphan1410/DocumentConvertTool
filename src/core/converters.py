@@ -1,6 +1,23 @@
 import os
 import re
 
+def parse_table_rows(table_lines: list[str]) -> list[list[str]]:
+    """
+    Parses a list of raw pipe-delimited Markdown table lines into clean row data.
+    Filters out separator lines (|---|---|), strips cell whitespace, and normalizes row lengths.
+    """
+    data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l.strip())]
+    if not data_lines:
+        return []
+    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in data_lines]
+    # Filter empty elements if trailing/leading pipe split produced empty strings, while preserving inner cells
+    clean_rows = []
+    for r in rows:
+        clean_rows.append([c for c in r])
+    max_cols = max((len(r) for r in clean_rows), default=0)
+    return [r + [""] * (max_cols - len(r)) for r in clean_rows]
+
+
 def parse_md_tables(content: str) -> list:
     tables, lines, i = [], content.split("\n"), 0
     while i < len(lines):
@@ -17,13 +34,9 @@ def parse_md_tables(content: str) -> list:
             while i < len(lines) and "|" in lines[i]:
                 table_lines.append(lines[i].strip())
                 i += 1
-            data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l)]
-            if len(data_lines) < 2:
-                continue
-            rows = [[c.strip() for c in l.split("|") if c.strip()] for l in data_lines]
-            max_cols = max(len(r) for r in rows)
-            rows = [r + [""] * (max_cols - len(r)) for r in rows]
-            tables.append((table_name, rows))
+            rows = parse_table_rows(table_lines)
+            if len(rows) >= 2:
+                tables.append((table_name, rows))
         else:
             i += 1
     return tables

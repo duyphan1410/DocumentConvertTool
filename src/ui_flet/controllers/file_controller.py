@@ -81,19 +81,38 @@ class FileController:
         t_extract = time.time() - t0
 
         if not res.success:
-            self.footer_bar.set_status_key("status.load_failed", color=ft.Colors.RED_400, error=res.error_short or "Lỗi tải tệp", is_error=True)
-            self.footer_bar.set_processing(False)
-            self.page.update()
-
-            if res.error:
-                show_message_dialog(self.page, res.error)
-            else:
+            doc_err = res.error
+            if not doc_err:
                 doc_err = ErrorMapper.map_exception(
                     Exception(res.error_detail or "Không thể nạp nội dung tài liệu"),
                     context_path=file_path,
                     stage="read",
                 )
-                show_message_dialog(self.page, doc_err)
+
+            self.footer_bar.set_status_key(
+                "status.load_failed",
+                color=ft.Colors.RED_400,
+                doc_err=doc_err,
+                is_error=True,
+            )
+            self.footer_bar.set_processing(False)
+
+            # Restore editor and preview from previous state or clean blank state
+            prev_content = getattr(self.state, "full_content", "") or ""
+            if prev_content:
+                self.editor_view.set_text(prev_content)
+                base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+                self.preview.update_preview(prev_content, base_dir=base_dir)
+                words = len(prev_content.split())
+                chars = len(prev_content)
+                self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+            else:
+                self.editor_view.set_text("")
+                self.preview.set_content("")
+                self.preview.doc_info_text.value = t("preview.no_doc")
+
+            self.page.update()
+            show_message_dialog(self.page, doc_err)
             return
 
         content = res.content
@@ -252,15 +271,20 @@ class FileController:
             self.file_path_bar.set_in_label(mode_cfg["in_label"])
             self.file_path_bar.set_out_label(mode_cfg["out_label"])
 
-        # 3. Restore Output Path with Resilient Fallback
+        # 3. Restore Output Path with Resilient Fallback (ensuring extension matches current mode)
+        expected_out_ext = MODES.get(self.state.current_mode, {}).get("out_ext", "")
         if out_path and os.path.exists(os.path.dirname(out_path)):
-            self.state.out_path = out_path
+            if expected_out_ext and not out_path.lower().endswith(expected_out_ext.lower()):
+                base, _ = os.path.splitext(out_path)
+                self.state.out_path = f"{base}{expected_out_ext}"
+            else:
+                self.state.out_path = out_path
         elif self.state.in_path:
-            out_ext = MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
+            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
             base, _ = os.path.splitext(self.state.in_path)
             self.state.out_path = f"{base}{out_ext}"
         else:
-            out_ext = MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
+            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
             def_dir = get_default_output_dir()
             self.state.out_path = os.path.join(def_dir, f"output{out_ext}")
 

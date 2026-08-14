@@ -55,6 +55,16 @@ class SettingsController:
             if not ext or MODES[self.state.default_mode]["in_ext"] == ext:
                 self.state.current_mode = self.state.default_mode
                 self._sync_ribbon_dropdowns()
+                file_path_bar = self.app_controls.get("file_path_bar")
+                if file_path_bar:
+                    mode_cfg = MODES[self.state.current_mode]
+                    file_path_bar.set_in_label(mode_cfg["in_label"])
+                    file_path_bar.set_out_label(mode_cfg["out_label"])
+                    expected_ext = mode_cfg["out_ext"]
+                    if self.state.out_path:
+                        base, _ = os.path.splitext(self.state.out_path)
+                        self.state.out_path = f"{base}{expected_ext}"
+                        file_path_bar.set_out_path(self.state.out_path)
         save_settings(self.state)
         import time
         timestamp = time.strftime("%H:%M:%S")
@@ -275,6 +285,7 @@ class SettingsController:
             "ribbon_bar",
             "welcome_view",
             "editor_view",
+            "preview",
             "settings_view",
             "file_path_bar",
             "search_replace_bar",

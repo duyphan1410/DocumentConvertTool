@@ -547,7 +547,7 @@ class PDFModule(BaseDocumentModule):
 
             if os.path.exists(os.path.join(font_dir, "arial.ttf")):
                 font_dir_slash = font_dir.replace("\\", "/")
-                font_face_css = f"""
+                font_face_css += f"""
                 @font-face {{
                     font-family: 'AppUnicodeFont';
                     src: url('{font_dir_slash}/arial.ttf');
@@ -570,6 +570,25 @@ class PDFModule(BaseDocumentModule):
                 }}
                 """
                 font_family_name = "'AppUnicodeFont', sans-serif"
+
+            mono_font_family = "'Consolas', 'Courier New', monospace"
+            if os.path.exists(os.path.join(font_dir, "consola.ttf")):
+                font_dir_slash = font_dir.replace("\\", "/")
+                font_face_css += f"""
+                @font-face {{
+                    font-family: 'AppMonoFont';
+                    src: url('{font_dir_slash}/consola.ttf');
+                }}
+                @font-face {{
+                    font-family: 'AppMonoFont';
+                    font-weight: bold;
+                    src: url('{font_dir_slash}/consolab.ttf');
+                }}
+                """
+                mono_font_family = "'AppMonoFont', 'Consolas', monospace"
+                print(f"[DEBUG] PDFModule: Loaded Consolas @font-face, mono_font_family = {mono_font_family}")
+            else:
+                print(f"[DEBUG] PDFModule: consola.ttf not found, fallback mono_font_family = {mono_font_family}")
 
             css = (font_face_css + """
             @page {
@@ -640,13 +659,31 @@ class PDFModule(BaseDocumentModule):
             tr:nth-child(even) {
                 background-color: #fcfcfc;
             }
+            /* Inline code & emphasis (General body & lists) */
             code {
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-size: 9.5pt;
+                font-family: __MONO_FONT__;
+                font-size: 10.5pt;
+                color: #0550ae;
+                vertical-align: 1px;
                 background-color: #f6f8fa;
-                padding: 2px 6px;
-                border-radius: 4px;
-                color: #24292f;
+                padding: 0 3px;
+            }
+            em, i {
+                font-style: italic;
+            }
+
+            /* Table-specific inline compensations for PyMuPDF Story cell engine */
+            td code, th code {
+                font-family: __MONO_FONT__;
+                font-size: 10pt;
+                vertical-align: 3.4px;
+                color: #0550ae;
+                background-color: #f6f8fa;
+                padding: 0 3px;
+            }
+            td em, th em, td i, th i {
+                font-style: italic;
+                vertical-align: 3.15px;
             }
             pre {
                 background-color: #f6f8fa;
@@ -662,6 +699,8 @@ class PDFModule(BaseDocumentModule):
                 background-color: transparent;
                 padding: 0;
                 border-radius: 0;
+                color: #24292f;
+                line-height: 1.4;
             }
             blockquote {
                 margin: 12px 0;
@@ -695,7 +734,7 @@ class PDFModule(BaseDocumentModule):
                 border-top: 1px solid #d0d7de;
                 margin: 20px 0;
             }
-            """).replace("__FONT_FAMILY__", font_family_name)
+            """).replace("__FONT_FAMILY__", font_family_name).replace("__MONO_FONT__", mono_font_family)
 
             pdf = MarkdownPdf(toc_level=2)
             pdf.add_section(Section(html_content, root=session_dir), user_css=css)

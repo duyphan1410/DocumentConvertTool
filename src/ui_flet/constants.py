@@ -26,11 +26,15 @@ MODES = {
     "MD -> CSV":    {"in_ext": ".md",   "out_ext": ".csv",  "in_label": "File .md",   "out_label": "Save .csv"},
     "MD -> PDF":    {"in_ext": ".md",   "out_ext": ".pdf",  "in_label": "File .md",   "out_label": "Save .pdf"},
     "MD -> HTML":   {"in_ext": ".md",   "out_ext": ".html", "in_label": "File .md",   "out_label": "Save .html"},
+    "MD -> JSON":   {"in_ext": ".md",   "out_ext": ".json", "in_label": "File .md",   "out_label": "Save .json"},
+    "MD -> YAML":   {"in_ext": ".md",   "out_ext": ".yaml", "in_label": "File .md",   "out_label": "Save .yaml"},
     "Excel -> MD":  {"in_ext": ".xlsx", "out_ext": ".md",   "in_label": "File .xlsx", "out_label": "Save .md"},
     "Word -> MD":   {"in_ext": ".docx", "out_ext": ".md",   "in_label": "File .docx", "out_label": "Save .md"},
     "CSV -> MD":    {"in_ext": ".csv",  "out_ext": ".md",   "in_label": "File .csv",  "out_label": "Save .md"},
     "PDF -> MD":    {"in_ext": ".pdf",  "out_ext": ".md",   "in_label": "File .pdf",  "out_label": "Save .md"},
     "HTML -> MD":   {"in_ext": ".html", "out_ext": ".md",   "in_label": "File .html", "out_label": "Save .md"},
+    "JSON -> MD":   {"in_ext": ".json", "out_ext": ".md",   "in_label": "File .json", "out_label": "Save .md"},
+    "YAML -> MD":   {"in_ext": ".yaml", "out_ext": ".md",   "in_label": "File .yaml", "out_label": "Save .md"},
     "MD -> PowerPoint": {"in_ext": ".md",   "out_ext": ".pptx", "in_label": "File .md",   "out_label": "Save .pptx"},
     "PowerPoint -> MD": {"in_ext": ".pptx", "out_ext": ".md",   "in_label": "File .pptx", "out_label": "Save .md"},
 }
@@ -42,11 +46,15 @@ MODE_DISPLAY_KEYS = {
     "MD -> CSV":    "mode.md_to_csv",
     "MD -> PDF":    "mode.md_to_pdf",
     "MD -> HTML":   "mode.md_to_html",
+    "MD -> JSON":   "mode.md_to_json",
+    "MD -> YAML":   "mode.md_to_yaml",
     "Excel -> MD":  "mode.excel_to_md",
     "Word -> MD":   "mode.word_to_md",
     "CSV -> MD":    "mode.csv_to_md",
     "PDF -> MD":    "mode.pdf_to_md",
     "HTML -> MD":   "mode.html_to_md",
+    "JSON -> MD":   "mode.json_to_md",
+    "YAML -> MD":   "mode.yaml_to_md",
     "MD -> PowerPoint": "mode.md_to_pptx",
     "PowerPoint -> MD": "mode.pptx_to_md",
 }
@@ -59,6 +67,9 @@ IN_FILETYPES = {
     ".pdf":  ["pdf"],
     ".html": ["html", "htm"],
     ".pptx": ["pptx"],
+    ".json": ["json"],
+    ".yaml": ["yaml", "yml"],
+    ".yml":  ["yaml", "yml"],
 }
 
 OUT_FILETYPES = {
@@ -69,4 +80,7 @@ OUT_FILETYPES = {
     ".pdf":  ["pdf"],
     ".html": ["html", "htm"],
     ".pptx": ["pptx"],
+    ".json": ["json"],
+    ".yaml": ["yaml", "yml"],
+    ".yml":  ["yaml", "yml"],
 }

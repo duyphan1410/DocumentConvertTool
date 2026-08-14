@@ -35,7 +35,8 @@ docs/
     ├── 20260806_settings_help_ribbon_ui.md
     ├── 20260810_auto_draft_loading_ux_summary.md
     ├── 20260812_pptx_conversion.md
-    └── 20260813_pptx_module_refactoring_and_table_deduplication.md
+    ├── 20260813_pptx_module_refactoring_and_table_deduplication.md
+    └── 20260814_json_yaml_conversion_modules.md
 ```
 
 ---
@@ -71,6 +72,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260814_json_yaml_conversion_modules.md](archive/20260814_json_yaml_conversion_modules.md): Bi-directional JSON ↔ MD & YAML ↔ MD conversion modules, Lazy Import Rule compliance, and unit tests integration.
 - [20260813_pptx_module_refactoring_and_table_deduplication.md](archive/20260813_pptx_module_refactoring_and_table_deduplication.md): Refactoring log for PPTX un-nesting, table parsing deduplication, and cell formatting fixes.
 - [20260812_pptx_conversion.md](archive/20260812_pptx_conversion.md): PowerPoint bi-directional conversion engine & dynamic window focus integration log.
 - [20260810_auto_draft_loading_ux_summary.md](archive/20260810_auto_draft_loading_ux_summary.md): Auto-draft restoration UX, background image pre-loading, and smart overwrite modal.

@@ -44,6 +44,8 @@ hiddenimports = [
     'src.modules.csv_module',
     'src.modules.html_module',
     'src.modules.pptx_module',
+    'src.modules.json_module',
+    'src.modules.yaml_module',
     # Third-party document conversion libraries
     'docx',
     'pptx',
@@ -60,6 +62,7 @@ hiddenimports = [
     'markdown2',
     'bs4',
     'PIL',
+    'yaml',
     'cryptography',
 ]
 

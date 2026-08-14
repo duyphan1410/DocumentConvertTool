@@ -13,3 +13,4 @@ markdown-pdf>=1.10.0
 Pillow>=10.0.0
 beautifulsoup4>=4.12.0
 Pygments>=2.15.0
+PyYAML>=6.0.1

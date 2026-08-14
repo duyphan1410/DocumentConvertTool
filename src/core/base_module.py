@@ -39,6 +39,8 @@ class BaseDocumentModule(ABC):
                 import_name = "fitz"
             elif dep_lower == "pillow":
                 import_name = "PIL"
+            elif dep_lower == "pyyaml":
+                import_name = "yaml"
             else:
                 import_name = dep
             try:

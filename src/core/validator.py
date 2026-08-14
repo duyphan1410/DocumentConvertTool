@@ -290,6 +290,36 @@ def validate_file_pipeline(path: str) -> str:
                 suggestion=t("validator.bad_pdf_sug"),
             )
 
+    elif ext == ".json":
+        import json
+        try:
+            with open(clean_path, "r", encoding="utf-8-sig") as f:
+                json.load(f)
+        except Exception as exc:
+            raise DocumentError(
+                code=ErrorCode.CORRUPTED_STRUCTURE,
+                title=t("validator.corrupted_json_title"),
+                message=t("validator.corrupted_json_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_json_sug"),
+                detail=str(exc),
+            )
+
+    elif ext in (".yaml", ".yml"):
+        try:
+            import yaml
+            with open(clean_path, "r", encoding="utf-8-sig") as f:
+                yaml.safe_load(f)
+        except ImportError:
+            pass  # If pyyaml is missing, BaseDocumentModule.check_dependencies will handle warning
+        except Exception as exc:
+            raise DocumentError(
+                code=ErrorCode.CORRUPTED_STRUCTURE,
+                title=t("validator.corrupted_yaml_title"),
+                message=t("validator.corrupted_yaml_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_yaml_sug"),
+                detail=str(exc),
+            )
+
     return clean_path
 
 

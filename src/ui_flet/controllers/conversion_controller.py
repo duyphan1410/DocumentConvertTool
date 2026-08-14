@@ -40,13 +40,20 @@ class ConversionController:
             return
 
         out_path = self.file_path_bar.out_path_text.value.strip()
+        mode_cfg = MODES.get(self.state.current_mode, MODES["MD -> PDF"])
+        expected_ext = mode_cfg.get("out_ext", ".pdf")
+
         if not out_path:
             # Fallback default output path for draft or blank note
-            mode_cfg = MODES.get(self.state.current_mode, MODES["MD -> Excel"])
-            out_ext = mode_cfg.get("out_ext", ".xlsx")
-            out_path = os.path.abspath(f"output{out_ext}")
+            out_path = os.path.abspath(f"output{expected_ext}")
             self.state.out_path = out_path
             self.file_path_bar.set_out_path(out_path)
+        else:
+            base, cur_ext = os.path.splitext(out_path)
+            if expected_ext and cur_ext.lower() != expected_ext.lower():
+                out_path = f"{base}{expected_ext}"
+                self.state.out_path = out_path
+                self.file_path_bar.set_out_path(out_path)
 
         out_path = os.path.normpath(out_path)
 
@@ -325,7 +332,7 @@ class ConversionController:
             self.footer_bar.set_status_key(
                 "status.conversion_failed",
                 color=ft.Colors.RED_400,
-                error=doc_err.title,
+                doc_err=doc_err,
                 is_error=True,
             )
 

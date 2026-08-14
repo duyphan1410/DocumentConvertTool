@@ -3,6 +3,7 @@ from typing import Union, Optional
 
 from src.core.errors import DocumentError, ErrorCode
 from src.utils.logger import log_error
+from src.utils.clipboard import set_clipboard_text
 from src.ui_flet.theme import PALETTES, resolve_color, get_style_color
 from src.i18n import t
 
@@ -12,18 +13,6 @@ class DialogType:
     WARNING = "warning"
     INFO = "info"
     SUCCESS = "success"
-
-
-def safe_set_clipboard(page: ft.Page, text: str):
-    """Sets text to clipboard across all Flet API versions."""
-    try:
-        page.clipboard = text
-    except Exception:
-        try:
-            if hasattr(page, "set_clipboard"):
-                page.set_clipboard(text)
-        except Exception:
-            pass
 
 
 def show_message_dialog(
@@ -109,13 +98,23 @@ def show_message_dialog(
     # 3. Pip Install Command Box (if present)
     if doc_err.install_command:
         def copy_cmd(e):
-            safe_set_clipboard(page, doc_err.install_command)
-            snack = ft.SnackBar(
-                content=ft.Text(t("dialog.install_cmd_copied_toast", command=doc_err.install_command)),
-                bgcolor=ft.Colors.GREEN_700,
-            )
-            page.overlay.append(snack)
-            snack.open = True
+            set_clipboard_text(doc_err.install_command, page=page)
+            try:
+                snack = ft.SnackBar(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE, size=18),
+                            ft.Text(t("dialog.install_cmd_copied_toast", command=doc_err.install_command), color=ft.Colors.WHITE, weight=ft.FontWeight.W_500),
+                        ],
+                        spacing=8,
+                    ),
+                    bgcolor=ft.Colors.GREEN_700,
+                    duration=3000,
+                )
+                page.snack_bar = snack
+                snack.open = True
+            except Exception as ex_snack:
+                print(f"[DEBUG] SnackBar display error: {ex_snack}")
             dialog.open = False
             page.update()
 
@@ -137,7 +136,7 @@ def show_message_dialog(
                                     bgcolor=ft.Colors.BLACK54 if is_dark else ft.Colors.GREY_200,
                                     border_radius=6,
                                     expand=True,
-                                ),
+                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.COPY_ROUNDED,
                                     tooltip=t("dialog.install_cmd_copy_tooltip"),
@@ -190,13 +189,23 @@ def show_message_dialog(
         page.update()
 
     def copy_full_log(e):
-        safe_set_clipboard(page, doc_err.to_log_string())
-        snack = ft.SnackBar(
-            content=ft.Text(t("dialog.details_copied_toast")),
-            bgcolor=ft.Colors.BLUE_700,
-        )
-        page.overlay.append(snack)
-        snack.open = True
+        set_clipboard_text(doc_err.to_log_string(), page=page)
+        try:
+            snack = ft.SnackBar(
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE, size=18),
+                        ft.Text(t("dialog.details_copied_toast"), color=ft.Colors.WHITE, weight=ft.FontWeight.W_500),
+                    ],
+                    spacing=8,
+                ),
+                bgcolor=ft.Colors.GREEN_700,
+                duration=3000,
+            )
+            page.snack_bar = snack
+            snack.open = True
+        except Exception as ex_snack:
+            print(f"[DEBUG] SnackBar display error: {ex_snack}")
         dialog.open = False
         page.update()
 

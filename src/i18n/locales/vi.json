@@ -265,6 +265,7 @@
   "validator.unsupported_ext_title": "Định dạng tệp không được hỗ trợ",
   "validator.unsupported_ext_msg": "Định dạng '{ext}' không được hệ thống hỗ trợ.",
   "validator.unsupported_ext_sug": "Vui lòng chọn một tệp thuộc các định dạng sau: {valid_exts}.",
+  "validator.legacy_office_sug": "Định dạng nhị phân '{ext}' (Office 97-2003) không được hỗ trợ trực tiếp. Vui lòng mở tệp bằng Microsoft Office hoặc ứng dụng tương đương rồi chọn 'Lưu dưới dạng' (Save As) sang '{target_format}' trước khi chuyển đổi.",
   "validator.file_locked_title": "Tệp đang bị khóa",
   "validator.file_locked_msg": "Tệp '{filename}' đang mở trong ứng dụng khác hoặc bị hạn chế quyền truy cập.",
   "validator.file_locked_sug": "Vui lòng đóng Microsoft Word, Excel hoặc trình đọc khác và thử lại.",

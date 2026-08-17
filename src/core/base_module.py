@@ -45,9 +45,18 @@ class BaseDocumentModule(ABC):
                 import_name = dep
             try:
                 importlib.import_module(import_name)
-            except ImportError:
+            except ImportError as err:
+                print(f"[DEBUG] BaseDocumentModule: Missing dependency '{dep}' (failed to import '{import_name}'): {err}")
                 missing.append(dep)
         return missing
+
+    def register_image_asset(self, image_bytes: bytes, filename: str) -> str:
+        """
+        Helper method for document modules to cache an extracted image via MediaAssetManager
+        with automatic MD5 deduplication.
+        """
+        from src.services.media_asset_manager import MediaAssetManager
+        return MediaAssetManager().register_image(image_bytes, filename)
 
     @abstractmethod
     def load_to_markdown(self, file_path: str) -> str:

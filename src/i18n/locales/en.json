@@ -265,6 +265,7 @@
   "validator.unsupported_ext_title": "Unsupported File Format",
   "validator.unsupported_ext_msg": "Format '{ext}' is not supported by the system.",
   "validator.unsupported_ext_sug": "Please choose a file with one of the following formats: {valid_exts}.",
+  "validator.legacy_office_sug": "Legacy binary format '{ext}' (Office 97-2003) is not directly supported. Please open the file in Microsoft Office or compatible software and 'Save As' '{target_format}' before converting.",
   "validator.file_locked_title": "File is Locked",
   "validator.file_locked_msg": "File '{filename}' is open in another application or has restricted access.",
   "validator.file_locked_sug": "Please close Microsoft Word, Excel, or other readers and try again.",

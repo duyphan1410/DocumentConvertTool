@@ -17,7 +17,7 @@ def enable_high_dpi_awareness():
                 pass
 
 INPUT_FILETYPES = [
-    ("Supported Documents (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx"),
+    ("Supported Documents (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml"),
     ("Markdown (*.md)", "*.md"),
     ("PowerPoint (*.pptx)", "*.pptx"),
     ("Excel (*.xlsx, *.xls)", "*.xlsx;*.xls"),
@@ -25,6 +25,8 @@ INPUT_FILETYPES = [
     ("CSV (*.csv)", "*.csv"),
     ("PDF (*.pdf)", "*.pdf"),
     ("HTML Document (*.html, *.htm)", "*.html;*.htm"),
+    ("JSON (*.json)", "*.json"),
+    ("YAML (*.yaml, *.yml)", "*.yaml;*.yml"),
     ("All Files (*.*)", "*.*"),
 ]
 
@@ -36,6 +38,8 @@ OUTPUT_FILETYPES = [
     ("CSV (*.csv)", "*.csv"),
     ("PDF (*.pdf)", "*.pdf"),
     ("HTML Document (*.html)", "*.html"),
+    ("JSON (*.json)", "*.json"),
+    ("YAML (*.yaml, *.yml)", "*.yaml;*.yml"),
     ("All Files (*.*)", "*.*"),
 ]
 
@@ -117,7 +121,7 @@ async def pick_input_file_async(page: ft.Page | None = None, picker: ft.FilePick
             files = await picker.pick_files(
                 dialog_title="Select Input Document",
                 allow_multiple=False,
-                allowed_extensions=["md", "docx", "xlsx", "xls", "csv", "pdf", "html", "htm", "pptx"],
+                allowed_extensions=["md", "docx", "xlsx", "xls", "csv", "pdf", "html", "htm", "pptx", "json", "yaml", "yml"],
             )
             if files:
                 return files[0].path

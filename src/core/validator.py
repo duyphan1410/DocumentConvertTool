@@ -5,6 +5,7 @@ import zipfile
 from typing import Optional, List, Tuple
 
 from src.core.errors import DocumentError, ErrorCode
+from src.i18n import t
 
 
 def resolve_windows_shortcut(path: str) -> str:
@@ -38,7 +39,7 @@ def validate_md_tables(content: str) -> list[str]:
         line = lines[i].strip()
         if "|" in line and not re.match(r"^[\|\s\-:]+$", line):
             table_index += 1
-            table_name = f"Table #{table_index}"
+            table_name = t("validator.table_name_default", index=table_index)
             for j in range(i-1, max(i-5, -1), -1):
                 prev = lines[j].strip()
                 if prev.startswith("#"):
@@ -53,16 +54,14 @@ def validate_md_tables(content: str) -> list[str]:
                 
             if len(table_lines) < 2:
                 warnings.append(
-                    f"'{table_name}' starting at line {table_start_line}: "
-                    "The table is incomplete. A valid table must have at least a header row and a separator line (e.g., '| Header |' followed by '|---|')."
+                    t("validator.table_incomplete_warn", name=table_name, line=table_start_line)
                 )
                 continue
                 
             separator_line = table_lines[1]
             if not re.match(r"^[\|\s\-:]+$", separator_line):
                 warnings.append(
-                    f"'{table_name}' starting at line {table_start_line}: "
-                    "Missing or incorrect separator line below the header. Please ensure the second line looks like '|---|---|'."
+                    t("validator.table_separator_warn", name=table_name, line=table_start_line)
                 )
                 
             data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l)]
@@ -79,8 +78,7 @@ def validate_md_tables(content: str) -> list[str]:
                     except ValueError:
                         line_num = table_start_line
                     warnings.append(
-                        f"'{table_name}' at line {line_num}: "
-                        f"This row has {len(r)} columns but the header has {header_col_count}. Please check if you are missing a '|' separator."
+                        t("validator.table_col_mismatch_warn", name=table_name, line=line_num, count=len(r), expected=header_col_count)
                     )
         else:
             i += 1
@@ -107,9 +105,9 @@ def validate_file_pipeline(path: str) -> str:
     if not path or not path.strip():
         raise DocumentError(
             code=ErrorCode.FILE_NOT_FOUND,
-            title="Đường dẫn rỗng",
-            message="Chưa cung cấp đường dẫn tệp tài liệu.",
-            suggestion="Vui lòng chọn hoặc kéo thả tệp tài liệu vào ứng dụng.",
+            title=t("validator.empty_path_title"),
+            message=t("validator.empty_path_msg"),
+            suggestion=t("validator.empty_path_sug"),
         )
 
     clean_path = os.path.normpath(path.strip())
@@ -118,18 +116,18 @@ def validate_file_pipeline(path: str) -> str:
     if not os.path.exists(clean_path):
         raise DocumentError(
             code=ErrorCode.FILE_NOT_FOUND,
-            title="Tệp không tồn tại",
-            message=f"Tệp tài liệu không tồn tại tại đường dẫn: '{clean_path}'.",
-            suggestion="Vui lòng kiểm tra lại đường dẫn tệp hoặc di chuyển tệp về đúng vị trí.",
+            title=t("validator.not_found_title"),
+            message=t("validator.not_found_msg", path=clean_path),
+            suggestion=t("validator.not_found_sug"),
         )
 
     # 2. STEP 2: File Type / Directory / Windows .lnk Shortcut Check
     if os.path.isdir(clean_path):
         raise DocumentError(
             code=ErrorCode.IS_DIRECTORY,
-            title="Thư mục không được hỗ trợ",
-            message=f"Đường dẫn '{os.path.basename(clean_path)}' là một thư mục, không phải tệp tài liệu.",
-            suggestion="Vui lòng chọn hoặc kéo thả tệp tài liệu đơn lẻ (.docx, .pdf, .xlsx, .md...).",
+            title=t("validator.is_dir_title"),
+            message=t("validator.is_dir_msg", filename=os.path.basename(clean_path)),
+            suggestion=t("validator.is_dir_sug"),
         )
 
     if clean_path.lower().endswith(".lnk"):
@@ -137,9 +135,9 @@ def validate_file_pipeline(path: str) -> str:
         if not os.path.exists(resolved) or os.path.isdir(resolved):
             raise DocumentError(
                 code=ErrorCode.FILE_NOT_FOUND,
-                title="Phím tắt (.lnk) không hợp lệ",
-                message=f"Phím tắt '{os.path.basename(clean_path)}' trỏ tới một tệp không tồn tại hoặc là một thư mục.",
-                suggestion="Vui lòng kiểm tra lại đích đến của phím tắt.",
+                title=t("validator.bad_lnk_title"),
+                message=t("validator.bad_lnk_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.bad_lnk_sug"),
             )
         clean_path = resolved
 
@@ -152,11 +150,17 @@ def validate_file_pipeline(path: str) -> str:
 
     if ext not in valid_exts:
         valid_str = ", ".join(valid_exts)
+        if ext in (".doc", ".ppt", ".dot", ".pot"):
+            target_format = ".pptx" if ext in (".ppt", ".pot") else ".docx"
+            suggestion = t("validator.legacy_office_sug", ext=ext, target_format=target_format, valid_exts=valid_str)
+        else:
+            suggestion = t("validator.unsupported_ext_sug", valid_exts=valid_str)
+
         raise DocumentError(
             code=ErrorCode.UNSUPPORTED_EXTENSION,
-            title="Định dạng tệp không được hỗ trợ",
-            message=f"Định dạng '{ext}' không được hệ thống hỗ trợ.",
-            suggestion=f"Vui lòng chọn một tệp thuộc các định dạng sau: {valid_str}.",
+            title=t("validator.unsupported_ext_title"),
+            message=t("validator.unsupported_ext_msg", ext=ext),
+            suggestion=suggestion,
         )
 
     # 4. STEP 4: Permission & Lock Check
@@ -167,17 +171,17 @@ def validate_file_pipeline(path: str) -> str:
     except PermissionError as pe:
         raise DocumentError(
             code=ErrorCode.FILE_LOCKED,
-            title="Tệp đang bị khóa",
-            message=f"Tệp '{os.path.basename(clean_path)}' đang mở trong ứng dụng khác hoặc bị hạn chế quyền truy cập.",
-            suggestion="Vui lòng đóng Microsoft Word, Excel hoặc trình đọc khác và thử lại.",
+            title=t("validator.file_locked_title"),
+            message=t("validator.file_locked_msg", filename=os.path.basename(clean_path)),
+            suggestion=t("validator.file_locked_sug"),
             detail=str(pe),
         )
     except Exception as exc:
         raise DocumentError(
             code=ErrorCode.FILE_LOCKED,
-            title="Lỗi truy cập tệp",
-            message=f"Không thể đọc tệp '{os.path.basename(clean_path)}': {exc}",
-            suggestion="Vui lòng kiểm tra lại quyền truy cập của hệ điều hành.",
+            title=t("validator.access_error_title"),
+            message=t("validator.access_error_msg", filename=os.path.basename(clean_path), error=str(exc)),
+            suggestion=t("validator.access_error_sug"),
             detail=str(exc),
         )
 
@@ -186,17 +190,17 @@ def validate_file_pipeline(path: str) -> str:
     if file_size == 0:
         raise DocumentError(
             code=ErrorCode.FILE_EMPTY,
-            title="Tệp rỗng (0 bytes)",
-            message=f"Tệp '{os.path.basename(clean_path)}' có dung lượng 0 bytes và không chứa dữ liệu.",
-            suggestion="Vui lòng chọn một tệp tài liệu có nội dung.",
+            title=t("validator.file_empty_title"),
+            message=t("validator.file_empty_msg", filename=os.path.basename(clean_path)),
+            suggestion=t("validator.file_empty_sug"),
         )
 
     if file_size > 2 * 1024 * 1024 * 1024:
         raise DocumentError(
             code=ErrorCode.FILE_TOO_LARGE,
-            title="Tệp quá lớn (>2GB)",
-            message=f"Tệp '{os.path.basename(clean_path)}' vượt quá giới hạn 2GB xử lý của trình chuyển đổi.",
-            suggestion="Vui lòng nén hoặc chia nhỏ tài liệu trước khi nạp vào ứng dụng.",
+            title=t("validator.file_too_large_title"),
+            message=t("validator.file_too_large_msg", filename=os.path.basename(clean_path)),
+            suggestion=t("validator.file_too_large_sug"),
         )
 
     # 6. STEP 6: Format Integrity Check
@@ -207,32 +211,32 @@ def validate_file_pipeline(path: str) -> str:
                 if "\x00" in chunk:
                     raise DocumentError(
                         code=ErrorCode.CORRUPTED_STRUCTURE,
-                        title="Đuôi tệp giả mạo",
-                        message=f"Tệp '{os.path.basename(clean_path)}' có đuôi .md nhưng chứa nội dung nhị phân.",
-                        suggestion="Vui lòng kiểm tra lại định dạng thật của tệp.",
+                        title=t("validator.fake_md_title"),
+                        message=t("validator.fake_md_msg", filename=os.path.basename(clean_path)),
+                        suggestion=t("validator.fake_md_sug"),
                     )
         except UnicodeDecodeError:
             raise DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Mã hóa tệp không đúng",
-                message=f"Tệp '{os.path.basename(clean_path)}' không đúng định dạng mã hóa văn bản UTF-8.",
-                suggestion="Vui lòng lưu lại tệp với mã hóa UTF-8.",
+                title=t("validator.encoding_title"),
+                message=t("validator.encoding_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.encoding_sug"),
             )
 
-    elif ext in (".docx", ".xlsx"):
+    elif ext in (".docx", ".xlsx", ".pptx"):
         if first_bytes == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
             raise DocumentError(
                 code=ErrorCode.PASSWORD_PROTECTED,
-                title="Tệp bị mã hóa hoặc đặt mật khẩu",
-                message=f"Tệp '{os.path.basename(clean_path)}' bị đặt mật khẩu hoặc lưu ở định dạng cũ .doc/.xls đổi tên.",
-                suggestion="Vui lòng bỏ mật khẩu tệp trong Microsoft Office và đảm bảo chọn định dạng .docx/.xlsx hiện đại.",
+                title=t("validator.encrypted_office_title"),
+                message=t("validator.encrypted_office_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.encrypted_office_sug"),
             )
         elif not first_bytes.startswith(b"PK\x03\x04"):
             raise DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Tệp giả mạo hoặc hỏng",
-                message=f"Tệp '{os.path.basename(clean_path)}' không có cấu trúc nén ZIP chuẩn của Microsoft Office.",
-                suggestion="Hãy mở tệp trong Microsoft Office và Save As lại.",
+                title=t("validator.corrupted_office_title"),
+                message=t("validator.corrupted_office_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_office_sug"),
             )
 
         try:
@@ -240,49 +244,86 @@ def validate_file_pipeline(path: str) -> str:
                 if zf.testzip() is not None:
                     raise DocumentError(
                         code=ErrorCode.CORRUPTED_STRUCTURE,
-                        title="Cấu trúc tệp bị hỏng",
-                        message=f"Tệp '{os.path.basename(clean_path)}' bị lỗi cấu trúc ZIP bên trong.",
-                        suggestion="Mở tệp bằng MS Office để ứng dụng tự sửa lỗi.",
+                        title=t("validator.corrupted_zip_structure_title"),
+                        message=t("validator.corrupted_zip_structure_msg", filename=os.path.basename(clean_path)),
+                        suggestion=t("validator.corrupted_zip_structure_sug"),
                     )
                 namelist = zf.namelist()
                 if ext == ".docx" and "word/document.xml" not in namelist:
                     raise DocumentError(
                         code=ErrorCode.CORRUPTED_STRUCTURE,
-                        title="Thiếu cấu trúc Word OOXML",
-                        message="Tệp là kho ZIP nhưng thiếu thành phần word/document.xml.",
-                        suggestion="Hãy kiểm tra lại tệp Word đầu vào.",
+                        title=t("validator.missing_word_xml_title"),
+                        message=t("validator.missing_word_xml_msg"),
+                        suggestion=t("validator.missing_word_xml_sug"),
                     )
                 if ext == ".xlsx" and not any(n.startswith("xl/") for n in namelist):
                     raise DocumentError(
                         code=ErrorCode.CORRUPTED_STRUCTURE,
-                        title="Thiếu cấu trúc Excel OOXML",
-                        message="Tệp là kho ZIP nhưng thiếu thành phần xl/ workbook.",
-                        suggestion="Hãy kiểm tra lại tệp Excel đầu vào.",
+                        title=t("validator.missing_excel_xml_title"),
+                        message=t("validator.missing_excel_xml_msg"),
+                        suggestion=t("validator.missing_excel_xml_sug"),
+                    )
+                if ext == ".pptx" and not any(n.startswith("ppt/") for n in namelist):
+                    raise DocumentError(
+                        code=ErrorCode.CORRUPTED_STRUCTURE,
+                        title=t("validator.missing_ppt_xml_title"),
+                        message=t("validator.missing_ppt_xml_msg"),
+                        suggestion=t("validator.missing_ppt_xml_sug"),
                     )
         except zipfile.BadZipFile:
             raise DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Kho lưu trữ ZIP bị hỏng",
-                message=f"Tệp '{os.path.basename(clean_path)}' bị hỏng hoặc không phải tệp ZIP hợp lệ.",
-                suggestion="Vui lòng kiểm tra lại tệp nguồn.",
+                title=t("validator.corrupted_zip_title"),
+                message=t("validator.corrupted_zip_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_zip_sug"),
             )
 
     elif ext == ".xls":
         if first_bytes != b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
             raise DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Lỗi định dạng Excel cũ (.xls)",
-                message=f"Tệp '{os.path.basename(clean_path)}' không đúng mộc nhị phân của Excel legacy.",
-                suggestion="Mở tệp bằng Excel và lưu sang định dạng hiện đại .xlsx.",
+                title=t("validator.bad_xls_title"),
+                message=t("validator.bad_xls_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.bad_xls_sug"),
             )
 
     elif ext == ".pdf":
         if not first_bytes.startswith(b"%PDF"):
             raise DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Lỗi định dạng PDF",
-                message=f"Tệp '{os.path.basename(clean_path)}' không chứa tiêu đề PDF hợp lệ (%PDF-).",
-                suggestion="Vui lòng kiểm tra lại tệp PDF.",
+                title=t("validator.bad_pdf_title"),
+                message=t("validator.bad_pdf_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.bad_pdf_sug"),
+            )
+
+    elif ext == ".json":
+        import json
+        try:
+            with open(clean_path, "r", encoding="utf-8-sig") as f:
+                json.load(f)
+        except Exception as exc:
+            raise DocumentError(
+                code=ErrorCode.CORRUPTED_STRUCTURE,
+                title=t("validator.corrupted_json_title"),
+                message=t("validator.corrupted_json_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_json_sug"),
+                detail=str(exc),
+            )
+
+    elif ext in (".yaml", ".yml"):
+        try:
+            import yaml
+            with open(clean_path, "r", encoding="utf-8-sig") as f:
+                yaml.safe_load(f)
+        except ImportError:
+            pass  # If pyyaml is missing, BaseDocumentModule.check_dependencies will handle warning
+        except Exception as exc:
+            raise DocumentError(
+                code=ErrorCode.CORRUPTED_STRUCTURE,
+                title=t("validator.corrupted_yaml_title"),
+                message=t("validator.corrupted_yaml_msg", filename=os.path.basename(clean_path)),
+                suggestion=t("validator.corrupted_yaml_sug"),
+                detail=str(exc),
             )
 
     return clean_path
@@ -299,4 +340,4 @@ def validate_file_integrity(path: str) -> Optional[Tuple[str, str]]:
     except DocumentError as err:
         return (err.title, err.message + (" " + err.suggestion if err.suggestion else ""))
     except Exception as exc:
-        return ("Lỗi kiểm tra tệp", str(exc))
+        return (t("validator.integrity_check_error"), str(exc))

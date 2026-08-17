@@ -185,6 +185,9 @@ class HTMLModule(BaseDocumentModule):
         import time
         t0 = time.time()
         try:
+            from src.core.converters import prepare_markdown_for_export
+            markdown_content = prepare_markdown_for_export(markdown_content)
+
             from src.services.media_asset_manager import MediaAssetManager
             asset_mgr = MediaAssetManager()
 
@@ -195,7 +198,8 @@ class HTMLModule(BaseDocumentModule):
                 """
                 if not src or src.startswith(("http://", "https://", "data:")):
                     return src
-                resolved = asset_mgr.resolve_uri(src)
+                out_dir = os.path.dirname(out_path) if out_path else None
+                resolved = asset_mgr.resolve_uri(src, base_dir=out_dir)
                 if os.path.isfile(resolved):
                     mime, _ = mimetypes.guess_type(resolved)
                     if not mime:
@@ -213,7 +217,7 @@ class HTMLModule(BaseDocumentModule):
             # Step 1: Base64 media resolution
             t1 = time.time()
             if "!" in markdown_content or "<img" in markdown_content:
-                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_md_image, markdown_content)
+                processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', replace_md_image, markdown_content, flags=re.IGNORECASE)
             else:
                 processed_md = markdown_content
             t_base64 = time.time() - t1
@@ -325,14 +329,13 @@ class HTMLModule(BaseDocumentModule):
                     html_body = "\n".join(f"<p>{l}</p>" if l.strip() else "<br/>" for l in lines)
             t_md2html = time.time() - t3
 
-            # HTML Template with beautiful modern CSS styles supporting both Light and Dark themes
-            # using system preference (prefers-color-scheme)
+            doc_title = os.path.basename(out_path)
             html_document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exported Document</title>
+    <title>{doc_title}</title>
     <style>
         :root {{
             --bg-color: #ffffff;

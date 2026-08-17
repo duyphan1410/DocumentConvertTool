@@ -46,6 +46,38 @@ def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85
         return file_path
 
 
+def clean_html_tags_for_preview(content: str) -> str:
+    """
+    Sanitizes raw HTML tags like <br> so Flet Markdown renders cleanly.
+    - Code blocks (```): left 100% untouched.
+    - Inside tables: replaces <br> with Unicode Line Separator (\u2028) to force visual
+      line break in Flutter RichText rendering without breaking the Markdown table parser.
+    - Outside tables: replaces <br> with standard newline (\n).
+    """
+    if not content or "<br" not in content.lower():
+        return content
+    lines = content.split("\n")
+    cleaned_lines = []
+    in_code_block = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            cleaned_lines.append(line)
+            continue
+
+        if in_code_block:
+            cleaned_lines.append(line)
+            continue
+
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cleaned_line = re.sub(r'<br\s*/?>', '\u2028', line, flags=re.IGNORECASE)
+            cleaned_lines.append(cleaned_line)
+        else:
+            cleaned_lines.append(re.sub(r'<br\s*/?>', '\n', line, flags=re.IGNORECASE))
+    return "\n".join(cleaned_lines)
+
+
 def process_markdown_media(content: str, base_dir: str = None) -> str:
     """
     Parses Markdown content, resolves virtual URIs (such as @media/image.png)
@@ -54,6 +86,7 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
     if not content:
         return ""
 
+    content = clean_html_tags_for_preview(content)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
     img_count = 0
@@ -67,9 +100,9 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
         if uri.startswith(("http://", "https://", "data:")):
             return f"![{alt_text}]({uri})"
 
-        resolved_path = asset_mgr.resolve_uri(uri)
+        resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir)
         if not os.path.exists(resolved_path) and base_dir:
-            candidate = os.path.join(base_dir, uri)
+            candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, uri)))
             if os.path.exists(candidate):
                 resolved_path = candidate
 
@@ -78,7 +111,7 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
             return f"![{alt_text}]({base64_uri})"
         return f"![{alt_text}]({uri})"
 
-    image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
     result = re.sub(image_pattern, replace_image_match, content)
     t_elapsed = time.time() - t0
     print(f"[BENCHMARK] Processed {img_count} preview image links to Base64 in {t_elapsed:.3f}s")
@@ -93,10 +126,11 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
     if not content:
         return ""
 
+    content = clean_html_tags_for_preview(content)
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
-    image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
     matches = list(re.finditer(image_pattern, content))
     if not matches:
         return content
@@ -111,9 +145,9 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
         if uri.startswith(("http://", "https://", "data:")):
             continue
 
-        resolved_path = asset_mgr.resolve_uri(uri)
+        resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir)
         if not os.path.exists(resolved_path) and base_dir:
-            candidate = os.path.join(base_dir, uri)
+            candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, uri)))
             if os.path.exists(candidate):
                 resolved_path = candidate
 

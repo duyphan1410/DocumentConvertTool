@@ -12,6 +12,68 @@ class LayoutController:
         self.page = page
         self.state = state
         self.app_controls = app_controls
+        self._window_save_timer = None
+
+    def on_window_event(self, e):
+        """Track window geometry changes (resize, move, maximize, restore) and persist to settings."""
+        evt_type = getattr(e, "data", None) or getattr(e, "type", None)
+        evt_name = str(evt_type).lower() if evt_type is not None else ""
+
+        def _sync_geometry():
+            try:
+                if "maximize" in evt_name and "un" not in evt_name:
+                    self.state.window_maximized = True
+                elif "unmaximize" in evt_name or "restore" in evt_name:
+                    self.state.window_maximized = False
+                elif hasattr(self.page.window, "maximized") and self.page.window.maximized is not None:
+                    self.state.window_maximized = bool(self.page.window.maximized)
+
+                if not self.state.window_maximized:
+                    if self.page.window.width and self.page.window.width >= 900:
+                        self.state.window_width = int(round(self.page.window.width))
+                    if self.page.window.height and self.page.window.height >= 560:
+                        self.state.window_height = int(round(self.page.window.height))
+                    if self.page.window.top is not None:
+                        self.state.window_top = int(round(self.page.window.top))
+                    if self.page.window.left is not None:
+                        self.state.window_left = int(round(self.page.window.left))
+            except Exception:
+                pass
+
+        if "close" in evt_name:
+            _sync_geometry()
+            self._safe_save_settings()
+            print(
+                f"[DEBUG][WINDOW] 💾 Đã lưu khi đóng app: "
+                f"width={self.state.window_width}, height={self.state.window_height}, "
+                f"top={self.state.window_top}, left={self.state.window_left}, "
+                f"maximized={self.state.window_maximized}"
+            )
+            return
+
+        _sync_geometry()
+
+        # Debounce disk I/O by 500ms
+        import threading
+        if self._window_save_timer:
+            try:
+                self._window_save_timer.cancel()
+            except Exception:
+                pass
+
+        def _delayed_save():
+            _sync_geometry()
+            self._safe_save_settings()
+            print(
+                f"[DEBUG][WINDOW] 💾 Đã lưu cấu hình (event: {evt_name}): "
+                f"width={self.state.window_width}, height={self.state.window_height}, "
+                f"top={self.state.window_top}, left={self.state.window_left}, "
+                f"maximized={self.state.window_maximized}"
+            )
+
+        self._window_save_timer = threading.Timer(0.5, _delayed_save)
+        self._window_save_timer.daemon = True
+        self._window_save_timer.start()
 
     def apply_panel_visibility(self):
         """Restore panel visibilities from AppState."""

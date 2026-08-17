@@ -55,19 +55,14 @@ class FooterBar:
             visible=False,
             on_click=self.on_open_folder,
         )
-        self.btn_copy_error_text = ft.Text(t("footer.btn_copy_error"))
-        self.btn_copy_error = ft.ElevatedButton(
-            content=ft.Row(
-                controls=[ft.Icon(ft.Icons.COPY), self.btn_copy_error_text],
-                spacing=6,
-                tight=True,
-            ),
-            visible=False,
-            style=ft.ButtonStyle(color=ft.Colors.RED_400),
-            on_click=self._on_copy_error,
-        )
+
         self.progress_bar = ft.ProgressBar(visible=False, expand=True)
         self.status_text = ft.Text(t("footer.status_ready"), size=13)
+
+        self.status_container = ft.Container(
+            content=self.status_text,
+            on_click=self._on_status_clicked,
+        )
 
         self.container = ft.Container(
             content=ft.Row(
@@ -75,8 +70,7 @@ class FooterBar:
                     self.btn_convert,
                     self.btn_open_file,
                     self.btn_open_folder,
-                    self.btn_copy_error,
-                    self.status_text,
+                    self.status_container,
                     self.progress_bar,
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -87,37 +81,44 @@ class FooterBar:
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
         )
 
-    def _on_copy_error(self, e):
-        err_text = self.status_text.value or ""
-        if err_text:
+    def _on_status_clicked(self, e):
+        """If an error occurred and user clicks the status bar, re-open the rich details modal."""
+        doc_err = getattr(self, "_current_doc_err", None)
+        if doc_err:
             page = getattr(e, "page", None) or getattr(self.container, "page", None)
             if page:
-                try:
-                    page.clipboard = err_text
-                except Exception:
-                    try:
-                        if hasattr(page, "set_clipboard"):
-                            page.set_clipboard(err_text)
-                    except Exception:
-                        pass
-            import sys, subprocess
-            try:
-                if sys.platform == "win32":
-                    subprocess.run("clip", input=err_text, text=True, encoding="utf-8", shell=True)
-                elif sys.platform == "darwin":
-                    subprocess.run("pbcopy", input=err_text, text=True, encoding="utf-8")
-                else:
-                    subprocess.run(["xclip", "-selection", "clipboard"], input=err_text, text=True, encoding="utf-8")
-            except Exception as ex:
-                print(f"[DEBUG] Clipboard copy failed: {ex}")
-            self.set_status(t("footer.status_copied"), ft.Colors.GREEN_400)
+                from src.ui_flet.components.message_dialog import show_message_dialog
+                show_message_dialog(page, doc_err)
 
-    def set_status_key(self, key: str, color=None, is_error: bool = False, **kwargs):
+    def set_status_key(self, key: str, color=None, is_error: bool = False, doc_err=None, **kwargs):
         """Set status using an i18n key so it automatically updates when language changes."""
         self._current_status_key = key
         self._current_status_kwargs = kwargs
         self._current_status_color = color
         self._current_status_is_error = is_error
+        self._current_doc_err = doc_err
+
+        if doc_err is not None and "error" not in kwargs:
+            from src.core.errors import ErrorCode
+            ERROR_CODE_TITLE_KEYS = {
+                ErrorCode.FILE_NOT_FOUND: "error.file_not_found_title",
+                ErrorCode.UNSUPPORTED_EXTENSION: "validator.unsupported_ext_title",
+                ErrorCode.IS_DIRECTORY: "error.is_directory_title",
+                ErrorCode.FILE_LOCKED: "error.file_locked_title",
+                ErrorCode.FILE_EMPTY: "validator.empty_title",
+                ErrorCode.FILE_TOO_LARGE: "validator.too_large_title",
+                ErrorCode.CORRUPTED_STRUCTURE: "validator.corrupted_title",
+                ErrorCode.MISSING_DEPENDENCY: "error.missing_dep_title",
+                ErrorCode.CONVERSION_FAILED: "error.conversion_val_title",
+                ErrorCode.READ_ONLY_SAVE_ERROR: "error.save_permission_title",
+                ErrorCode.UNKNOWN_ERROR: "error.unknown_title",
+            }
+            title_key = ERROR_CODE_TITLE_KEYS.get(doc_err.code)
+            translated_title = t(title_key) if title_key else getattr(doc_err, "title", str(doc_err))
+            kwargs["error"] = translated_title
+        elif doc_err is not None:
+            self._current_doc_err = doc_err
+
         text = t(key, **kwargs)
         self.set_status(text, color=color, is_error=is_error, _from_key=True)
 
@@ -125,14 +126,10 @@ class FooterBar:
         if not _from_key:
             self._current_status_key = None
             self._current_status_kwargs = {}
+            self._current_doc_err = None
         self.status_text.value = text
         if color:
             self.status_text.color = color
-
-        is_err = is_error or (color in (ft.Colors.RED_400, ft.Colors.RED, "#f44336", "#ef5350"))
-        self.btn_copy_error.visible = is_err
-        if self.btn_copy_error.page:
-            self.btn_copy_error.update()
 
         if self.status_text.page:
             self.status_text.update()
@@ -153,48 +150,25 @@ class FooterBar:
         if self.btn_open_folder.page:
             self.btn_open_folder.update()
 
-    def apply_palette(self, palette: dict, is_dark: bool):
-        """Apply palette colors to the footer bar."""
-        bg = resolve_color(palette, "bg_component", is_dark)
-        border = resolve_color(palette, "border_color", is_dark)
-        btn_fg = resolve_color(palette, "btn_convert_fg", is_dark)
-        btn_hover = resolve_color(palette, "btn_convert_hover", is_dark)
-        btn_open_fg = resolve_color(palette, "btn_open_fg", is_dark)
-        btn_open_hover = resolve_color(palette, "btn_open_hover", is_dark)
-        accent_secondary = resolve_color(palette, "text_accent_secondary", is_dark)
+    def apply_palette(self, palette: dict, is_dark: bool, palette_name: str = ""):
+        """Apply active palette theme to footer background and convert button."""
+        bg_bar = resolve_color(palette, "bg_header", is_dark)
+        border_col = resolve_color(palette, "border_color", is_dark)
+        btn_bg = resolve_color(palette, "text_accent_primary", is_dark)
 
-        # Container background and border
-        self.container.bgcolor = bg
-        self.container.border = make_border(1, border)
+        self.container.bgcolor = bg_bar
+        self.container.border = make_border(1, border_col)
 
-        # Convert button
         self.btn_convert.style = ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=8),
-            padding=ft.Padding(left=24, top=16, right=24, bottom=16),
+            bgcolor=btn_bg,
             color=ft.Colors.WHITE,
-            bgcolor=btn_fg,
-            overlay_color=btn_hover,
+            padding=ft.Padding(left=24, top=16, right=24, bottom=16),
         )
 
-        # Open File / Open Folder buttons (only if visible/enabled)
-        if self.btn_open_file.visible:
-            self.btn_open_file.style = ft.ButtonStyle(
-                bgcolor=btn_open_fg,
-                overlay_color=btn_open_hover,
-                color=ft.Colors.WHITE,
-            )
-        if self.btn_open_folder.visible:
-            self.btn_open_folder.style = ft.ButtonStyle(
-                bgcolor=btn_open_fg,
-                overlay_color=btn_open_hover,
-                color=ft.Colors.WHITE,
-            )
-
-        # Progress bar color
-        self.progress_bar.color = accent_secondary
-
         try:
-            self.container.update()
+            if self.container.page:
+                self.container.update()
         except Exception:
             pass
 
@@ -203,8 +177,27 @@ class FooterBar:
         self.btn_convert_text.value = t("footer.btn_convert")
         self.btn_open_file_text.value = t("footer.btn_open_file")
         self.btn_open_folder_text.value = t("footer.btn_open_folder")
-        self.btn_copy_error_text.value = t("footer.btn_copy_error")
-        if hasattr(self, "_current_status_key") and self._current_status_key:
+        if getattr(self, "_current_doc_err", None) and hasattr(self, "_current_status_key") and self._current_status_key:
+            from src.core.errors import ErrorCode
+            ERROR_CODE_TITLE_KEYS = {
+                ErrorCode.FILE_NOT_FOUND: "error.file_not_found_title",
+                ErrorCode.UNSUPPORTED_EXTENSION: "validator.unsupported_ext_title",
+                ErrorCode.IS_DIRECTORY: "error.is_directory_title",
+                ErrorCode.FILE_LOCKED: "error.file_locked_title",
+                ErrorCode.FILE_EMPTY: "validator.empty_title",
+                ErrorCode.FILE_TOO_LARGE: "validator.too_large_title",
+                ErrorCode.CORRUPTED_STRUCTURE: "validator.corrupted_title",
+                ErrorCode.MISSING_DEPENDENCY: "error.missing_dep_title",
+                ErrorCode.CONVERSION_FAILED: "error.conversion_val_title",
+                ErrorCode.READ_ONLY_SAVE_ERROR: "error.save_permission_title",
+                ErrorCode.UNKNOWN_ERROR: "error.unknown_title",
+            }
+            title_key = ERROR_CODE_TITLE_KEYS.get(self._current_doc_err.code)
+            translated_title = t(title_key) if title_key else getattr(self._current_doc_err, "title", str(self._current_doc_err))
+            kwargs = dict(self._current_status_kwargs)
+            kwargs["error"] = translated_title
+            self.status_text.value = t(self._current_status_key, **kwargs)
+        elif hasattr(self, "_current_status_key") and self._current_status_key:
             self.status_text.value = t(self._current_status_key, **self._current_status_kwargs)
         elif self.status_text.value in ("Ready", "Sẵn sàng", t("footer.status_ready")):
             self.status_text.value = t("footer.status_ready")
@@ -213,12 +206,10 @@ class FooterBar:
             self.btn_convert_text,
             self.btn_open_file_text,
             self.btn_open_folder_text,
-            self.btn_copy_error_text,
             self.status_text,
             self.btn_convert,
             self.btn_open_file,
             self.btn_open_folder,
-            self.btn_copy_error,
         ]:
             try:
                 ctrl.update()

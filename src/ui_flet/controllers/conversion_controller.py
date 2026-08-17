@@ -32,20 +32,28 @@ class ConversionController:
     def on_convert_clicked(self, e=None):
         content = self.editor_view.get_text()
         if not content or not content.strip():
-            self.footer_bar.set_status(
-                t("status.empty_editor"),
-                ft.Colors.RED_400,
+            self.footer_bar.set_status_key(
+                "status.empty_editor",
+                color=ft.Colors.RED_400,
+                is_error=True,
             )
             return
 
         out_path = self.file_path_bar.out_path_text.value.strip()
+        mode_cfg = MODES.get(self.state.current_mode, MODES["MD -> PDF"])
+        expected_ext = mode_cfg.get("out_ext", ".pdf")
+
         if not out_path:
             # Fallback default output path for draft or blank note
-            mode_cfg = MODES.get(self.state.current_mode, MODES["MD -> Excel"])
-            out_ext = mode_cfg.get("out_ext", ".xlsx")
-            out_path = os.path.abspath(f"output{out_ext}")
+            out_path = os.path.abspath(f"output{expected_ext}")
             self.state.out_path = out_path
             self.file_path_bar.set_out_path(out_path)
+        else:
+            base, cur_ext = os.path.splitext(out_path)
+            if expected_ext and cur_ext.lower() != expected_ext.lower():
+                out_path = f"{base}{expected_ext}"
+                self.state.out_path = out_path
+                self.file_path_bar.set_out_path(out_path)
 
         out_path = os.path.normpath(out_path)
 
@@ -66,9 +74,11 @@ class ConversionController:
             locked = await asyncio.to_thread(is_output_locked, out_path)
             if locked:
                 file_name = os.path.basename(out_path)
-                self.footer_bar.set_status(
-                    t("status.file_locked", filename=file_name),
-                    ft.Colors.RED_400,
+                self.footer_bar.set_status_key(
+                    "status.file_locked",
+                    color=ft.Colors.RED_400,
+                    filename=file_name,
+                    is_error=True,
                 )
                 self.page.update()
                 return
@@ -114,12 +124,15 @@ class ConversionController:
             new_path = os.path.join(base_dir, f"{name_no_ext}_{counter}{ext}")
         new_filename = os.path.basename(new_path)
 
+        # Reset selection state when dialog opens
+        self.file_path_bar.out_path_text.selection = None
+
         def handle_cancel(e):
             print(f"[DEBUG] Overwrite canceled by user.")
             dialog.open = False
-            self.footer_bar.set_status(
-                t("status.conversion_cancelled"),
-                ft.Colors.AMBER_400,
+            self.footer_bar.set_status_key(
+                "status.conversion_cancelled",
+                color=ft.Colors.AMBER_400,
             )
             # Ensure File Path Bar is visible & focus on output path field for easy manual editing
             if not self.file_path_bar.container.visible:
@@ -132,6 +145,12 @@ class ConversionController:
                     name_no_ext, ext = os.path.splitext(filename)
                     start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
                     end_idx = start_idx + len(name_no_ext)
+                    # Reset selection to None first so Flet property diff engine ALWAYS detects selection property change
+                    self.file_path_bar.out_path_text.selection = None
+                    try:
+                        self.file_path_bar.out_path_text.update()
+                    except Exception:
+                        pass
                     self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
             except Exception as sel_ex:
                 print(f"[DEBUG] TextSelection error: {sel_ex}")
@@ -239,6 +258,15 @@ class ConversionController:
         print("[DEBUG] Overwrite dialog opened")
 
     def start_conversion_process(self, out_path: str):
+        self.state.is_processing = True
+        self.footer_bar.set_processing(True)
+        self.footer_bar.set_result_buttons_visible(False)
+        self.footer_bar.set_status_key(
+            "status.converting",
+            color=ft.Colors.AMBER_400,
+        )
+        self.page.update()
+
         task = asyncio.create_task(self._async_run_conversion_worker(out_path))
         self._active_tasks.add(task)
         task.add_done_callback(self._active_tasks.discard)
@@ -257,9 +285,39 @@ class ConversionController:
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_result_buttons_visible(True)
-            self.footer_bar.set_status(
-                f"{msg} ({duration:.2f}s)", ft.Colors.GREEN_400
+            self.footer_bar.set_status_key(
+                "status.conversion_success",
+                color=ft.Colors.GREEN_400,
+                message=msg,
+                duration=f"{duration:.2f}",
             )
+
+            # Play completion chime sound on Windows
+            if os.name == "nt":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_OK)
+                except Exception:
+                    pass
+
+            # Display a clean SnackBar notification popup
+            try:
+                snack = ft.SnackBar(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE),
+                            ft.Text(f"{msg} ({duration:.2f}s)", color=ft.Colors.WHITE, weight=ft.FontWeight.W_600),
+                        ],
+                        spacing=8,
+                    ),
+                    bgcolor=ft.Colors.GREEN_700,
+                    duration=3500,
+                )
+                self.page.snack_bar = snack
+                self.page.snack_bar.open = True
+            except Exception as ex_snack:
+                print(f"[DEBUG] SnackBar error: {ex_snack}")
+
             self.page.update()
         except Exception as ex:
             from src.core.error_mapper import ErrorMapper
@@ -271,11 +329,22 @@ class ConversionController:
 
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
-            self.footer_bar.set_status(
-                f"Lỗi chuyển đổi: {doc_err.title}", ft.Colors.RED_400
+            self.footer_bar.set_status_key(
+                "status.conversion_failed",
+                color=ft.Colors.RED_400,
+                doc_err=doc_err,
+                is_error=True,
             )
-            self.page.update()
 
+            # Play error chime sound on Windows
+            if os.name == "nt":
+                try:
+                    import winsound
+                    winsound.MessageBeep(winsound.MB_ICONHAND)
+                except Exception:
+                    pass
+
+            self.page.update()
             show_message_dialog(self.page, doc_err)
 
     def open_converted_file(self, e=None):

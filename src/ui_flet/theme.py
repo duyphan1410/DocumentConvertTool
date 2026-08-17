@@ -127,43 +127,127 @@ def get_style_color(key: str, is_dark: bool) -> str:
     color_tuple = STYLE.get(key, ("#1d1d1f", "#ffffff"))
     return get_color_pair(color_tuple, is_dark)
 
+def is_windows_dark_mode() -> bool:
+    """Check if Windows OS is currently in Dark Mode via Registry."""
+    import sys
+    if sys.platform != "win32":
+        return True
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        return value == 0
+    except Exception:
+        return True
+
+
+def is_theme_dark(mode_name: str) -> bool:
+    """Determine if effective theme mode is dark (handles 'System' dynamically)."""
+    if mode_name == "Light":
+        return False
+    elif mode_name == "Dark":
+        return True
+    else:  # "System"
+        return is_windows_dark_mode()
+
+
 def _update_win32_title_bar(title: str, hex_color: str, is_dark: bool):
-    """Dynamically update native Windows OS title bar background color and dark mode (DWM API)."""
+    """Dynamically update native Windows OS title bar background color and dark mode (DWM API) with retry polling."""
     import sys
     if sys.platform != "win32":
         return
     try:
         import ctypes
         from ctypes import wintypes
+        import threading
+        import time
+        import os
+
         user32 = ctypes.windll.user32
         dwmapi = ctypes.windll.dwmapi
 
-        hwnd = user32.FindWindowW(None, title)
-        if not hwnd:
-            return
+        def _apply_dwm_attributes(hwnd):
+            if not hwnd or not user32.IsWindow(hwnd):
+                return False
 
-        # 1. Dark Mode flag (DWMWA_USE_IMMERSIVE_DARK_MODE = 20)
-        use_dark = wintypes.BOOL(is_dark)
-        dwmapi.DwmSetWindowAttribute(
-            wintypes.HWND(hwnd), 20, ctypes.byref(use_dark), ctypes.sizeof(use_dark)
-        )
-
-        # 2. Caption Color (DWMWA_CAPTION_COLOR = 35) on Windows 11 / Win10 20H1+
-        if len(hex_color) == 7 and hex_color.startswith("#"):
-            r = int(hex_color[1:3], 16)
-            g = int(hex_color[3:5], 16)
-            b = int(hex_color[5:7], 16)
-            color_val = wintypes.DWORD((b << 16) | (g << 8) | r)
-            dwmapi.DwmSetWindowAttribute(
-                wintypes.HWND(hwnd), 35, ctypes.byref(color_val), ctypes.sizeof(color_val)
+            # 1. Dark Mode flag: Try DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Win10 20H1+ & Win11), fallback to 19 (Win10 1809-1909)
+            use_dark = wintypes.BOOL(is_dark)
+            res = dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd), 20, ctypes.byref(use_dark), ctypes.sizeof(use_dark)
             )
+            if res != 0:
+                dwmapi.DwmSetWindowAttribute(
+                    wintypes.HWND(hwnd), 19, ctypes.byref(use_dark), ctypes.sizeof(use_dark)
+                )
 
-            # 3. Text Color (DWMWA_TEXT_COLOR = 36)
-            txt_color = 0x00FFFFFF if is_dark else 0x001D1D1F
-            txt_val = wintypes.DWORD(txt_color)
-            dwmapi.DwmSetWindowAttribute(
-                wintypes.HWND(hwnd), 36, ctypes.byref(txt_val), ctypes.sizeof(txt_val)
-            )
+            # 2. Caption Color (DWMWA_CAPTION_COLOR = 35) on Windows 11
+            if len(hex_color) == 7 and hex_color.startswith("#"):
+                r = int(hex_color[1:3], 16)
+                g = int(hex_color[3:5], 16)
+                b = int(hex_color[5:7], 16)
+                color_val = wintypes.DWORD((b << 16) | (g << 8) | r)
+                dwmapi.DwmSetWindowAttribute(
+                    wintypes.HWND(hwnd), 35, ctypes.byref(color_val), ctypes.sizeof(color_val)
+                )
+
+                # 3. Text Color (DWMWA_TEXT_COLOR = 36)
+                txt_color = 0x00FFFFFF if is_dark else 0x001D1D1F
+                txt_val = wintypes.DWORD(txt_color)
+                dwmapi.DwmSetWindowAttribute(
+                    wintypes.HWND(hwnd), 36, ctypes.byref(txt_val), ctypes.sizeof(txt_val)
+                )
+            return True
+
+        def _find_hwnd():
+            # Method A: Exact title match
+            if title:
+                h = user32.FindWindowW(None, title)
+                if h and user32.IsWindow(h):
+                    return h
+
+            # Method B: EnumWindows matching title substring
+            matched_hwnd = None
+            WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+
+            def enum_cb(h, _):
+                nonlocal matched_hwnd
+                if user32.IsWindowVisible(h):
+                    length = user32.GetWindowTextLengthW(h)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(h, buff, length + 1)
+                        w_title = buff.value
+                        if title and title in w_title:
+                            matched_hwnd = h
+                            return False
+                        if "DocumentConvert" in w_title:
+                            matched_hwnd = h
+                            return False
+                return True
+
+            user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+            return matched_hwnd
+
+        # First synchronous attempt
+        h = _find_hwnd()
+        if h:
+            _apply_dwm_attributes(h)
+        else:
+            # Asynchronous retry loop (handles packaged .exe startup lag)
+            def _poll_and_apply():
+                for _ in range(25):
+                    time.sleep(0.1)
+                    found_h = _find_hwnd()
+                    if found_h:
+                        _apply_dwm_attributes(found_h)
+                        break
+
+            threading.Thread(target=_poll_and_apply, daemon=True).start()
+
     except Exception:
         pass
 
@@ -178,7 +262,7 @@ def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
         is_dark = True
     else:
         page.theme_mode = ft.ThemeMode.SYSTEM
-        is_dark = True
+        is_dark = is_windows_dark_mode()
 
     primary_color = get_palette_color(palette_name, "text_accent_primary", is_dark)
     secondary_color = get_palette_color(palette_name, "text_accent_secondary", is_dark)

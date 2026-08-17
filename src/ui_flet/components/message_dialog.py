@@ -3,7 +3,9 @@ from typing import Union, Optional
 
 from src.core.errors import DocumentError, ErrorCode
 from src.utils.logger import log_error
+from src.utils.clipboard import set_clipboard_text
 from src.ui_flet.theme import PALETTES, resolve_color, get_style_color
+from src.i18n import t
 
 
 class DialogType:
@@ -11,18 +13,6 @@ class DialogType:
     WARNING = "warning"
     INFO = "info"
     SUCCESS = "success"
-
-
-def safe_set_clipboard(page: ft.Page, text: str):
-    """Sets text to clipboard across all Flet API versions."""
-    try:
-        page.clipboard = text
-    except Exception:
-        try:
-            if hasattr(page, "set_clipboard"):
-                page.set_clipboard(text)
-        except Exception:
-            pass
 
 
 def show_message_dialog(
@@ -45,7 +35,7 @@ def show_message_dialog(
     else:
         doc_err = DocumentError(
             code=ErrorCode.UNKNOWN_ERROR if dialog_type == DialogType.ERROR else ErrorCode.FILE_EMPTY,
-            title=title or ("Thông báo" if dialog_type == DialogType.INFO else "Thông báo Lỗi"),
+            title=title or (t("dialog.info_title_default") if dialog_type == DialogType.INFO else t("dialog.error_title_default")),
             message=str(payload),
         )
 
@@ -108,13 +98,23 @@ def show_message_dialog(
     # 3. Pip Install Command Box (if present)
     if doc_err.install_command:
         def copy_cmd(e):
-            safe_set_clipboard(page, doc_err.install_command)
-            snack = ft.SnackBar(
-                content=ft.Text(f"Đã sao chép lệnh: {doc_err.install_command}"),
-                bgcolor=ft.Colors.GREEN_700,
-            )
-            page.overlay.append(snack)
-            snack.open = True
+            set_clipboard_text(doc_err.install_command, page=page)
+            try:
+                snack = ft.SnackBar(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE, size=18),
+                            ft.Text(t("dialog.install_cmd_copied_toast", command=doc_err.install_command), color=ft.Colors.WHITE, weight=ft.FontWeight.W_500),
+                        ],
+                        spacing=8,
+                    ),
+                    bgcolor=ft.Colors.GREEN_700,
+                    duration=3000,
+                )
+                page.snack_bar = snack
+                snack.open = True
+            except Exception as ex_snack:
+                print(f"[DEBUG] SnackBar display error: {ex_snack}")
             dialog.open = False
             page.update()
 
@@ -122,7 +122,7 @@ def show_message_dialog(
             ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Text("Lệnh cài đặt khuyến nghị:", size=12, weight=ft.FontWeight.BOLD, color=text_primary),
+                        ft.Text(t("dialog.install_cmd_label"), size=12, weight=ft.FontWeight.BOLD, color=text_primary),
                         ft.Row(
                             controls=[
                                 ft.Container(
@@ -136,10 +136,10 @@ def show_message_dialog(
                                     bgcolor=ft.Colors.BLACK54 if is_dark else ft.Colors.GREY_200,
                                     border_radius=6,
                                     expand=True,
-                                ),
+                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.COPY_ROUNDED,
-                                    tooltip="Sao chép lệnh cài đặt",
+                                    tooltip=t("dialog.install_cmd_copy_tooltip"),
                                     icon_color=accent_color,
                                     on_click=copy_cmd,
                                 ),
@@ -171,11 +171,11 @@ def show_message_dialog(
 
         def toggle_details(e):
             detail_container.visible = not detail_container.visible
-            toggle_btn.text = "Thu gọn chi tiết kỹ thuật" if detail_container.visible else "Xem chi tiết kỹ thuật (Technical Details)"
+            toggle_btn.content = ft.Text("Technical Details" if detail_container.visible else "Technical Details")
             dialog.update()
 
         toggle_btn = ft.TextButton(
-            text="Xem chi tiết kỹ thuật (Technical Details)",
+            content=ft.Text("Technical Details"),
             icon=ft.Icons.CODE_ROUNDED,
             style=ft.ButtonStyle(color=text_secondary),
             on_click=toggle_details,
@@ -189,13 +189,23 @@ def show_message_dialog(
         page.update()
 
     def copy_full_log(e):
-        safe_set_clipboard(page, doc_err.to_log_string())
-        snack = ft.SnackBar(
-            content=ft.Text(f"Đã sao chép mã lỗi {doc_err.error_id} vào Clipboard!"),
-            bgcolor=ft.Colors.BLUE_700,
-        )
-        page.overlay.append(snack)
-        snack.open = True
+        set_clipboard_text(doc_err.to_log_string(), page=page)
+        try:
+            snack = ft.SnackBar(
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE, size=18),
+                        ft.Text(t("dialog.details_copied_toast"), color=ft.Colors.WHITE, weight=ft.FontWeight.W_500),
+                    ],
+                    spacing=8,
+                ),
+                bgcolor=ft.Colors.GREEN_700,
+                duration=3000,
+            )
+            page.snack_bar = snack
+            snack.open = True
+        except Exception as ex_snack:
+            print(f"[DEBUG] SnackBar display error: {ex_snack}")
         dialog.open = False
         page.update()
 
@@ -226,12 +236,12 @@ def show_message_dialog(
         ),
         actions=[
             ft.TextButton(
-                "Sao chép Log & Error ID",
+                t("dialog.btn_copy_details"),
                 icon=ft.Icons.COPY_ALL_ROUNDED,
                 on_click=copy_full_log,
             ),
             ft.ElevatedButton(
-                "Đóng",
+                t("dialog.btn_close"),
                 on_click=close_dialog,
                 style=ft.ButtonStyle(
                     shape=ft.RoundedRectangleBorder(radius=6),

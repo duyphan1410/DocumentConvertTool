@@ -192,6 +192,10 @@ class WordModule(BaseDocumentModule):
     def save_from_markdown(self, markdown_content: str, out_path: str) -> str:
         """Converts Markdown text to formatted Word document."""
         import docx
+        import re
+        from src.core.converters import prepare_markdown_for_export
+        markdown_content = prepare_markdown_for_export(markdown_content)
+
         from docx import Document
         from docx.shared import Pt, RGBColor
         from docx.oxml.ns import qn
@@ -307,7 +311,7 @@ class WordModule(BaseDocumentModule):
 
             # Image check (Fast string pre-check before running regex)
             if "!" in line or "<img" in line:
-                img_match_md = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+                img_match_md = re.search(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', line, re.IGNORECASE)
                 img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
                 match = img_match_md or img_match_html
                 if match:
@@ -326,42 +330,43 @@ class WordModule(BaseDocumentModule):
                             lines.insert(i + insert_offset, text_after)
                         continue
 
-                if src_url:
-                    img_path = asset_mgr.resolve_uri(src_url)
-                    if not os.path.isabs(img_path) or not os.path.exists(img_path):
-                        out_dir = os.path.dirname(out_path)
-                        candidate = os.path.join(out_dir, src_url)
-                        if os.path.exists(candidate) and os.path.isfile(candidate):
-                            img_path = candidate
-                        else:
-                            base_filename = os.path.basename(src_url)
-                            if os.path.exists(asset_mgr.cache_dir):
-                                for root, _, files in os.walk(asset_mgr.cache_dir):
-                                    if base_filename in files:
-                                        cand = os.path.join(root, base_filename)
-                                        if os.path.isfile(cand):
-                                            img_path = cand
-                                            break
-                    
-                    img_path = os.path.normpath(os.path.abspath(img_path))
-                    if os.path.exists(img_path) and os.path.isfile(img_path):
-                        try:
-                            p = doc.add_paragraph()
-                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            run = p.add_run()
-                            
-                            from PIL import Image as PILImage
-                            with PILImage.open(img_path) as pil_img:
-                                w_px, h_px = pil_img.size
-                                w_inches = min(5.8, max(1.5, w_px / 150.0))
+                    if src_url:
+                        out_dir = os.path.dirname(out_path) if out_path else None
+                        img_path = asset_mgr.resolve_uri(src_url, base_dir=out_dir)
+                        if not os.path.isabs(img_path) or not os.path.exists(img_path):
+                            if out_dir:
+                                candidate = os.path.normpath(os.path.abspath(os.path.join(out_dir, src_url)))
+                                if os.path.exists(candidate) and os.path.isfile(candidate):
+                                    img_path = candidate
+                            else:
+                                base_filename = os.path.basename(src_url)
+                                if os.path.exists(asset_mgr.cache_dir):
+                                    for root, _, files in os.walk(asset_mgr.cache_dir):
+                                        if base_filename in files:
+                                            cand = os.path.join(root, base_filename)
+                                            if os.path.isfile(cand):
+                                                img_path = cand
+                                                break
+                        
+                        img_path = os.path.normpath(os.path.abspath(img_path))
+                        if os.path.exists(img_path) and os.path.isfile(img_path):
+                            try:
+                                p = doc.add_paragraph()
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                run = p.add_run()
                                 
-                            run.add_picture(img_path, width=Inches(w_inches))
-                            p.paragraph_format.space_before = Pt(6)
-                            p.paragraph_format.space_after = Pt(6)
-                            i += 1
-                            continue
-                        except Exception as img_err:
-                            print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
+                                from PIL import Image as PILImage
+                                with PILImage.open(img_path) as pil_img:
+                                    w_px, h_px = pil_img.size
+                                    w_inches = min(5.8, max(1.5, w_px / 150.0))
+                                    
+                                run.add_picture(img_path, width=Inches(w_inches))
+                                p.paragraph_format.space_before = Pt(6)
+                                p.paragraph_format.space_after = Pt(6)
+                                i += 1
+                                continue
+                            except Exception as img_err:
+                                print(f"[DEBUG] WordModule: Failed to insert picture {img_path}: {img_err}")
 
             # Heading check (Fast string pre-check)
             if line.startswith("#"):
@@ -377,24 +382,31 @@ class WordModule(BaseDocumentModule):
 
             # Table check (Fast string pre-check)
             if "|" in line and not re.match(r"^[\|\s\-:]+$", line.strip()):
+                start_i = i
                 table_lines = []
                 while i < len(lines) and "|" in lines[i]:
                     table_lines.append(lines[i].strip())
                     i += 1
-                data_lines = [l for l in table_lines if not re.match(r"^[\|\s\-:]+$", l)]
-                if len(data_lines) >= 2:
-                    rows = [[c.strip() for c in l.split("|") if c.strip()] for l in data_lines]
-                    max_cols = max(len(r) for r in rows)
-                    rows = [r + [""] * (max_cols - len(r)) for r in rows]
+                from src.core.converters import parse_table_rows
+                rows = parse_table_rows(table_lines)
+                if len(rows) >= 2:
+                    max_cols = len(rows[0])
                     tbl = doc.add_table(rows=len(rows), cols=max_cols)
                     tbl.style = "Table Grid"
                     for r_idx, row_data in enumerate(rows):
                         for c_idx, cell_text in enumerate(row_data):
                             cell = tbl.cell(r_idx, c_idx)
                             cell.text = ""
-                            run = cell.paragraphs[0].add_run(cell_text)
+                            clean_text = cell_text.replace("<br>", "\n").replace("<br/>", "\n")
+                            lines_in_cell = clean_text.split("\n")
+                            for l_idx, c_line in enumerate(lines_in_cell):
+                                p = cell.paragraphs[0] if l_idx == 0 else cell.add_paragraph()
+                                if r_idx == 0:
+                                    add_formatted_runs(p, c_line, size=11, default_bold=True, default_color="FFFFFF")
+                                else:
+                                    add_formatted_runs(p, c_line, size=11)
+
                             if r_idx == 0:
-                                set_font(run, size=11, bold=True, color="FFFFFF")
                                 tc = cell._tc
                                 tcPr = tc.get_or_add_tcPr()
                                 shd = OxmlElement("w:shd")
@@ -402,10 +414,11 @@ class WordModule(BaseDocumentModule):
                                 shd.set(qn("w:color"), "auto")
                                 shd.set(qn("w:val"), "clear")
                                 tcPr.append(shd)
-                            else:
-                                set_font(run, size=11)
                     doc.add_paragraph()
-                continue
+                    continue
+                else:
+                    # Not a valid Markdown table! Reset index back to process line as standard text
+                    i = start_i
 
             # Bullet List check
             sline = line.lstrip()

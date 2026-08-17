@@ -22,18 +22,25 @@ class EditorController:
         self._autosave_timer: threading.Timer | None = None
 
     def on_format_action(self, prefix: str, suffix: str):
+        self._push_undo_state()
         self.editor_view.apply_formatting(prefix, suffix)
 
     def on_heading_change(self, level: int):
+        self._push_undo_state()
         self.editor_view.apply_heading(level)
 
     def on_editor_changed(self, e=None, file_controller=None):
         if not self.state.is_undo_redo_op:
             self.state.redo_stack.clear()
-            if self._undo_timer:
-                self._undo_timer.cancel()
-            self._undo_timer = threading.Timer(0.8, self._push_undo_state)
-            self._undo_timer.start()
+            current_text = self.editor_view.get_text()
+            last_pushed = self.state.undo_stack[-1] if self.state.undo_stack else ""
+            if abs(len(current_text) - len(last_pushed)) >= 5 or (current_text and current_text[-1] in (" ", "\n", ".", ",", "!", "?", ";", ":")):
+                self._push_undo_state()
+            else:
+                if self._undo_timer:
+                    self._undo_timer.cancel()
+                self._undo_timer = threading.Timer(0.3, self._push_undo_state)
+                self._undo_timer.start()
 
         self.state.is_dirty = True
         current_text = self.editor_view.get_text()
@@ -95,16 +102,23 @@ class EditorController:
         return start_idx, start_idx
 
     def perform_undo(self, e=None):
+        if self._undo_timer:
+            self._undo_timer.cancel()
+            self._undo_timer = None
+
+        live_text = self.editor_view.get_text()
+        if not self.state.undo_stack or self.state.undo_stack[-1] != live_text:
+            self._push_undo_state()
+
         if len(self.state.undo_stack) > 1:
             self.state.is_undo_redo_op = True
             current = self.state.undo_stack.pop()
             self.state.redo_stack.append(current)
             prev_text = self.state.undo_stack[-1]
-            self.editor_view.set_text(prev_text)
             self.state.full_content = prev_text
 
             start_idx, end_idx = self._compute_diff_range(current, prev_text)
-            self.editor_view.select_range(start_idx, end_idx, focus=True)
+            self.editor_view.set_text_with_selection(prev_text, start_idx, end_idx, focus=True)
 
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None
@@ -113,16 +127,21 @@ class EditorController:
             self.state.is_undo_redo_op = False
 
     def perform_redo(self, e=None):
+        if self._undo_timer:
+            self._undo_timer.cancel()
+            self._undo_timer = None
+
         if self.state.redo_stack:
             self.state.is_undo_redo_op = True
             prev_text = self.editor_view.get_text()
             next_text = self.state.redo_stack.pop()
+            if not self.state.undo_stack or self.state.undo_stack[-1] != prev_text:
+                self.state.undo_stack.append(prev_text)
             self.state.undo_stack.append(next_text)
-            self.editor_view.set_text(next_text)
             self.state.full_content = next_text
 
             start_idx, end_idx = self._compute_diff_range(prev_text, next_text)
-            self.editor_view.select_range(start_idx, end_idx, focus=True)
+            self.editor_view.set_text_with_selection(next_text, start_idx, end_idx, focus=True)
 
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None

@@ -118,7 +118,7 @@ class SettingsView(ft.Container):
             nav_items.append(btn)
 
         self._left_nav = ft.Container(
-            content=ft.Column(nav_items, spacing=4),
+            content=ft.Column(nav_items, spacing=4, scroll=ft.ScrollMode.AUTO),
             width=180,
             padding=ft.Padding(left=0, top=4, right=12, bottom=0),
         )
@@ -232,6 +232,8 @@ class SettingsView(ft.Container):
                 self._language_dropdown,
             ],
             spacing=8,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
         )
 
     def _build_editor_panel(self) -> ft.Column:
@@ -332,6 +334,7 @@ class SettingsView(ft.Container):
             ],
             spacing=8,
             scroll=ft.ScrollMode.AUTO,
+            expand=True,
         )
 
     def _build_conversion_panel(self) -> ft.Column:
@@ -359,6 +362,8 @@ class SettingsView(ft.Container):
                 self._default_mode_dropdown,
             ],
             spacing=8,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
         )
 
     def _build_about_panel(self) -> ft.Column:
@@ -370,6 +375,7 @@ class SettingsView(ft.Container):
         deps = [
             ("flet", "0.86.4"),
             ("python-docx", "required for Word"),
+            ("python-pptx", "required for PowerPoint"),
             ("openpyxl", "required for Excel"),
             ("weasyprint / reportlab", "required for PDF"),
             ("mistune", "required for Markdown"),
@@ -407,6 +413,8 @@ class SettingsView(ft.Container):
                 *dep_rows,
             ],
             spacing=8,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
         )
 
     # ─────────────────────────────────────────────────────────────────────────

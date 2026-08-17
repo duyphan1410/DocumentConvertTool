@@ -72,7 +72,7 @@ class FileController:
         self.editor_view.set_loading(filename)
         self.preview.set_content(f"*Loading {filename}...*")
         self.preview.doc_info_text.value = "Loading..."
-        self.footer_bar.set_status(t("status.file_loading", filename=filename), ft.Colors.AMBER_400)
+        self.footer_bar.set_status_key("status.file_loading", color=ft.Colors.AMBER_400, filename=filename)
         self.footer_bar.set_processing(True)
         self.page.update()
 
@@ -81,19 +81,38 @@ class FileController:
         t_extract = time.time() - t0
 
         if not res.success:
-            self.footer_bar.set_status(t("status.load_failed", error=res.error_short or "Lỗi tải tệp"), ft.Colors.RED_400)
-            self.footer_bar.set_processing(False)
-            self.page.update()
-
-            if res.error:
-                show_message_dialog(self.page, res.error)
-            else:
+            doc_err = res.error
+            if not doc_err:
                 doc_err = ErrorMapper.map_exception(
                     Exception(res.error_detail or "Không thể nạp nội dung tài liệu"),
                     context_path=file_path,
                     stage="read",
                 )
-                show_message_dialog(self.page, doc_err)
+
+            self.footer_bar.set_status_key(
+                "status.load_failed",
+                color=ft.Colors.RED_400,
+                doc_err=doc_err,
+                is_error=True,
+            )
+            self.footer_bar.set_processing(False)
+
+            # Restore editor and preview from previous state or clean blank state
+            prev_content = getattr(self.state, "full_content", "") or ""
+            if prev_content:
+                self.editor_view.set_text(prev_content)
+                base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+                self.preview.update_preview(prev_content, base_dir=base_dir)
+                words = len(prev_content.split())
+                chars = len(prev_content)
+                self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+            else:
+                self.editor_view.set_text("")
+                self.preview.set_content("")
+                self.preview.doc_info_text.value = t("preview.no_doc")
+
+            self.page.update()
+            show_message_dialog(self.page, doc_err)
             return
 
         content = res.content
@@ -134,14 +153,18 @@ class FileController:
         print(f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s")
 
         if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.footer_bar.set_status(
-                t("status.file_truncated", limit=EDITOR_DISPLAY_LIMIT, duration=f"{t_total:.2f}"),
-                ft.Colors.ORANGE_400,
+            self.footer_bar.set_status_key(
+                "status.file_truncated",
+                color=ft.Colors.ORANGE_400,
+                limit=EDITOR_DISPLAY_LIMIT,
+                duration=f"{t_total:.2f}",
             )
         else:
-            self.footer_bar.set_status(
-                t("status.file_loaded", filename=os.path.basename(actual_path), duration=f"{t_total:.2f}"),
-                ft.Colors.GREEN_400,
+            self.footer_bar.set_status_key(
+                "status.file_loaded",
+                color=ft.Colors.GREEN_400,
+                filename=os.path.basename(actual_path),
+                duration=f"{t_total:.2f}",
             )
 
         self.footer_bar.set_processing(False)
@@ -199,7 +222,7 @@ class FileController:
         if workspace_view and hasattr(workspace_view, "show_loading"):
             workspace_view.show_loading(t("status.draft_loading"))
 
-        self.footer_bar.set_status(t("status.draft_loading"), ft.Colors.AMBER_400)
+        self.footer_bar.set_status_key("status.draft_loading", color=ft.Colors.AMBER_400)
         try:
             self.page.update()
         except Exception:
@@ -230,23 +253,38 @@ class FileController:
                 self.state.in_path = ""
                 self.file_path_bar.set_in_path("")
 
-        # 2. Restore Conversion Mode
-        if saved_mode and saved_mode in MODES:
-            self.state.current_mode = saved_mode
-            self.ribbon_bar.mode_dropdown.value = saved_mode
-            mode_cfg = MODES[saved_mode]
+        # 2. Restore & Filter Conversion Mode by File Extension (matching OpenFile logic)
+        ext = os.path.splitext(self.state.in_path)[1].lower() if self.state.in_path else ""
+        def_mode = getattr(self.state, "default_mode", "")
+
+        if def_mode and def_mode in MODES and (not ext or MODES[def_mode]["in_ext"] == ext):
+            preferred_mode = def_mode
+        elif saved_mode and saved_mode in MODES and (not ext or MODES[saved_mode]["in_ext"] == ext):
+            preferred_mode = saved_mode
+        else:
+            preferred_mode = def_mode or saved_mode
+
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+        if self.state.current_mode in MODES:
+            mode_cfg = MODES[self.state.current_mode]
             self.file_path_bar.set_in_label(mode_cfg["in_label"])
             self.file_path_bar.set_out_label(mode_cfg["out_label"])
 
-        # 3. Restore Output Path with Resilient Fallback
+        # 3. Restore Output Path with Resilient Fallback (ensuring extension matches current mode)
+        expected_out_ext = MODES.get(self.state.current_mode, {}).get("out_ext", "")
         if out_path and os.path.exists(os.path.dirname(out_path)):
-            self.state.out_path = out_path
+            if expected_out_ext and not out_path.lower().endswith(expected_out_ext.lower()):
+                base, _ = os.path.splitext(out_path)
+                self.state.out_path = f"{base}{expected_out_ext}"
+            else:
+                self.state.out_path = out_path
         elif self.state.in_path:
-            out_ext = MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
+            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
             base, _ = os.path.splitext(self.state.in_path)
             self.state.out_path = f"{base}{out_ext}"
         else:
-            out_ext = MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
+            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
             def_dir = get_default_output_dir()
             self.state.out_path = os.path.join(def_dir, f"output{out_ext}")
 
@@ -388,8 +426,8 @@ class FileController:
             print(f"[LOG][AUTO-SAVE][{timestamp}] Draft auto-saved ({len(text)} chars) -> {DRAFT_PATH}")
 
             if hasattr(self, "footer_bar") and self.footer_bar:
-                self.footer_bar.set_status(
-                    t("status.draft_autosaved", timestamp=timestamp), ft.Colors.GREEN_400
+                self.footer_bar.set_status_key(
+                    "status.draft_autosaved", color=ft.Colors.GREEN_400, timestamp=timestamp
                 )
                 try:
                     if self.page:

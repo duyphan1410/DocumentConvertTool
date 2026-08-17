@@ -5,6 +5,7 @@ import zipfile
 from typing import Optional
 
 from src.core.errors import DocumentError, ErrorCode
+from src.i18n import t
 
 
 class ErrorMapper:
@@ -38,9 +39,9 @@ class ErrorMapper:
         if isinstance(exc, FileNotFoundError):
             return DocumentError(
                 code=ErrorCode.FILE_NOT_FOUND,
-                title="Tệp không tồn tại",
-                message=f"Không tìm thấy tệp tài liệu tại đường dẫn: '{context_path or str(exc)}'.",
-                suggestion="Vui lòng kiểm tra lại đường dẫn tệp hoặc di chuyển tệp về đúng vị trí.",
+                title=t("error.file_not_found_title"),
+                message=t("error.file_not_found_msg", path=context_path or str(exc)),
+                suggestion=t("error.file_not_found_sug"),
                 detail=tb_str,
             )
 
@@ -48,9 +49,9 @@ class ErrorMapper:
         if isinstance(exc, IsADirectoryError):
             return DocumentError(
                 code=ErrorCode.IS_DIRECTORY,
-                title="Thư mục không được hỗ trợ",
-                message=f"Đường dẫn '{file_name}' là một thư mục, không phải tệp tài liệu đơn lẻ.",
-                suggestion="Vui lòng chọn hoặc kéo thả từng tệp tài liệu cụ thể (.docx, .pdf, .xlsx, .md...).",
+                title=t("error.is_directory_title"),
+                message=t("error.is_directory_msg", filename=file_name),
+                suggestion=t("error.is_directory_sug"),
                 detail=tb_str,
             )
 
@@ -59,17 +60,17 @@ class ErrorMapper:
             if stage == "write":
                 return DocumentError(
                     code=ErrorCode.READ_ONLY_SAVE_ERROR,
-                    title="Không thể lưu tệp đầu ra",
-                    message=f"Ứng dụng bị từ chối quyền ghi khi lưu tệp '{file_name}'.",
-                    suggestion="Vui lòng kiểm tra xem tệp đầu ra có đang mở trong Microsoft Excel/Word không, hoặc kiểm tra quyền ghi của thư mục đích.",
+                    title=t("error.save_permission_title"),
+                    message=t("error.save_permission_msg", filename=file_name),
+                    suggestion=t("error.save_permission_sug"),
                     detail=tb_str,
                 )
             else:
                 return DocumentError(
                     code=ErrorCode.FILE_LOCKED,
-                    title="Tệp đang bị khóa hoặc bị ứng dụng khác mở",
-                    message=f"Tài liệu '{file_name}' đang được sử dụng bởi một ứng dụng khác.",
-                    suggestion="Tài liệu này hiện đang được mở trong Microsoft Word, Excel hoặc trình đọc khác. Vui lòng đóng ứng dụng đó và thử lại.",
+                    title=t("error.file_locked_title"),
+                    message=t("error.file_locked_msg", filename=file_name),
+                    suggestion=t("error.file_locked_sug"),
                     detail=tb_str,
                 )
 
@@ -77,16 +78,16 @@ class ErrorMapper:
         if isinstance(exc, (ImportError, ModuleNotFoundError)):
             pkg_name = getattr(exc, "name", None) or str(exc)
             if is_frozen:
-                suggestion = f"Tệp cài đặt hiện tại thiếu thành phần '{pkg_name}'. Vui lòng liên hệ nhà phát triển hoặc tải bản phát hành đầy đủ."
+                suggestion = t("error.missing_dep_sug_frozen", pkg=pkg_name)
                 install_cmd = None
             else:
                 install_cmd = f"pip install {pkg_name}"
-                suggestion = f"Vui lòng chạy lệnh '{install_cmd}' trong Terminal và khởi động lại ứng dụng."
+                suggestion = t("error.missing_dep_sug_dev", cmd=install_cmd)
 
             return DocumentError(
                 code=ErrorCode.MISSING_DEPENDENCY,
-                title="Thiếu thư viện phụ thuộc",
-                message=f"Cần có thư viện mở rộng '{pkg_name}' để thực hiện thao tác này.",
+                title=t("error.missing_dep_title"),
+                message=t("error.missing_dep_msg", pkg=pkg_name),
                 suggestion=suggestion,
                 install_command=install_cmd,
                 detail=tb_str,
@@ -96,9 +97,9 @@ class ErrorMapper:
         if isinstance(exc, zipfile.BadZipFile):
             return DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Cấu trúc tệp bị hỏng",
-                message=f"Tệp '{file_name}' bị hỏng cấu trúc lưu trữ ZIP hoặc không phải tệp Word/Excel hợp lệ.",
-                suggestion="Hãy mở tệp bằng Microsoft Office và bấm Save As để tự động khôi phục cấu trúc tệp.",
+                title=t("error.corrupted_zip_title"),
+                message=t("error.corrupted_zip_msg", filename=file_name),
+                suggestion=t("error.corrupted_zip_sug"),
                 detail=tb_str,
             )
 
@@ -106,9 +107,9 @@ class ErrorMapper:
         if isinstance(exc, UnicodeDecodeError):
             return DocumentError(
                 code=ErrorCode.CORRUPTED_STRUCTURE,
-                title="Lỗi mã hóa ký tự",
-                message=f"Tệp '{file_name}' chứa dữ liệu nhị phân không khớp với định dạng mã hóa UTF-8.",
-                suggestion="Vui lòng kiểm tra lại định dạng tệp hoặc đảm bảo tệp được lưu với mã hóa UTF-8.",
+                title=t("error.encoding_title"),
+                message=t("error.encoding_msg", filename=file_name),
+                suggestion=t("error.encoding_sug"),
                 detail=tb_str,
             )
 
@@ -116,17 +117,17 @@ class ErrorMapper:
         if isinstance(exc, ValueError):
             return DocumentError(
                 code=ErrorCode.CONVERSION_FAILED,
-                title="Lỗi tham số hoặc dữ liệu chuyển đổi",
+                title=t("error.conversion_val_title"),
                 message=str(exc),
-                suggestion="Vui lòng kiểm tra lại tùy chọn chuyển đổi và nội dung dữ liệu đầu vào.",
+                suggestion=t("error.conversion_val_sug"),
                 detail=tb_str,
             )
 
         # 8. Catch-all General Unknown Error
         return DocumentError(
             code=ErrorCode.UNKNOWN_ERROR,
-            title="Đã xảy ra lỗi không xác định",
-            message=f"Đã xảy ra sự cố không mong muốn trong quá trình {stage} tệp '{file_name}': {str(exc)}",
-            suggestion="Hãy thử lại thao tác hoặc sao chép log lỗi bên dưới để gửi báo cáo sự cố.",
+            title=t("error.unknown_title"),
+            message=t("error.unknown_msg", filename=file_name, stage=stage, error=str(exc)),
+            suggestion=t("error.unknown_sug"),
             detail=tb_str,
         )

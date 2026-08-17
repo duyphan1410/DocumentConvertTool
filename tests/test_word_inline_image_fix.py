@@ -34,5 +34,19 @@ class TestWordInlineImageFix(unittest.TestCase):
         self.assertIn("PHAN TIEN DUY", extracted_md, "Heading text 'PHAN TIEN DUY' must not be lost")
         self.assertIn("Software Engineer", extracted_md, "Sub-heading text 'Software Engineer' must not be lost")
 
+    def test_word_table_inline_formatting(self):
+        md_content = (
+            "| Header **Bold** | Header *Italic* |\n"
+            "| --- | --- |\n"
+            "| Line 1<br>Line 2 | `code_cell` |"
+        )
+        out_docx = os.path.join(self.test_dir, "table_output.docx")
+        self.word_module.save_from_markdown(md_content, out_docx)
+        self.assertTrue(os.path.exists(out_docx))
+
+        extracted_md = self.word_module.load_to_markdown(out_docx)
+        self.assertIn("Header Bold", extracted_md)
+        self.assertIn("code_cell", extracted_md)
+
 if __name__ == "__main__":
     unittest.main()

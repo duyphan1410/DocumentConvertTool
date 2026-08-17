@@ -20,6 +20,7 @@ class MediaAssetManager:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.current_session_id = None
         self.current_session_dir = None
+        self._session_hashes: dict[str, str] = {}
 
     def start_session(self, file_path: str) -> str:
         """
@@ -38,6 +39,7 @@ class MediaAssetManager:
         self.current_session_id = hashlib.md5(key_str.encode('utf-8')).hexdigest()[:12]
         self.current_session_dir = os.path.join(self.cache_dir, self.current_session_id)
         os.makedirs(self.current_session_dir, exist_ok=True)
+        self._session_hashes.clear()
         return self.current_session_id
 
     def open_session(self, file_path: str) -> str:
@@ -51,30 +53,44 @@ class MediaAssetManager:
             os.makedirs(self.current_session_dir, exist_ok=True)
         return self.current_session_dir
 
-    def register_image(self, image_bytes: bytes, filename: str) -> str:
+    def register_image(self, image_bytes: bytes, filename: str, dedup: bool = True) -> str:
         """
         Saves the image bytes to the session cache folder in AppData and returns an absolute file path.
+        Automatically deduplicates identical images via MD5 content hash.
         """
+        if not image_bytes:
+            return ""
+
+        img_hash = None
+        if dedup:
+            img_hash = hashlib.md5(image_bytes).hexdigest()
+            if img_hash in self._session_hashes:
+                cached_path = self._session_hashes[img_hash]
+                if os.path.exists(cached_path):
+                    return cached_path.replace("\\", "/")
+
         session_dir = self.get_session_dir()
         dest_path = os.path.join(session_dir, filename)
         try:
             with open(dest_path, "wb") as f:
                 f.write(image_bytes)
+            if dedup and img_hash:
+                self._session_hashes[img_hash] = dest_path
         except Exception as e:
             print(f"[DEBUG] MediaAssetManager: Failed to write image {filename}: {e}")
         return dest_path.replace("\\", "/")
 
-    def resolve_uri(self, uri: str) -> str:
+    def resolve_uri(self, uri: str, base_dir: str = None) -> str:
         """
         Resolves a virtual URI (like @media/image_rId8.png) or relative path to its absolute cached disk path.
-        Searches the current session directory first, then all cached session folders in AppData.
+        Searches the current session directory first, then base_dir (if provided), then all cached session folders in AppData.
         """
         if not uri:
             return uri
 
         if uri.startswith("@media/"):
             filename = uri[7:]
-            primary_path = os.path.join(self.get_session_dir(), filename)
+            primary_path = os.path.normpath(os.path.join(self.get_session_dir(), filename))
             if os.path.exists(primary_path) and os.path.isfile(primary_path):
                 return primary_path
 
@@ -82,22 +98,50 @@ class MediaAssetManager:
             if os.path.exists(self.cache_dir):
                 for root, _, files in os.walk(self.cache_dir):
                     if filename in files:
-                        found_path = os.path.join(root, filename)
+                        found_path = os.path.normpath(os.path.join(root, filename))
                         if os.path.isfile(found_path):
                             return found_path
 
             return primary_path
 
-        # If not @media/, check if it's already an existing file path or in cache_dir
+        # If not @media/, check if it's already an existing file path or relative to base_dir or in cache_dir
         if not uri.startswith(("http://", "https://", "data:")):
-            if os.path.exists(uri) and os.path.isfile(uri):
-                return uri
+            norm_uri = os.path.normpath(uri)
+            if os.path.exists(norm_uri) and os.path.isfile(norm_uri):
+                return norm_uri
+
+            if base_dir:
+                candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, uri)))
+                if os.path.exists(candidate) and os.path.isfile(candidate):
+                    return candidate
+
+            # Smart Fallback: Check relative to CWD, Desktop, User home & their immediate subdirectories
+            clean_rel = uri.lstrip("./").lstrip(".\\")
+            search_bases = [
+                os.getcwd(),
+                os.path.dirname(os.getcwd()),
+                os.path.expanduser("~/Desktop"),
+            ]
+            for sbase in search_bases:
+                if sbase and os.path.exists(sbase):
+                    cand = os.path.normpath(os.path.join(sbase, clean_rel))
+                    if os.path.exists(cand) and os.path.isfile(cand):
+                        return cand
+                    try:
+                        for item in os.listdir(sbase):
+                            sub_dir = os.path.join(sbase, item)
+                            if os.path.isdir(sub_dir):
+                                cand_sub = os.path.normpath(os.path.join(sub_dir, clean_rel))
+                                if os.path.exists(cand_sub) and os.path.isfile(cand_sub):
+                                    return cand_sub
+                    except Exception:
+                        pass
 
             base_name = os.path.basename(uri)
             if os.path.exists(self.cache_dir):
                 for root, _, files in os.walk(self.cache_dir):
                     if base_name in files:
-                        found_path = os.path.join(root, base_name)
+                        found_path = os.path.normpath(os.path.join(root, base_name))
                         if os.path.isfile(found_path):
                             return found_path
 
@@ -112,7 +156,7 @@ class MediaAssetManager:
             return markdown_content
 
         import re
-        image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+        image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
 
         def replacer(match):
             alt = match.group(1)
@@ -223,7 +267,7 @@ class MediaAssetManager:
 
             return match.group(0)
 
-        image_pattern = r"!\[([^\]]*)\]\(([^)]+)\)"
+        image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
         return re.sub(image_pattern, replacer, markdown_content)
 
     DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB

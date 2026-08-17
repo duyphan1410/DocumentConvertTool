@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.6.5)
+# Document Converter Workspace (v1.6.6)
 
 ![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
 ![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.6.5-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.6.6-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, **HTML**, **JSON**, and **YAML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.6.5) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.6.6) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -37,7 +37,7 @@ Download the latest standalone executable (no Python installation required):
 | **PowerPoint (`.pptx`)** | ✅ | ✅ | 16:9 Widescreen slides, auto-numbering, chart data extraction, legend padding, slide overflow protection, slide notes bullets |
 | **Word (`.docx`)** | ✅ | ✅ | Styled headings, clean structure, tables |
 | **Excel (`.xlsx`)** | ✅ | ✅ | Multi-sheet parsing, frozen headers, auto-filters |
-| **PDF (`.pdf`)** | ✅ | ✅ | Preserved list/bullet structure, Unicode Vietnamese fonts, PyMuPDF TOC normalization, `@media/` slide images |
+| **PDF (`.pdf`)** | ✅ | ✅ | Geometric multi-column card tables, hierarchy tree alignment, SMask alpha compositing, shadow/halo artifact elimination, 20x fast thumbnail analysis |
 | **CSV (`.csv`)** | ✅ | ✅ | Delimiter auto-detection, clean Markdown table generation |
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 | **JSON (`.json`)** | ✅ | ✅ | Tabular array-to-table conversion, nested key-value formatting, fenced code blocks |
@@ -87,7 +87,8 @@ The output executable will be created at `dist/Document Converter.exe`.
 - **v1.4 — Pure MVC & PDF Engine Polish**: 3-Tier MVC architecture (6 Controllers), Welcome Dashboard, Office Ribbon Bar, PDF list preservation & Vietnamese font fix.
 - **v1.5 — Error Handling, Draft Protection & Auto-Loading UX**: 10 `ErrorCode`s, autosave draft protection, 60fps async loading view, 1-click smart auto-rename & localized path bar.
 - **v1.6 — PowerPoint Engine, Universal Dynamic Focus & Browser Elevation**: Bi-directional PPTX ↔ MD engine (16:9 widescreen, auto-numbering, chart extraction, legend padding, slide overflow protection), 100% dynamic Win32 window focus & `AttachThreadInput` browser elevation.
-- **v1.6.5 — JSON & YAML Modules (Current)**: Bi-directional JSON ↔ MD & YAML ↔ MD conversion plugins (pipe table conversion, nested object tree formatting, code block fallback, safe PyYAML lazy loading, i18n & validator pipeline integration).
+- **v1.6.5 — JSON & YAML Modules**: Bi-directional JSON ↔ MD & YAML ↔ MD conversion plugins (pipe table conversion, nested object tree formatting, code block fallback, safe PyYAML lazy loading).
+- **v1.6.6 — PDF Card Table Layout, Image Artifact Filter & High-Speed Pipeline (Current)**: N-column spatial card table router ($N=2..5$), hierarchy tree alignment, illustration pseudo-table linguistic guard, Polaroid blank core frame filter, button glow/halo filter, and thumbnail downsampling (20x faster).
 
 > [!NOTE]
 > Detailed developer documentation, technical architecture summaries, and feature logs are organized in the [`docs/`](docs/) directory.

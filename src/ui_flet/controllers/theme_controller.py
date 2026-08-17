@@ -4,7 +4,7 @@ Manages color palettes, theme modes (Light/Dark/System), control theme updates, 
 """
 import flet as ft
 from src.ui_flet.state import AppState
-from src.ui_flet.theme import PALETTES, apply_theme, resolve_color, make_border
+from src.ui_flet.theme import PALETTES, apply_theme, resolve_color, make_border, is_theme_dark
 
 
 class ThemeController:
@@ -44,7 +44,7 @@ class ThemeController:
         palette = PALETTES.get(
             self.state.current_palette, PALETTES["Violet Cyberpunk"]
         )
-        is_dark = self.state.current_theme_mode != "Light"
+        is_dark = is_theme_dark(self.state.current_theme_mode)
 
         ribbon_bar = self.app_controls.get("ribbon_bar")
         file_path_bar = self.app_controls.get("file_path_bar")

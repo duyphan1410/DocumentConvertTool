@@ -30,6 +30,7 @@ from src.ui_flet.views.settings_view import SettingsView
 from src.ui_flet.views.help_view import HelpView
 from src.ui_flet.helpers.shortcut_manager import ShortcutManager
 from src.utils import settings_store
+from src.utils.window import validate_and_sanitize_window_bounds
 
 from src.ui_flet.controllers import (
     SearchController,
@@ -76,10 +77,36 @@ class DocumentConvertApp:
         # Load persisted user settings into state before building UI
         settings_store.load_settings_into(self.state)
 
-        # Initialize i18n locale from saved settings
+        # Initialize i18n locale from saved settings and set page title
         set_locale(self.state.language)
+        self.page.title = t("app.title", version=__version__)
         if self.state.default_mode:
             self.state.current_mode = self.state.default_mode
+
+        # Configure Window Dimensions & Native UX Persistence (with DPI & boundary rollback)
+        self.page.window.min_width = 900
+        self.page.window.min_height = 560
+
+        safe_w, safe_h, safe_top, safe_left = validate_and_sanitize_window_bounds(
+            self.state.window_width,
+            self.state.window_height,
+            self.state.window_top,
+            self.state.window_left,
+        )
+        self.page.window.width = safe_w
+        self.page.window.height = safe_h
+        if safe_top is not None:
+            self.page.window.top = safe_top
+        if safe_left is not None:
+            self.page.window.left = safe_left
+
+        # Maximize window on fresh first launch or if previously saved as maximized
+        self.page.window.maximized = bool(self.state.window_maximized)
+
+        print(
+            f"[DEBUG][WINDOW] 🚀 Khởi động: width={safe_w}, height={safe_h}, "
+            f"top={safe_top}, left={safe_left}, maximized={self.state.window_maximized}"
+        )
 
         # File Pickers
         self.file_picker_in = ft.FilePicker()
@@ -93,6 +120,9 @@ class DocumentConvertApp:
 
         # Build UI Shell & Controllers
         self._build_controls()
+
+        # Register Window State Tracking Event through LayoutController (MVC pattern)
+        self.page.window.on_event = self.layout_controller.on_window_event
 
         # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+S, Ctrl+F, Ctrl+Z, Ctrl+Y)
         ShortcutManager.register(

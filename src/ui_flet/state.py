@@ -39,3 +39,10 @@ class AppState:
     show_preview: bool = True
     show_path_bar: bool = True
     show_status_bar: bool = True
+
+    # Window State & Geometry (persisted across sessions, default 100% maximized on first launch)
+    window_width: int | None = None
+    window_height: int | None = None
+    window_top: int | None = None
+    window_left: int | None = None
+    window_maximized: bool = True

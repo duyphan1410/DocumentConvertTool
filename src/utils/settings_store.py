@@ -14,6 +14,11 @@ SETTINGS_KEYS = [
     "show_preview",
     "show_path_bar",
     "show_status_bar",
+    "window_width",
+    "window_height",
+    "window_top",
+    "window_left",
+    "window_maximized",
 ]
 
 _appdata = os.getenv("APPDATA", os.path.expanduser("~"))

@@ -20,6 +20,7 @@ class MediaAssetManager:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.current_session_id = None
         self.current_session_dir = None
+        self._session_hashes: dict[str, str] = {}
 
     def start_session(self, file_path: str) -> str:
         """
@@ -38,6 +39,7 @@ class MediaAssetManager:
         self.current_session_id = hashlib.md5(key_str.encode('utf-8')).hexdigest()[:12]
         self.current_session_dir = os.path.join(self.cache_dir, self.current_session_id)
         os.makedirs(self.current_session_dir, exist_ok=True)
+        self._session_hashes.clear()
         return self.current_session_id
 
     def open_session(self, file_path: str) -> str:
@@ -51,15 +53,29 @@ class MediaAssetManager:
             os.makedirs(self.current_session_dir, exist_ok=True)
         return self.current_session_dir
 
-    def register_image(self, image_bytes: bytes, filename: str) -> str:
+    def register_image(self, image_bytes: bytes, filename: str, dedup: bool = True) -> str:
         """
         Saves the image bytes to the session cache folder in AppData and returns an absolute file path.
+        Automatically deduplicates identical images via MD5 content hash.
         """
+        if not image_bytes:
+            return ""
+
+        img_hash = None
+        if dedup:
+            img_hash = hashlib.md5(image_bytes).hexdigest()
+            if img_hash in self._session_hashes:
+                cached_path = self._session_hashes[img_hash]
+                if os.path.exists(cached_path):
+                    return cached_path.replace("\\", "/")
+
         session_dir = self.get_session_dir()
         dest_path = os.path.join(session_dir, filename)
         try:
             with open(dest_path, "wb") as f:
                 f.write(image_bytes)
+            if dedup and img_hash:
+                self._session_hashes[img_hash] = dest_path
         except Exception as e:
             print(f"[DEBUG] MediaAssetManager: Failed to write image {filename}: {e}")
         return dest_path.replace("\\", "/")

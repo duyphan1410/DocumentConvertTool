@@ -150,11 +150,17 @@ def validate_file_pipeline(path: str) -> str:
 
     if ext not in valid_exts:
         valid_str = ", ".join(valid_exts)
+        if ext in (".doc", ".ppt", ".dot", ".pot"):
+            target_format = ".pptx" if ext in (".ppt", ".pot") else ".docx"
+            suggestion = t("validator.legacy_office_sug", ext=ext, target_format=target_format, valid_exts=valid_str)
+        else:
+            suggestion = t("validator.unsupported_ext_sug", valid_exts=valid_str)
+
         raise DocumentError(
             code=ErrorCode.UNSUPPORTED_EXTENSION,
             title=t("validator.unsupported_ext_title"),
             message=t("validator.unsupported_ext_msg", ext=ext),
-            suggestion=t("validator.unsupported_ext_sug", valid_exts=valid_str),
+            suggestion=suggestion,
         )
 
     # 4. STEP 4: Permission & Lock Check

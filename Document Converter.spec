@@ -7,6 +7,7 @@ datas = [
 ]
 binaries = []
 hiddenimports = [
+    'src.__version__',
     'src.ui_flet.app',
     'src.ui_flet.state',
     'src.ui_flet.constants',
@@ -17,9 +18,12 @@ hiddenimports = [
     'src.ui_flet.components.file_path_bar',
     'src.ui_flet.components.search_replace_bar',
     'src.ui_flet.components.formatting_toolbar',
+    'src.ui_flet.components.message_dialog',
     'src.ui_flet.views.editor_view',
+    'src.ui_flet.views.help_view',
     'src.ui_flet.views.loading_view',
     'src.ui_flet.views.preview_view',
+    'src.ui_flet.views.settings_view',
     'src.ui_flet.views.welcome_view',
     'src.ui_flet.views.workspace_view',
     'src.ui_flet.controllers.conversion_controller',
@@ -27,6 +31,7 @@ hiddenimports = [
     'src.ui_flet.controllers.file_controller',
     'src.ui_flet.controllers.layout_controller',
     'src.ui_flet.controllers.search_controller',
+    'src.ui_flet.controllers.settings_controller',
     'src.ui_flet.controllers.theme_controller',
     'src.ui_flet.helpers.shortcut_manager',
     'src.services.conversion_service',
@@ -34,10 +39,17 @@ hiddenimports = [
     'src.services.media_asset_manager',
     'src.core.base_module',
     'src.core.converters',
+    'src.core.error_mapper',
+    'src.core.errors',
     'src.core.registry',
     'src.core.validator',
+    'src.i18n.translator',
     'src.utils.assets',
+    'src.utils.clipboard',
     'src.utils.env',
+    'src.utils.logger',
+    'src.utils.settings_store',
+    'src.utils.window',
     'src.modules.word_module',
     'src.modules.excel_module',
     'src.modules.pdf_module',
@@ -62,6 +74,7 @@ hiddenimports = [
     'markdown2',
     'bs4',
     'PIL',
+    'numpy',
     'yaml',
     'cryptography',
 ]
@@ -97,7 +110,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'pandas',
-        'numpy',
         'matplotlib',
         'scipy',
         'onnxruntime',
@@ -144,4 +156,3 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets/icons/app_icon.ico'],
 )
-

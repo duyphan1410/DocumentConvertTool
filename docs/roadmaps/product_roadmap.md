@@ -38,6 +38,8 @@
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **Activity Bar & File Explorer** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/views/explorer_view.py` | Dải dọc 48px Vector Icons (`ft.Icons.*`) + Sidebar cây thư mục dự án (`ft.ListView` + `ft.ExpansionTile` / Indent). | ⏳ Planned (v1.8) |
+| **Draggable Split Panes (Splitter)** | `src/ui_flet/components/draggable_splitter.py` | Thanh kéo co giãn phân vùng linh hoạt giữa Editor ↔ Preview và Sidebar ↔ Workspace (`ft.GestureDetector`, `on_pan_update`, `MouseCursor.RESIZE_LEFT_RIGHT`, persistence `settings.json`). | ⏳ Planned (v1.8) |
+| **Draggable Multi-Tab Workspace** | `src/ui_flet/views/workspace_view.py` | Quản lý đa Tab độc lập, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), chuyển đổi nhanh giữa các file đang mở. | ⏳ Planned (v1.8) |
 | **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation để giảm thiểu thay đổi ở code cũ; Autosave draft theo `drafts/{tab_id}.md`. | ⏳ Planned (v1.8) |
 | **Batch & ZIP Converter** | `src/services/batch_service.py` | Chuyển đổi hàng loạt tệp trong thư mục hoặc file nén `.zip`. | ⏳ Planned (v1.8) |
 

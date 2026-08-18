@@ -125,13 +125,17 @@ timeline
 ### Bước 2: Tích hợp `FileExplorer` Component (`src/ui_flet/views/explorer_view.py`)
 - Xây dựng cây thư mục bằng `ft.ListView` kết hợp lồng `ft.ExpansionTile` (hoặc `ft.Column` với indentation phân cấp) hiển thị các file/thư mục làm việc.
 
-### Bước 3: Đưa `EditorView` vào `TabManager` (`src/ui_flet/views/workspace_view.py`)
-- Quản lý danh sách Tab đang mở qua `ft.Tabs`, lưu trữ state riêng cho từng file.
+### Bước 3: Xây dựng `DraggableSplitter` Component (`src/ui_flet/components/draggable_splitter.py`)
+- Sử dụng `ft.GestureDetector(on_pan_update)` với `mouse_cursor=ft.MouseCursor.RESIZE_LEFT_RIGHT` cho phép người dùng kéo co giãn tự do giữa Editor ↔ Preview và Sidebar ↔ Workspace (60fps), hỗ trợ lưu tỷ lệ vào `settings.json`.
+
+### Bước 4: Đưa `EditorView` vào `TabManager` (`src/ui_flet/views/workspace_view.py`)
+- Quản lý danh sách Tab đang mở qua `ft.Tabs`, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), lưu trữ state riêng cho từng file.
 
 ---
 
 ## 6. Kết Luận & Đề Xuất Bước Tiếp Theo
 
-1. Kiến trúc hiện tại của `DocumentConvertTool` đã được tái cấu trúc thành công theo chuẩn **MVC (Controller decoupled)** nên việc nâng cấp sang mô hình **Studio Workspace** là **hoàn toàn khả thi và không gây đập đi làm lại phần xử lý cốt lõi**.
-2. Mô hình Studio Workspace sẽ nâng tầm ứng dụng lên đẳng cấp chuyên nghiệp (tương tự VS Code & Obsidian), rất phù hợp cho người dùng làm việc lâu dài.
-3. Nếu bạn sẵn sàng, chúng ta có thể bắt đầu triển khai **Giai đoạn 1: Dựng Activity Bar & Layout Khung Studio** ngay!
+1. **Tính tương thích Flet Desktop 100%**: Tất cả các component kỹ thuật (`GestureDetector`, `MouseCursor.RESIZE_LEFT_RIGHT`, `Draggable`, `DragTarget`, `NavigationRail`) đều là component chuẩn của Flet/Flutter Engine, hoạt động mượt mà và ổn định trên Windows Desktop.
+2. Kiến trúc hiện tại của `DocumentConvertTool` đã được tái cấu trúc thành công theo chuẩn **MVC (Controller decoupled)** nên việc nâng cấp sang mô hình **Studio Workspace** là **hoàn toàn khả thi và không gây đập đi làm lại phần xử lý cốt lõi**.
+3. Mô hình Studio Workspace sẽ nâng tầm ứng dụng lên đẳng cấp chuyên nghiệp (tương tự VS Code & Obsidian), rất phù hợp cho người dùng làm việc lâu dài.
+4. Nếu bạn sẵn sàng, chúng ta có thể bắt đầu triển khai **Giai đoạn 1: Dựng Activity Bar & Layout Khung Studio** ngay!

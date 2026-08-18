@@ -11,7 +11,7 @@
 | **P0 – Stabilization** | File extension validation, overwrite confirmation, fallback engines, unsaved warning | ✅ Completed |
 | **P1 – UX & Format** | CSV ↔ MD, search & replace (Smart Hybrid focus), formatting toolbar, autosave draft (1.5s debounce) | ✅ Completed |
 | **P2 – Format Expansion** | PDF ➔ MD (stitching tables, multiline cell continuation, slide image extraction), HTML ↔ MD | ✅ Completed |
-| **P3 – Flet UI Migration** | Responsive split-pane layout, 5-Palette design tokens, instant 0ms container theme updates | ✅ Completed |
+| **P3 – Flet UI Migration** | Responsive split-pane layout, 4-Palette design tokens, instant 0ms container theme updates | ✅ Completed |
 | **P4 – Native Dialogs & 3-Tier UI** | Async Win32 FileDialog via `asyncio.to_thread`, High-DPI Per-Monitor v2, 3-Tier modular layout (`layout/`, `components/`, `views/`). | ✅ Completed |
 | **P4.2 – Pure Orchestrator MVC** | AppState, 6 Controllers (`file`, `editor`, `search`, `theme`, `conversion`, `layout`), Welcome Dashboard, Ribbon Bar 4 tabs | ✅ Completed |
 | **P4.3 – PDF Polish & Packaging** | PDF list/bullet preservation, Vietnamese font handling, HTML code fence regex auto-repair, PyInstaller `hiddenimports`, Pinned requirements | ✅ Completed |
@@ -20,27 +20,51 @@
 
 ---
 
-### 🔄 Tính năng & Sửa lỗi cần thực hiện trong tương lai (v2.0 Roadmap):
+### ✅ v1.7.0 Release (Simplified Single-Row Ribbon, Core I/O & UI Polish):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Option Settings & i18n View** | `src/ui_flet/views/settings_view.py` | Xây dựng menu Settings trong Tab Options hỗ trợ **Chuyển đổi Ngôn ngữ (Tiếng Việt ↔ English)**, chỉnh phông chữ, khoảng thời gian Auto-save và thư mục xuất tệp mặc định. | ✅ Completed |
-| **Help & User Guide View** | `src/ui_flet/views/help_view.py` | Xây dựng màn hình Hướng dẫn sử dụng & Markdown Cheatsheet trong Tab Help giúp người dùng mới nắm rõ quy trình chuyển đổi và phím tắt. | ✅ Completed |
-| **Word Exporter Image Embed** | `src/modules/word_module.py` | Parse token `@media/` nhúng ảnh trực tiếp vào file Word `.docx` khi xuất từ Markdown. | ✅ Completed |
-| **PowerPoint Module (`.pptx`)** | `src/modules/pptx_module.py` | Chuyển đổi slide PowerPoint `.pptx` hai chiều với Markdown (`PPTX ↔ MD`), hỗ trợ slide 16:9 widescreen, trích xuất danh sách đánh số (Numbering), bảng biểu, biểu đồ kèm chú thích (chart footprint), tự động phân trang khi nội dung tràn slide (text pagination + continuation slide). *Known limitation: table alignment mặc định trái (không hỗ trợ theo cột PowerPoint gốc).* | ✅ Completed (v1.6) |
-| **YouTube URL Transcriber** | `src/services/youtube_service.py` | Trích xuất phụ đề/nội dung từ liên kết YouTube (`youtube.com/watch?v=...`) thành bài viết Markdown kèm mốc thời gian (Timestamps). | ⏳ Planned (v1.6) |
-| **Data Formats Engine** | `src/modules/data_module.py` | Chuyển đổi dữ liệu cấu trúc `JSON` / `YAML` thành Bảng Markdown (Markdown Tables) phục vụ làm tài liệu kỹ thuật. | ⏳ Planned (v1.6) |
-| **Audio/Video Speech Transcriber** | `src/services/speech_service.py` | Plugin Whisper AI trích xuất giọng nói từ video `.mp4` và audio `.mp3` thành văn bản Markdown ghi chú cuộc họp. | ⏳ Planned (v1.7) |
-| **EPub eBook Engine (`.epub`)** | `src/modules/epub_module.py` | Đọc và đóng gói sách điện tử `.epub` hai chiều với Markdown (`EPUB ↔ MD`). | ⏳ Planned (v1.7) |
-| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ⏳ Planned (v1.7) |
-| **Recent Files History** | `src/ui_flet/views/welcome_view.py` | Lưu danh sách tệp vừa mở gần đây (Recent Documents) để mở lại nhanh từ Welcome Dashboard. | ⏳ Planned |
-| **Multi-Tab Workspace** | `src/ui_flet/components/tab_bar.py` | Quản lý nhiều tài liệu mở song song trên các thẻ Tab theo phong cách Studio Workspace. | ⏳ Planned |
-| **Batch & ZIP Converter** | `src/services/batch_service.py` | Chuyển đổi hàng loạt tệp trong thư mục hoặc file nén `.zip`. | ⏳ Planned |
-| **Win32 Z-Order Focus Enhancement** | `src/utils/env.py` | Nâng cấp cơ chế Layer 4 FlashWindowEx để lấy tiêu điểm (Focus) mượt mà cho Microsoft Excel & Word khi mở file sau chuyển đổi (Tham khảo `FOCUS_ZORDER_ANALYSIS.md`). | ✅ Completed |
-| **Portable Markdown Image Links** | `src/services/media_asset_manager.py` | Sửa lỗi tệp Markdown xuất từ tệp có hình chỉ app nội bộ đọc được; chuẩn hóa đường dẫn ảnh tương đối `<doc_name>_assets/` giúp VS Code & IDE khác preview bình thường. | ✅ Completed |
-| **Edit Ribbon Add Image Instant Preview** | `src/ui_flet/controllers/file_controller.py` | Sửa lỗi tính năng Add Image trên thanh Edit Ribbon sau khi chọn & gắn link ảnh chưa tự động trigger render xem trước (Instant Preview) lên màn hình preview ngay. | ✅ Completed |
+| **Simplified Single-Row Ribbon** | `src/ui_flet/layout/ribbon_bar.py` | Tinh gọn thanh Ribbon thành 1 hàng duy nhất (38px–40px) đặt trên Editor, tối ưu diện tích dọc theo chuẩn UX 4/8dp rhythm, 100% Vector Icons. | ✅ Completed (v1.7.0) |
+| **Folder Native Picker** | `src/ui_flet/native_dialogs.py` | Thêm `pick_directory_sync` / `pick_directory_async` qua `filedialog.askdirectory` chọn folder dự án với High-DPI Per-Monitor v2. | ✅ Completed (v1.7.0) |
+| **File Path Bar Single-Row** | `src/ui_flet/components/file_path_bar.py` | Chuyển đổi từ xếp chồng 2 hàng (~90px) sang 1 hàng ngang chia đôi 50/50 (~38px), nút Browse trong suốt, đồng bộ Palette. | ✅ Completed (v1.7.0) |
+| **Search & Replace Bar Ultra-Compact** | `src/ui_flet/components/search_replace_bar.py` | Thu gọn phông chữ `text_size=12`, `dense=True`, nút điều hướng `16px`, giảm >50% chiều cao panel. | ✅ Completed (v1.7.0) |
+| **Help & User Guide Card Grid** | `src/ui_flet/views/help_view.py` | Tái thiết kế bố cục 2 cột dạng Thẻ Card, bảng phím tắt, tra cứu cú pháp Markdown, ma trận định dạng đầy đủ, và FAQ Accordion mượt mà. | ✅ Completed (v1.7.0) |
+| **Option Settings & i18n View** | `src/ui_flet/views/settings_view.py` | Chuẩn hóa Typography Scale, menu Settings điều hướng 160px, đa ngôn ngữ Việt ↔ Anh, font size, autosave interval. | ✅ Completed (v1.7.0) |
+
+---
+
+### 🔄 v1.8.0 Roadmap (Studio Workspace & Multi-Doc Architecture):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Activity Bar & File Explorer** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/views/explorer_view.py` | Dải dọc 48px Vector Icons (`ft.Icons.*`) + Sidebar cây thư mục dự án (`ft.ListView` + `ft.ExpansionTile` / Indent). | ⏳ Planned (v1.8) |
+| **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation để giảm thiểu thay đổi ở code cũ; Autosave draft theo `drafts/{tab_id}.md`. | ⏳ Planned (v1.8) |
+| **Batch & ZIP Converter** | `src/services/batch_service.py` | Chuyển đổi hàng loạt tệp trong thư mục hoặc file nén `.zip`. | ⏳ Planned (v1.8) |
+
+---
+
+### 🔮 v2.0+ Roadmap (Personal Knowledge Base & Advanced Distribution):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Manual Wikilink `[[...]]`** | `src/services/link_parser.py` | Cú pháp `[[Tên File]]` tách biệt với link markdown cũ; Fuzzy Match (lowercase, bỏ dấu tiếng Việt `NFD`, trim space); In-memory graph index. | 🔮 Planned (v2.0) |
+| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng màu cảnh báo / gạch chân; hỗ trợ Click để tự động tạo file `.md` mới trong workspace. | 🔮 Planned (v2.0) |
+| **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel thanh bên hiển thị danh sách các tài liệu đang dẫn liên kết tới tài liệu hiện hành. | 🔮 Planned (v2.0) |
+| **Folder Mode (`--onedir`) & Inno Setup Installer** | `Document Converter.spec` / Packaging | Chuyển đổi đóng gói từ Single-file (`--onefile`) sang Thư mục (`--onedir`) kết hợp bộ tạo cài đặt Inno Setup (`Setup.exe`) giúp tối ưu thời gian khởi động ứng dụng. | 🔮 Planned (v2.0) |
+
+---
+
+### ⏳ Các Tính Năng & Module Mở Rộng Khác (Format & Feature Expansion):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **YouTube URL Transcriber** | `src/services/youtube_service.py` | Trích xuất phụ đề/nội dung từ liên kết YouTube (`youtube.com/watch?v=...`) thành bài viết Markdown kèm mốc thời gian (Timestamps). | ⏳ Planned |
+| **Audio/Video Speech Transcriber** | `src/services/speech_service.py` | Plugin Whisper AI trích xuất giọng nói từ video `.mp4` và audio `.mp3` thành văn bản Markdown ghi chú cuộc họp. | ⏳ Planned |
+| **EPub eBook Engine (`.epub`)** | `src/modules/epub_module.py` | Đọc và đóng gói sách điện tử `.epub` hai chiều với Markdown (`EPUB ↔ MD`). | ⏳ Planned |
+| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ⏳ Planned |
 | **Image Settings Dialog & Format Tab** | `src/ui_flet/views/editor_view.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh Width/Height HTML) và bổ sung Contextual Format Tab trên thanh Ribbon Bar khi thao tác với hình ảnh. | ⏳ Planned |
-| **Folder Mode (`--onedir`) & Inno Setup Installer** | `Document Converter.spec` / Packaging | Chuyển đổi đóng gói từ Single-file (`--onefile`) sang Thư mục (`--onedir`) kết hợp bộ tạo cài đặt Inno Setup (`Setup.exe`) giúp mở ứng dụng tức thì (< 0.5s) và trải nghiệm cài đặt chuyên nghiệp. | ⏳ Planned (v2.0) |
+| **Recent Files History** | `src/ui_flet/views/welcome_view.py` | Lưu danh sách tệp vừa mở gần đây (Recent Documents) để mở lại nhanh từ Welcome Dashboard. | ⏳ Planned |
+| **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết thông minh giữa các ghi chú dựa trên Semantic Embeddings / Local Vector Search. | ⏳ Planned |
 
 
 ---

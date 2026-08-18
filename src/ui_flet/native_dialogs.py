@@ -44,8 +44,18 @@ OUTPUT_FILETYPES = [
 ]
 
 
+def ensure_tcl_tk():
+    """Configures Tcl/Tk library paths if running in a virtual environment on Windows."""
+    try:
+        from src.utils.env import setup_environment
+        setup_environment()
+    except Exception:
+        pass
+
+
 def pick_input_file_sync() -> str | None:
     """Synchronous worker that opens transient Windows Open File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -78,6 +88,7 @@ def pick_input_file_sync() -> str | None:
 
 def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx") -> str | None:
     """Synchronous worker that opens transient Windows Save File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -155,7 +166,8 @@ IMAGE_FILETYPES = [
 
 
 def pick_image_file_sync() -> str | None:
-    """Synchronous worker that opens transient Windows Open Image File Dialog."""
+    """Synchronous worker that opens transient Windows Image File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -203,6 +215,7 @@ async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePick
 
 def confirm_overwrite_sync(file_path: str) -> bool:
     """Prompts a native Windows messagebox asking user if they want to overwrite an existing file."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import messagebox
@@ -230,6 +243,7 @@ async def confirm_overwrite_async(file_path: str) -> bool:
 
 def pick_directory_sync() -> str | None:
     """Synchronous worker that opens transient Windows Directory Picker Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog

@@ -167,6 +167,7 @@ class DocumentConvertApp:
         self.welcome_view = WelcomeView(
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
             on_create_blank=lambda e: self._on_create_blank_note(e),
+            on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
         )
 
         self.loading_view = LoadingView()
@@ -203,6 +204,7 @@ class DocumentConvertApp:
             on_browse_in=lambda e: self.file_controller.trigger_browse_input(e),
             on_browse_out=lambda e: self.file_controller.trigger_browse_output(e),
             on_clear_editor=lambda e: self.editor_controller.clear_editor(e),
+            on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
             on_format_action=lambda p, s: self.editor_controller.on_format_action(p, s),
             on_heading_change=lambda lvl: self.editor_controller.on_heading_change(lvl),
             on_toggle_search=lambda e: self.search_controller.toggle_search_panel(e),
@@ -239,6 +241,7 @@ class DocumentConvertApp:
             on_redo=lambda e: self.editor_controller.perform_redo(e),
             on_clear=lambda e: self.editor_controller.clear_editor(e),
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
+            on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
         )
 
         self.preview = MarkdownPreview()

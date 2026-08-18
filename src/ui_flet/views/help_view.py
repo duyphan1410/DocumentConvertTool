@@ -1,15 +1,84 @@
 """
 Help View for DocConvert Workspace.
-Contains two internal tabs: Help (shortcuts, format matrix, FAQ) and User Guide (step-by-step cards).
-Pure Flet layout — no Markdown rendering. Follows Flet 0.86.4 Desktop standards.
+Contains two internal tabs: Help (shortcuts, format matrix, markdown cheat sheet, pro tips, FAQ)
+and User Guide (step-by-step cards).
+Follows Flet 0.86.4 Desktop standards and modern UX/UI 4/8dp rhythm.
 """
 from __future__ import annotations
 
 from typing import Callable, Optional
 import flet as ft
 from src.i18n import t
-
 from src.ui_flet.theme import resolve_color, make_border
+
+
+class FaqItem(ft.Container):
+    """Sleek collapsible FAQ accordion item with crisp left alignment."""
+
+    def __init__(self, question: str, answer: str, **kwargs):
+        super().__init__(**kwargs)
+        self.question = question
+        self.answer = answer
+        self._is_open = False
+
+        self.icon_arrow = ft.Icon(
+            ft.Icons.KEYBOARD_ARROW_RIGHT_ROUNDED,
+            size=16,
+            color=ft.Colors.OUTLINE,
+        )
+        self.lbl_question = ft.Text(
+            question,
+            size=12,
+            weight=ft.FontWeight.W_600,
+            expand=True,
+        )
+
+        self.header_row = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.HELP_OUTLINE_ROUNDED, size=15, color=ft.Colors.PRIMARY),
+                    self.lbl_question,
+                    self.icon_arrow,
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding(left=8, top=6, right=8, bottom=6),
+            border_radius=6,
+            ink=True,
+            on_click=self._toggle,
+        )
+
+        self.answer_box = ft.Container(
+            content=ft.Text(
+                answer,
+                size=12,
+                color=ft.Colors.OUTLINE,
+                text_align=ft.TextAlign.START,
+            ),
+            padding=ft.Padding(left=31, top=2, right=12, bottom=8),
+            alignment=ft.alignment.Alignment(-1.0, 0.0),
+            visible=False,
+        )
+
+        self.content = ft.Column(
+            [self.header_row, self.answer_box],
+            spacing=0,
+        )
+        self.border_radius = 6
+
+    def _toggle(self, e):
+        self._is_open = not self._is_open
+        self.answer_box.visible = self._is_open
+        self.icon_arrow.name = (
+            ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED if self._is_open else ft.Icons.KEYBOARD_ARROW_RIGHT_ROUNDED
+        )
+        self.icon_arrow.color = ft.Colors.PRIMARY if self._is_open else ft.Colors.OUTLINE
+        if self.page:
+            try:
+                self.update()
+            except Exception:
+                pass
 
 
 class HelpView(ft.Container):
@@ -25,25 +94,31 @@ class HelpView(ft.Container):
         self._on_get_started = on_get_started
         self._on_close = on_close
         self.expand = True
-        self.padding = ft.Padding(left=20, top=14, right=20, bottom=14)
+        self.padding = ft.Padding(left=16, top=10, right=16, bottom=10)
 
         self._active_tab = "help"
 
         # ── Internal Tab Buttons ──────────────────────────────────────────────
         self._btn_help = ft.TextButton(
-            t("help.tab_help"),
-            icon=ft.Icons.HELP_OUTLINE_ROUNDED,
+            content=ft.Row(
+                [ft.Icon(ft.Icons.HELP_OUTLINE_ROUNDED, size=16), ft.Text(t("help.tab_help"), size=12)],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
             on_click=lambda _: self._switch_tab("help"),
         )
         self._btn_guide = ft.TextButton(
-            t("help.tab_guide"),
-            icon=ft.Icons.MENU_BOOK_ROUNDED,
+            content=ft.Row(
+                [ft.Icon(ft.Icons.MENU_BOOK_ROUNDED, size=16), ft.Text(t("help.tab_guide"), size=12)],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
             on_click=lambda _: self._switch_tab("guide"),
         )
 
         self._tab_row = ft.Row(
             [self._btn_help, self._btn_guide],
-            spacing=4,
+            spacing=6,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
@@ -51,99 +126,168 @@ class HelpView(ft.Container):
         self._content_area = ft.Container(
             content=self._build_help_tab(),
             expand=True,
-            padding=ft.Padding(left=0, top=8, right=0, bottom=0),
+            padding=ft.Padding(left=0, top=4, right=0, bottom=0),
         )
 
         # ── Close Button ─────────────────────────────────────────────────────
         self._btn_close = ft.IconButton(
             icon=ft.Icons.CLOSE_ROUNDED,
-            icon_size=20,
+            icon_size=18,
             tooltip=t("help.tooltip_close"),
             on_click=self._on_close_click,
         )
 
         # ── Page Header ──────────────────────────────────────────────────────
-        self._title_text = ft.Text(t("help.title"), size=20, weight=ft.FontWeight.BOLD)
+        self._title_text = ft.Text(t("help.title"), size=16, weight=ft.FontWeight.BOLD)
         header = ft.Row(
             [
-                ft.Icon(ft.Icons.HELP_CENTER_ROUNDED, color=ft.Colors.PRIMARY, size=22),
+                ft.Icon(ft.Icons.HELP_CENTER_ROUNDED, color=ft.Colors.PRIMARY, size=18),
                 self._title_text,
                 ft.Container(expand=True),
                 self._btn_close,
             ],
-            spacing=10,
+            spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         self.content = ft.Column(
             [
                 header,
-                ft.Divider(height=1),
+                ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
                 self._tab_row,
-                ft.Divider(height=1),
+                ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
                 self._content_area,
             ],
-            spacing=10,
+            spacing=8,
             expand=True,
         )
         self._highlight_tabs()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Internal tab builder
+    # Internal tab builder - Help & Documentation
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_help_tab(self) -> ft.Column:
-        return ft.Column(
+        left_col = ft.Column(
             [
-                self._build_shortcuts_section(),
-                ft.Container(height=16),
-                self._build_format_matrix_section(),
-                ft.Container(height=16),
-                self._build_faq_section(),
+                self._build_shortcuts_card(),
+                self._build_markdown_syntax_card(),
             ],
-            scroll=ft.ScrollMode.AUTO,
-            spacing=0,
+            spacing=10,
             expand=True,
         )
 
-    def _build_shortcuts_section(self) -> ft.Container:
+        right_col = ft.Column(
+            [
+                self._build_format_matrix_card(),
+                self._build_pro_tips_card(),
+            ],
+            spacing=10,
+            expand=True,
+        )
+
+        grid_row = ft.Row(
+            [left_col, right_col],
+            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+        faq_card = self._build_faq_card()
+
+        return ft.Column(
+            [
+                grid_row,
+                ft.Container(height=2),
+                faq_card,
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            spacing=10,
+            expand=True,
+        )
+
+    # ── 1. Shortcuts Card ────────────────────────────────────────────────────
+
+    def _build_shortcuts_card(self) -> ft.Container:
         shortcuts = [
             ("Ctrl + O", t("help.sc_open")),
             ("Ctrl + S", t("help.sc_save")),
-            ("Ctrl + Z", t("help.sc_undo")),
-            ("Ctrl + Y / Ctrl + Shift + Z", t("help.sc_redo")),
             ("Ctrl + F", t("help.sc_find")),
+            ("Ctrl + Z", t("help.sc_undo")),
+            ("Ctrl + Y", t("help.sc_redo")),
             ("Ctrl + A", t("help.sc_select_all")),
         ]
         rows = [
             ft.DataRow(cells=[
                 ft.DataCell(ft.Container(
-                    content=ft.Text(shortcut, size=12, font_family="Consolas", weight=ft.FontWeight.BOLD),
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-                    padding=ft.Padding(left=8, top=4, right=8, bottom=4),
+                    content=ft.Text(sc, size=11, font_family="Consolas", weight=ft.FontWeight.BOLD),
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    padding=ft.Padding(left=6, top=2, right=6, bottom=2),
                     border_radius=4,
                 )),
-                ft.DataCell(ft.Text(desc, size=13)),
+                ft.DataCell(ft.Text(desc, size=12)),
             ])
-            for shortcut, desc in shortcuts
+            for sc, desc in shortcuts
         ]
         table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text(t("help.col_shortcut"), weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text(t("help.col_action"), weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_shortcut"), size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_action"), size=12, weight=ft.FontWeight.BOLD)),
             ],
             rows=rows,
-            column_spacing=24,
-            data_row_max_height=40,
+            column_spacing=16,
+            data_row_max_height=32,
+            heading_row_height=34,
         )
-        return ft.Container(
-            content=ft.Column(
-                [self._section_header(t("help.sec_shortcuts")), table],
-                spacing=8,
-            ),
+        return self._make_card(
+            title=t("help.sec_shortcuts"),
+            icon=ft.Icons.KEYBOARD_ROUNDED,
+            content=table,
         )
 
-    def _build_format_matrix_section(self) -> ft.Container:
+    # ── 2. Markdown Syntax Card ──────────────────────────────────────────────
+
+    def _build_markdown_syntax_card(self) -> ft.Container:
+        items = [
+            ("# Header", t("help.md_h1")),
+            ("**Bold**", t("help.md_bold")),
+            ("*Italic*", t("help.md_italic")),
+            ("~~Strike~~", t("help.md_strike")),
+            ("`code`", t("help.md_code")),
+            ("> Quote", t("help.md_quote")),
+            ("| Col 1 | Col 2 |", t("help.md_table")),
+            ("![Alt](img.png)", t("help.md_image")),
+        ]
+        rows = [
+            ft.DataRow(cells=[
+                ft.DataCell(ft.Container(
+                    content=ft.Text(syntax, size=11, font_family="Consolas", weight=ft.FontWeight.BOLD),
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                    padding=ft.Padding(left=6, top=2, right=6, bottom=2),
+                    border_radius=4,
+                )),
+                ft.DataCell(ft.Text(meaning, size=12)),
+            ])
+            for syntax, meaning in items
+        ]
+        table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("Cú pháp / Syntax", size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("Kết quả / Meaning", size=12, weight=ft.FontWeight.BOLD)),
+            ],
+            rows=rows,
+            column_spacing=16,
+            data_row_max_height=32,
+            heading_row_height=34,
+        )
+        return self._make_card(
+            title=t("help.sec_markdown"),
+            icon=ft.Icons.EDIT_NOTE_ROUNDED,
+            content=table,
+        )
+
+    # ── 3. Format Support Matrix Card ────────────────────────────────────────
+
+    def _build_format_matrix_card(self) -> ft.Container:
         formats = [
             ("Markdown (.md)", True, True),
             ("Word (.docx)", True, True),
@@ -151,18 +295,20 @@ class HelpView(ft.Container):
             ("CSV (.csv)", True, True),
             ("PDF (.pdf)", True, True),
             ("HTML (.html)", True, True),
+            ("JSON / YAML", True, True),
+            ("PowerPoint (.pptx)", True, True),
         ]
 
         def _check(val: bool):
             return ft.Icon(
                 ft.Icons.CHECK_CIRCLE_ROUNDED if val else ft.Icons.CANCEL_ROUNDED,
                 color=ft.Colors.GREEN_400 if val else ft.Colors.RED_400,
-                size=18,
+                size=16,
             )
 
         rows = [
             ft.DataRow(cells=[
-                ft.DataCell(ft.Text(fmt, size=13)),
+                ft.DataCell(ft.Text(fmt, size=12)),
                 ft.DataCell(_check(load)),
                 ft.DataCell(_check(save)),
             ])
@@ -170,22 +316,51 @@ class HelpView(ft.Container):
         ]
         table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text(t("help.col_format"), weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text(t("help.col_load"), weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text(t("help.col_save"), weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_format"), size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_load"), size=12, weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text(t("help.col_save"), size=12, weight=ft.FontWeight.BOLD)),
             ],
             rows=rows,
-            column_spacing=32,
-            data_row_max_height=40,
+            column_spacing=24,
+            data_row_max_height=32,
+            heading_row_height=34,
         )
-        return ft.Container(
-            content=ft.Column(
-                [self._section_header(t("help.sec_matrix")), table],
-                spacing=8,
-            ),
+        return self._make_card(
+            title=t("help.sec_matrix"),
+            icon=ft.Icons.DESCRIPTION_ROUNDED,
+            content=table,
         )
 
-    def _build_faq_section(self) -> ft.Container:
+    # ── 4. Pro Tips Card ─────────────────────────────────────────────────────
+
+    def _build_pro_tips_card(self) -> ft.Container:
+        tips = [
+            (ft.Icons.RESTORE_ROUNDED, t("help.tip_autosave")),
+            (ft.Icons.PALETTE_OUTLINED, t("help.tip_palette")),
+            (ft.Icons.IMAGE_OUTLINED, t("help.tip_images")),
+            (ft.Icons.SEARCH_ROUNDED, t("help.tip_search")),
+        ]
+        tip_rows = [
+            ft.Row(
+                [
+                    ft.Icon(icon, size=16, color=ft.Colors.PRIMARY),
+                    ft.Text(text, size=12, expand=True),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            )
+            for icon, text in tips
+        ]
+        content_col = ft.Column(tip_rows, spacing=8)
+        return self._make_card(
+            title=t("help.sec_tips"),
+            icon=ft.Icons.LIGHTBULB_OUTLINE_ROUNDED,
+            content=content_col,
+        )
+
+    # ── 5. FAQ Card ──────────────────────────────────────────────────────────
+
+    def _build_faq_card(self) -> ft.Container:
         faqs = [
             (t("help.faq_q1"), t("help.faq_a1")),
             (t("help.faq_q2"), t("help.faq_a2")),
@@ -194,28 +369,49 @@ class HelpView(ft.Container):
             (t("help.faq_q5"), t("help.faq_a5")),
         ]
 
-        panels = [
-            ft.ExpansionPanel(
-                header=ft.Container(
-                    content=ft.Text(q, size=13, weight=ft.FontWeight.W_500),
-                    padding=ft.Padding(left=8, top=0, right=8, bottom=0),
-                ),
-                content=ft.Container(
-                    content=ft.Text(a, size=12, color=ft.Colors.OUTLINE),
-                    padding=ft.Padding(left=16, top=0, right=16, bottom=12),
-                ),
-            )
-            for q, a in faqs
-        ]
+        faq_items = [FaqItem(q, a) for q, a in faqs]
+        faq_col = ft.Column(faq_items, spacing=2)
 
-        panel_list = ft.ExpansionPanelList(controls=panels, spacing=4)
+        return self._make_card(
+            title=t("help.sec_faq"),
+            icon=ft.Icons.HELP_ROUNDED,
+            content=faq_col,
+        )
 
+    # ── Card Builder Helper ──────────────────────────────────────────────────
+
+    def _make_card(self, title: str, icon: str, content: ft.Control) -> ft.Container:
+        header = ft.Row(
+            [
+                ft.Icon(icon, size=16, color=ft.Colors.PRIMARY),
+                ft.Text(title, size=13, weight=ft.FontWeight.BOLD),
+            ],
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
         return ft.Container(
             content=ft.Column(
-                [self._section_header(t("help.sec_faq")), panel_list],
-                spacing=8,
+                [
+                    header,
+                    ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
+                    content,
+                ],
+                spacing=6,
+            ),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+            border_radius=8,
+            padding=ft.Padding(left=12, top=8, right=12, bottom=10),
+            border=ft.Border(
+                left=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
             ),
         )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Internal tab builder - Quick Start User Guide
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _build_guide_tab(self) -> ft.Column:
         steps = [
@@ -252,39 +448,45 @@ class HelpView(ft.Container):
                 content=ft.Row(
                     [
                         ft.Container(
-                            content=ft.Icon(icon, color=ft.Colors.ON_PRIMARY, size=28),
+                            content=ft.Icon(icon, color=ft.Colors.ON_PRIMARY, size=20),
                             bgcolor=ft.Colors.PRIMARY,
-                            border_radius=12,
-                            padding=12,
-                            width=52,
-                            height=52,
+                            border_radius=8,
+                            padding=8,
+                            width=38,
+                            height=38,
                             alignment=ft.alignment.Alignment(0.0, 0.0),
                         ),
                         ft.Column(
                             [
-                                ft.Text(title, size=14, weight=ft.FontWeight.BOLD),
+                                ft.Text(title, size=13, weight=ft.FontWeight.BOLD),
                                 ft.Text(desc, size=12, color=ft.Colors.OUTLINE),
                             ],
-                            spacing=4,
+                            spacing=2,
                             expand=True,
                         ),
                     ],
-                    spacing=16,
+                    spacing=12,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-                border_radius=10,
-                padding=ft.Padding(left=16, top=12, right=16, bottom=12),
+                border_radius=8,
+                padding=ft.Padding(left=12, top=8, right=12, bottom=8),
+                border=ft.Border(
+                    left=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                    top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                    right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                    bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                ),
             )
             step_cards.append(card)
 
         cta_button = ft.FilledButton(
             t("help.btn_get_started"),
             icon=ft.Icons.ROCKET_LAUNCH_ROUNDED,
-            height=44,
+            height=36,
             style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                padding=ft.Padding(left=24, top=10, right=24, bottom=10),
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=18, top=6, right=18, bottom=6),
                 bgcolor=ft.Colors.PRIMARY,
                 color=ft.Colors.WHITE,
             ),
@@ -293,13 +495,19 @@ class HelpView(ft.Container):
 
         return ft.Column(
             [
-                self._section_header(t("help.sec_guide")),
+                ft.Row(
+                    [
+                        ft.Icon(ft.Icons.ROCKET_LAUNCH_ROUNDED, size=16, color=ft.Colors.PRIMARY),
+                        ft.Text(t("help.sec_guide"), size=13, weight=ft.FontWeight.BOLD),
+                    ],
+                    spacing=6,
+                ),
                 *step_cards,
-                ft.Container(height=8),
+                ft.Container(height=4),
                 ft.Row([cta_button], alignment=ft.MainAxisAlignment.CENTER),
             ],
             scroll=ft.ScrollMode.AUTO,
-            spacing=10,
+            spacing=8,
             expand=True,
         )
 
@@ -323,17 +531,14 @@ class HelpView(ft.Container):
         for tab, btn in [("help", self._btn_help), ("guide", self._btn_guide)]:
             is_active = tab == self._active_tab
             btn.style = ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
+                shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.PRIMARY_CONTAINER if is_active else None,
                 color=ft.Colors.ON_PRIMARY_CONTAINER if is_active else None,
             )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Helpers
+    # Helpers & Handlers
     # ─────────────────────────────────────────────────────────────────────────
-
-    def _section_header(self, text: str) -> ft.Text:
-        return ft.Text(text, size=14, weight=ft.FontWeight.BOLD)
 
     def _on_get_started_click(self, e):
         if self._on_get_started:
@@ -361,8 +566,11 @@ class HelpView(ft.Container):
 
     def update_locale(self):
         """Refresh header title, tabs, tooltip, and inner content in HelpView."""
-        self._btn_help.content = t("help.tab_help")
-        self._btn_guide.content = t("help.tab_guide")
+        if hasattr(self, "_btn_help") and hasattr(self._btn_help, "content") and hasattr(self._btn_help.content, "controls"):
+            self._btn_help.content.controls[1].value = t("help.tab_help")
+        if hasattr(self, "_btn_guide") and hasattr(self._btn_guide, "content") and hasattr(self._btn_guide.content, "controls"):
+            self._btn_guide.content.controls[1].value = t("help.tab_guide")
+
         self._btn_close.tooltip = t("help.tooltip_close")
         self._title_text.value = t("help.title")
         self._content_area.content = (

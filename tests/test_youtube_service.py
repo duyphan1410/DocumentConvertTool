@@ -82,6 +82,38 @@ class TestYouTubeService(unittest.TestCase):
         self.assertIn("Xin chào các bạn", content)
         self.assertIn("**[00:00]**", content)
 
+    @patch("youtube_transcript_api.YouTubeTranscriptApi")
+    def test_fetch_youtube_transcript_auto_translate(self, mock_api_cls):
+        mock_instance = MagicMock()
+        mock_api_cls.return_value = mock_instance
+
+        # English transcript that is translatable to vi
+        mock_en_transcript = MagicMock()
+        mock_en_transcript.language_code = "en"
+        mock_en_transcript.language = "English"
+        mock_en_transcript.is_translatable = True
+
+        mock_vi_translated = MagicMock()
+        mock_vi_translated.language_code = "vi"
+        mock_vi_translated.language = "Vietnamese"
+        mock_vi_translated.fetch.return_value = [
+            {"text": "Bản dịch tiếng Việt tự động", "start": 1.0, "duration": 2.0}
+        ]
+        mock_en_transcript.translate.return_value = mock_vi_translated
+
+        mock_transcript_list = MagicMock()
+        mock_transcript_list.find_transcript.side_effect = Exception("Not found")
+        mock_transcript_list.__iter__.return_value = [mock_en_transcript]
+        mock_instance.list.return_value = mock_transcript_list
+
+        success, content, error, lang = fetch_youtube_transcript(
+            "https://youtu.be/dQw4w9WgXcQ", preferred_languages=["vi"], allow_auto_translate=True
+        )
+        self.assertTrue(success)
+        self.assertEqual(lang, "vi")
+        self.assertIn("Auto-translated from English", content)
+        self.assertIn("Bản dịch tiếng Việt tự động", content)
+
     @patch("urllib.request.urlopen")
     def test_fetch_video_metadata(self, mock_urlopen):
         import io

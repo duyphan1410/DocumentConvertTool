@@ -105,3 +105,76 @@ def _safe_flet_page_clipboard(page: object, text: str) -> bool:
         except Exception:
             pass
     return False
+
+
+def get_clipboard_text(page: Optional[object] = None) -> str:
+    """
+    Retrieves Unicode text directly from the OS system clipboard.
+    Supports Windows Win32 API (CF_UNICODETEXT), macOS pbpaste, Linux xclip/xsel.
+    """
+    # 1. Native Windows Win32 API
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            CF_UNICODETEXT = 13
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
+            user32.OpenClipboard.argtypes = [wintypes.HWND]
+            user32.OpenClipboard.restype = wintypes.BOOL
+            user32.GetClipboardData.argtypes = [wintypes.UINT]
+            user32.GetClipboardData.restype = wintypes.HANDLE
+            user32.CloseClipboard.argtypes = []
+            user32.CloseClipboard.restype = wintypes.BOOL
+
+            kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalLock.restype = wintypes.LPVOID
+            kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+            kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+            if user32.OpenClipboard(None):
+                h_data = user32.GetClipboardData(CF_UNICODETEXT)
+                if h_data:
+                    ptr = kernel32.GlobalLock(h_data)
+                    if ptr:
+                        text = ctypes.c_wchar_p(ptr).value or ""
+                        kernel32.GlobalUnlock(h_data)
+                        user32.CloseClipboard()
+                        return text
+                user32.CloseClipboard()
+        except Exception as ex:
+            print(f"[DEBUG] Win32 get_clipboard error: {ex}")
+
+    # 2. macOS pbpaste
+    elif sys.platform == "darwin":
+        try:
+            res = subprocess.run(["pbpaste"], capture_output=True, text=True, check=True, timeout=1)
+            return res.stdout or ""
+        except Exception:
+            pass
+
+    # 3. Linux xclip / xsel
+    elif sys.platform.startswith("linux"):
+        try:
+            res = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, check=True, timeout=1)
+            return res.stdout or ""
+        except Exception:
+            try:
+                res = subprocess.run(["xsel", "--clipboard", "--output"], capture_output=True, text=True, check=True, timeout=1)
+                return res.stdout or ""
+            except Exception:
+                pass
+
+    # 4. Fallback to Flet page clipboard if available
+    if page:
+        try:
+            if hasattr(page, "get_clipboard"):
+                val = page.get_clipboard()
+                if val:
+                    return str(val)
+        except Exception:
+            pass
+
+    return ""

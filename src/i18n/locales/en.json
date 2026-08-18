@@ -95,6 +95,7 @@
   "editor.title": "Editor Buffer",
   "editor.hint": "Document text content will appear here...",
   "editor.tooltip_open": "Open Document (Ctrl+O)",
+  "editor.tooltip_save_md": "Save Markdown file (.md)",
   "editor.tooltip_undo": "Undo (Ctrl+Z)",
   "editor.tooltip_redo": "Redo (Ctrl+Y)",
   "editor.tooltip_clear": "Clear Editor",
@@ -184,6 +185,7 @@
   "settings.about_version": "Version {version}",
   "settings.section_deps": "Dependencies",
   "settings.saved_status": "Settings saved ({timestamp})",
+  "mode.md_to_md": "Save Markdown (.md)",
   "mode.md_to_excel": "MD → Excel",
   "mode.md_to_word": "MD → Word",
   "mode.md_to_csv": "MD → CSV",
@@ -345,9 +347,15 @@
   "youtube.btn_fetch": "Extract Markdown",
   "youtube.btn_cancel": "Cancel",
   "youtube.fetching": "Fetching YouTube subtitles...",
+  "youtube.recognizing_speech": "Recognizing speech from video audio...",
+  "youtube.chk_auto_translate": "Auto-translate subtitles to selected language",
+  "youtube.chk_speech_fallback": "Speech recognition fallback if video has no subtitles",
   "youtube.no_subs_found": "No subtitles/transcripts found for this video or subtitles are disabled.",
+  "youtube.no_speech_detected": "No clear speech detected in audio (video may contain only music or low volume).",
+  "youtube.audio_download_failed": "Failed to extract audio stream from this video.",
   "youtube.invalid_url": "Invalid YouTube link. Please verify the URL.",
   "youtube.video_unavailable": "Video is unavailable, deleted, or set to private.",
   "youtube.fetch_success": "Successfully extracted YouTube subtitles ({lang})!",
   "youtube.error_title": "YouTube Notice"
-}
+}
+

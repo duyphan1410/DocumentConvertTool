@@ -95,6 +95,7 @@
   "editor.title": "Bộ đệm Soạn thảo",
   "editor.hint": "Nội dung tài liệu sẽ hiển thị ở đây...",
   "editor.tooltip_open": "Mở tài liệu (Ctrl+O)",
+  "editor.tooltip_save_md": "Lưu tệp Markdown (.md)",
   "editor.tooltip_undo": "Hoàn tác (Ctrl+Z)",
   "editor.tooltip_redo": "Làm lại (Ctrl+Y)",
   "editor.tooltip_clear": "Xóa Nội dung",
@@ -184,6 +185,7 @@
   "settings.about_version": "Phiên bản {version}",
   "settings.section_deps": "Thư viện phụ thuộc",
   "settings.saved_status": "Đã lưu cài đặt ({timestamp})",
+  "mode.md_to_md": "Lưu Markdown (.md)",
   "mode.md_to_excel": "MD → Excel",
   "mode.md_to_word": "MD → Word",
   "mode.md_to_csv": "MD → CSV",
@@ -345,9 +347,15 @@
   "youtube.btn_fetch": "Trích xuất Markdown",
   "youtube.btn_cancel": "Hủy",
   "youtube.fetching": "Đang lấy phụ đề từ YouTube...",
+  "youtube.recognizing_speech": "Đang nhận diện giọng nói từ âm thanh video...",
+  "youtube.chk_auto_translate": "Tự động dịch phụ đề sang ngôn ngữ đã chọn",
+  "youtube.chk_speech_fallback": "Nhận diện giọng nói nếu video không có phụ đề",
   "youtube.no_subs_found": "Tạm thời video này không có phụ đề (subtitles/captions) hoặc phụ đề đã bị tắt.",
+  "youtube.no_speech_detected": "Không nhận diện được giọng nói trong video (video không có lời thoại hoặc âm thanh không rõ).",
+  "youtube.audio_download_failed": "Không thể tải luồng âm thanh của video.",
   "youtube.invalid_url": "Liên kết YouTube không hợp lệ. Vui lòng kiểm tra lại URL.",
   "youtube.video_unavailable": "Video không khả dụng hoặc đã bị xóa / chuyển sang chế độ riêng tư.",
   "youtube.fetch_success": "Đã trích xuất thành công phụ đề YouTube ({lang})!",
   "youtube.error_title": "Thông báo YouTube"
-}
+}
+

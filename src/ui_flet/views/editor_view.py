@@ -18,6 +18,7 @@ class EditorView:
         on_redo: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_clear: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_open_file: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_save_md: Optional[Callable[[ft.ControlEvent], None]] = None,
     ):
         self.search_replace_bar = search_replace_bar
         self.on_editor_changed = on_editor_changed
@@ -26,12 +27,19 @@ class EditorView:
         self.on_redo = on_redo
         self.on_clear = on_clear
         self.on_open_file = on_open_file
+        self.on_save_md = on_save_md
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("editor.tooltip_open"),
             icon_size=16,
             on_click=self.on_open_file,
+        )
+        self.btn_save_md = ft.IconButton(
+            ft.Icons.FILE_DOWNLOAD_OUTLINED,
+            tooltip=t("editor.tooltip_save_md"),
+            icon_size=16,
+            on_click=self.on_save_md,
         )
         self.btn_undo = ft.IconButton(
             ft.Icons.UNDO,
@@ -59,6 +67,7 @@ class EditorView:
                 self.title_text,
                 ft.Container(expand=True),
                 self.btn_open_file,
+                self.btn_save_md,
                 self.btn_undo,
                 self.btn_redo,
                 self.btn_clear_editor,
@@ -446,12 +455,13 @@ class EditorView:
         """Refresh all text to current locale."""
         self.title_text.value = t("editor.title")
         self.btn_open_file.tooltip = t("editor.tooltip_open")
+        self.btn_save_md.tooltip = t("editor.tooltip_save_md")
         self.btn_undo.tooltip = t("editor.tooltip_undo")
         self.btn_redo.tooltip = t("editor.tooltip_redo")
         self.btn_clear_editor.tooltip = t("editor.tooltip_clear")
         self.editor.hint_text = t("editor.hint")
 
-        for ctrl in [self.title_text, self.btn_open_file, self.btn_undo, self.btn_redo, self.btn_clear_editor, self.editor, self.toolbar]:
+        for ctrl in [self.title_text, self.btn_open_file, self.btn_save_md, self.btn_undo, self.btn_redo, self.btn_clear_editor, self.editor, self.toolbar]:
             try:
                 if hasattr(ctrl, "page") and ctrl.page:
                     ctrl.update()

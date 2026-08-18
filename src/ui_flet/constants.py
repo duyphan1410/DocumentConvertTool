@@ -21,13 +21,15 @@ def get_default_output_dir() -> str:
 
 
 MODES = {
-    "MD -> Excel":  {"in_ext": ".md",   "out_ext": ".xlsx", "in_label": "File .md",   "out_label": "Save .xlsx"},
+    "MD -> Markdown": {"in_ext": ".md",   "out_ext": ".md",   "in_label": "File .md",   "out_label": "Save .md"},
     "MD -> Word":   {"in_ext": ".md",   "out_ext": ".docx", "in_label": "File .md",   "out_label": "Save .docx"},
-    "MD -> CSV":    {"in_ext": ".md",   "out_ext": ".csv",  "in_label": "File .md",   "out_label": "Save .csv"},
     "MD -> PDF":    {"in_ext": ".md",   "out_ext": ".pdf",  "in_label": "File .md",   "out_label": "Save .pdf"},
+    "MD -> Excel":  {"in_ext": ".md",   "out_ext": ".xlsx", "in_label": "File .md",   "out_label": "Save .xlsx"},
+    "MD -> CSV":    {"in_ext": ".md",   "out_ext": ".csv",  "in_label": "File .md",   "out_label": "Save .csv"},
     "MD -> HTML":   {"in_ext": ".md",   "out_ext": ".html", "in_label": "File .md",   "out_label": "Save .html"},
     "MD -> JSON":   {"in_ext": ".md",   "out_ext": ".json", "in_label": "File .md",   "out_label": "Save .json"},
     "MD -> YAML":   {"in_ext": ".md",   "out_ext": ".yaml", "in_label": "File .md",   "out_label": "Save .yaml"},
+    "MD -> PowerPoint": {"in_ext": ".md",   "out_ext": ".pptx", "in_label": "File .md",   "out_label": "Save .pptx"},
     "Excel -> MD":  {"in_ext": ".xlsx", "out_ext": ".md",   "in_label": "File .xlsx", "out_label": "Save .md"},
     "Word -> MD":   {"in_ext": ".docx", "out_ext": ".md",   "in_label": "File .docx", "out_label": "Save .md"},
     "CSV -> MD":    {"in_ext": ".csv",  "out_ext": ".md",   "in_label": "File .csv",  "out_label": "Save .md"},
@@ -35,19 +37,20 @@ MODES = {
     "HTML -> MD":   {"in_ext": ".html", "out_ext": ".md",   "in_label": "File .html", "out_label": "Save .md"},
     "JSON -> MD":   {"in_ext": ".json", "out_ext": ".md",   "in_label": "File .json", "out_label": "Save .md"},
     "YAML -> MD":   {"in_ext": ".yaml", "out_ext": ".md",   "in_label": "File .yaml", "out_label": "Save .md"},
-    "MD -> PowerPoint": {"in_ext": ".md",   "out_ext": ".pptx", "in_label": "File .md",   "out_label": "Save .pptx"},
     "PowerPoint -> MD": {"in_ext": ".pptx", "out_ext": ".md",   "in_label": "File .pptx", "out_label": "Save .md"},
 }
 
 # i18n display labels for mode dropdown — maps internal key → locale key
 MODE_DISPLAY_KEYS = {
-    "MD -> Excel":  "mode.md_to_excel",
+    "MD -> Markdown": "mode.md_to_md",
     "MD -> Word":   "mode.md_to_word",
-    "MD -> CSV":    "mode.md_to_csv",
     "MD -> PDF":    "mode.md_to_pdf",
+    "MD -> Excel":  "mode.md_to_excel",
+    "MD -> CSV":    "mode.md_to_csv",
     "MD -> HTML":   "mode.md_to_html",
     "MD -> JSON":   "mode.md_to_json",
     "MD -> YAML":   "mode.md_to_yaml",
+    "MD -> PowerPoint": "mode.md_to_pptx",
     "Excel -> MD":  "mode.excel_to_md",
     "Word -> MD":   "mode.word_to_md",
     "CSV -> MD":    "mode.csv_to_md",
@@ -55,7 +58,6 @@ MODE_DISPLAY_KEYS = {
     "HTML -> MD":   "mode.html_to_md",
     "JSON -> MD":   "mode.json_to_md",
     "YAML -> MD":   "mode.yaml_to_md",
-    "MD -> PowerPoint": "mode.md_to_pptx",
     "PowerPoint -> MD": "mode.pptx_to_md",
 }
 

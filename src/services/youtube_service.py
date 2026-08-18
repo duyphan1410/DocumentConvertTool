@@ -83,15 +83,18 @@ def fetch_youtube_transcript(
     preferred_languages: Optional[List[str]] = None,
     include_timestamps: bool = True,
     group_interval_seconds: float = 15.0,
+    allow_auto_translate: bool = True,
 ) -> Tuple[bool, str, Optional[str], Optional[str]]:
     """
     Fetches transcript from YouTube and formats it into Markdown.
+    Supports native multi-lingual transcripts and server-side Auto-Translate.
 
     Args:
         url_or_id: YouTube video URL or ID.
         preferred_languages: List of language codes in priority order (e.g. ['vi', 'en']).
         include_timestamps: Whether to prepend timestamp markers.
         group_interval_seconds: Group snippet texts within this duration into unified paragraphs.
+        allow_auto_translate: Whether to auto-translate from other available languages if target is missing.
 
     Returns:
         (success: bool, markdown_content: str, error_message: Optional[str], detected_lang: Optional[str])
@@ -123,22 +126,37 @@ def fetch_youtube_transcript(
         transcript_list = ytt_api.list(video_id)
 
         target_transcript = None
+        target_lang = preferred_languages[0] if preferred_languages else "vi"
         lang_preferences = preferred_languages or ["vi", "en"]
+        is_translated = False
+        original_lang_name = ""
 
-        # 1. Try finding by preferred languages (manual or generated)
+        # 1. Try finding direct match by preferred languages (manual or generated)
         try:
             target_transcript = transcript_list.find_transcript(lang_preferences)
         except Exception:
             target_transcript = None
 
-        # 2. If not found, try manually created transcripts in any language
+        # 2. If preferred language not found directly and auto-translate is allowed
+        if not target_transcript and allow_auto_translate:
+            for t in transcript_list:
+                if getattr(t, "is_translatable", False):
+                    try:
+                        target_transcript = t.translate(target_lang)
+                        is_translated = True
+                        original_lang_name = getattr(t, "language", getattr(t, "language_code", "foreign"))
+                        break
+                    except Exception as ex_tr:
+                        print(f"[DEBUG] Translation to {target_lang} failed: {ex_tr}")
+
+        # 3. Fallback to manually created transcripts in any language
         if not target_transcript:
             for t in transcript_list:
                 if not getattr(t, "is_generated", True):
                     target_transcript = t
                     break
 
-        # 3. If still not found, take the first available generated transcript
+        # 4. Fallback to first available generated transcript
         if not target_transcript:
             for t in transcript_list:
                 target_transcript = t
@@ -149,10 +167,14 @@ def fetch_youtube_transcript(
 
         # Fetch snippets
         fetched = target_transcript.fetch()
-        lang_code = getattr(target_transcript, "language_code", "unknown")
+        lang_code = getattr(target_transcript, "language_code", target_lang if is_translated else "unknown")
         lang_name = getattr(target_transcript, "language", lang_code)
         is_gen = getattr(target_transcript, "is_generated", False)
-        type_str = "Auto-generated" if is_gen else "Manual"
+        
+        if is_translated:
+            type_str = f"Auto-translated from {original_lang_name}"
+        else:
+            type_str = "Auto-generated" if is_gen else "Manual"
 
         # Format into Markdown with clean Header and Title
         md_lines = [

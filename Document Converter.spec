@@ -38,6 +38,7 @@ hiddenimports = [
     'src.services.file_loader',
     'src.services.media_asset_manager',
     'src.services.youtube_service',
+    'src.services.speech_service',
     'src.ui_flet.components.youtube_dialog',
     'src.core.base_module',
     'src.core.converters',
@@ -80,6 +81,8 @@ hiddenimports = [
     'yaml',
     'cryptography',
     'youtube_transcript_api',
+    'speech_recognition',
+    'yt_dlp',
 ]
 
 # Collect binaries & data assets for Flet Desktop framework

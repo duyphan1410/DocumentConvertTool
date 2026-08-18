@@ -46,6 +46,16 @@ def show_youtube_dialog(
         value=True,
     )
 
+    chk_auto_translate = ft.Checkbox(
+        label=t("youtube.chk_auto_translate"),
+        value=True,
+    )
+
+    chk_speech_fallback = ft.Checkbox(
+        label=t("youtube.chk_speech_fallback"),
+        value=True,
+    )
+
     lang_dropdown = ft.Dropdown(
         label=t("youtube.lang_label"),
         value="auto",
@@ -55,11 +65,11 @@ def show_youtube_dialog(
             ft.dropdown.Option("en", t("youtube.lang_en")),
         ],
         dense=True,
-        width=240,
+        width=220,
     )
 
     progress_ring = ft.ProgressRing(width=18, height=18, stroke_width=2.5, visible=False)
-    status_text = ft.Text("", size=13, color=accent_primary, visible=False)
+    status_text = ft.Text("", size=12, color=accent_primary, visible=False, expand=True)
 
     btn_fetch = ft.ElevatedButton(
         t("youtube.btn_fetch"),
@@ -88,16 +98,47 @@ def show_youtube_dialog(
         except Exception:
             pass
 
-    async def paste_from_clipboard(e):
+    def _clean_and_set_youtube_url(text: str) -> bool:
+        if not text:
+            return False
+        clean = text.strip()
+        vid = extract_video_id(clean)
+        if vid:
+            if "youtube.com" in clean or "youtu.be" in clean:
+                url_input.value = clean
+            else:
+                url_input.value = f"https://www.youtube.com/watch?v={vid}"
+            url_input.error_text = None
+            return True
+        elif "youtube" in clean.lower() or "youtu.be" in clean.lower():
+            url_input.value = clean
+            url_input.error_text = None
+            return True
+        return False
+
+    async def paste_from_clipboard(e=None):
         try:
-            # Flet web/desktop clipboard getter
-            clip_val = await page.get_clipboard_async()
-            if clip_val and ("youtube.com" in clip_val or "youtu.be" in clip_val or len(clip_val.strip()) == 11):
-                url_input.value = clip_val.strip()
-                url_input.error_text = None
-                page.update()
+            from src.utils.clipboard import get_clipboard_text
+            clip_val = get_clipboard_text(page)
+            if not clip_val:
+                clip_val = await page.get_clipboard_async()
+            if clip_val:
+                if _clean_and_set_youtube_url(clip_val):
+                    page.update()
+                else:
+                    url_input.value = clip_val.strip()
+                    page.update()
         except Exception as ex:
             print(f"[DEBUG] Clipboard paste error: {ex}")
+
+    # Auto-populate if clipboard already contains a valid YouTube link
+    try:
+        from src.utils.clipboard import get_clipboard_text
+        initial_clip = get_clipboard_text(page)
+        if initial_clip:
+            _clean_and_set_youtube_url(initial_clip)
+    except Exception:
+        pass
 
     btn_paste = ft.IconButton(
         icon=ft.Icons.CONTENT_PASTE_ROUNDED,
@@ -137,14 +178,35 @@ def show_youtube_dialog(
             preferred_langs = ["vi", "en"]
 
         include_ts = chk_timestamps.value
+        allow_trans = chk_auto_translate.value
 
-        # Execute extraction in worker thread
+        # 1. First Attempt: Standard / Auto-translated subtitles
         success, md_content, err_code, detected_lang = await asyncio.to_thread(
             fetch_youtube_transcript,
             url_or_id=url,
             preferred_languages=preferred_langs,
             include_timestamps=include_ts,
+            allow_auto_translate=allow_trans,
         )
+
+        # 2. Second Attempt: If no subtitles exist, fallback to Speech-to-Text Recognition
+        if not success and (err_code == "ERR_NO_SUBTITLES" or err_code == "ERR_EMPTY_SUBTITLES") and chk_speech_fallback.value:
+            status_text.value = t("youtube.recognizing_speech")
+            page.update()
+            try:
+                from src.services.speech_service import transcribe_youtube_speech
+                sp_success, sp_md, sp_err = await asyncio.to_thread(
+                    transcribe_youtube_speech,
+                    url_or_id=url,
+                    language="vi" if preferred_langs[0] == "vi" else "en",
+                    include_timestamps=include_ts,
+                )
+                if sp_success:
+                    success = True
+                    md_content = sp_md
+                    err_code = None
+            except Exception as ex_speech:
+                print(f"[DEBUG] Speech Recognition fallback failed: {ex_speech}")
 
         btn_fetch.disabled = False
         btn_cancel.disabled = False
@@ -160,6 +222,13 @@ def show_youtube_dialog(
                     title=t("youtube.error_title"),
                     dialog_type=DialogType.WARNING,
                 )
+            elif err_code == "ERR_NO_SPEECH_DETECTED":
+                show_message_dialog(
+                    page=page,
+                    payload=t("youtube.no_speech_detected"),
+                    title=t("youtube.error_title"),
+                    dialog_type=DialogType.WARNING,
+                )
             elif err_code == "ERR_INVALID_URL" or err_code == "ERR_INVALID_VIDEO_ID":
                 url_input.error_text = t("youtube.invalid_url")
                 page.update()
@@ -167,6 +236,13 @@ def show_youtube_dialog(
                 show_message_dialog(
                     page=page,
                     payload=t("youtube.video_unavailable"),
+                    title=t("youtube.error_title"),
+                    dialog_type=DialogType.ERROR,
+                )
+            elif err_code == "ERR_AUDIO_DOWNLOAD_FAILED":
+                show_message_dialog(
+                    page=page,
+                    payload=t("youtube.audio_download_failed"),
                     title=t("youtube.error_title"),
                     dialog_type=DialogType.ERROR,
                 )
@@ -218,13 +294,15 @@ def show_youtube_dialog(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         spacing=10,
                     ),
+                    chk_auto_translate,
+                    chk_speech_fallback,
                     ft.Container(height=4),
                     status_row,
                 ],
                 tight=True,
-                spacing=10,
+                spacing=6,
             ),
-            width=540,
+            width=560,
             padding=10,
         ),
         actions=[

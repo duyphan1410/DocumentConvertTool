@@ -241,6 +241,7 @@ class DocumentConvertApp:
             on_redo=lambda e: self.editor_controller.perform_redo(e),
             on_clear=lambda e: self.editor_controller.clear_editor(e),
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
+            on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
         )
 
         self.preview = MarkdownPreview()

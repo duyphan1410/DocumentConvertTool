@@ -228,4 +228,50 @@ async def confirm_overwrite_async(file_path: str) -> bool:
     return await asyncio.to_thread(confirm_overwrite_sync, file_path)
 
 
+def pick_directory_sync() -> str | None:
+    """Synchronous worker that opens transient Windows Directory Picker Dialog."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_dir = filedialog.askdirectory(
+            title="Select Project / Workspace Directory"
+        )
+        if selected_dir:
+            return os.path.normpath(selected_dir)
+    except Exception as e:
+        print(f"[DEBUG] Native directory filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+async def pick_directory_async(page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
+    """
+    Async wrapper running directory picker dialog.
+    Uses native Tkinter on Desktop; falls back to Flet FilePicker on Web/Mobile if provided.
+    """
+    if page and (page.web or page.platform in (ft.PagePlatform.ANDROID, ft.PagePlatform.IOS)):
+        if picker:
+            path = await picker.get_directory_path(
+                dialog_title="Select Project / Workspace Directory"
+            )
+            return path
+    return await asyncio.to_thread(pick_directory_sync)
+
+
+
 

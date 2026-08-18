@@ -30,25 +30,29 @@ class EditorView:
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("editor.tooltip_open"),
+            icon_size=16,
             on_click=self.on_open_file,
         )
         self.btn_undo = ft.IconButton(
             ft.Icons.UNDO,
             tooltip=t("editor.tooltip_undo"),
+            icon_size=16,
             on_click=self.on_undo,
         )
         self.btn_redo = ft.IconButton(
             ft.Icons.REDO,
             tooltip=t("editor.tooltip_redo"),
+            icon_size=16,
             on_click=self.on_redo,
         )
         self.btn_clear_editor = ft.IconButton(
             ft.Icons.DELETE_SWEEP,
             tooltip=t("editor.tooltip_clear"),
+            icon_size=16,
             on_click=self.on_clear,
         )
 
-        self.title_text = ft.Text(t("editor.title"), weight=ft.FontWeight.W_600)
+        self.title_text = ft.Text(t("editor.title"), size=12, weight=ft.FontWeight.W_600)
 
         self.toolbar = ft.Row(
             controls=[
@@ -60,6 +64,7 @@ class EditorView:
                 self.btn_clear_editor,
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            spacing=2,
         )
 
         self.selection_start: Optional[int] = 0
@@ -70,7 +75,7 @@ class EditorView:
             expand=True,
             min_lines=23,
             max_lines=None,
-            border_radius=8,
+            border_radius=6,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
             text_size=13,
             on_change=self.on_editor_changed,
@@ -94,9 +99,10 @@ class EditorView:
                     self.editor_row,
                 ],
                 expand=True,
+                spacing=2,
             ),
             expand=True,
-            padding=10,
+            padding=ft.Padding(left=8, top=4, right=8, bottom=6),
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )

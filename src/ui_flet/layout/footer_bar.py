@@ -19,45 +19,53 @@ class FooterBar:
         self.on_open_file = on_open_file
         self.on_open_folder = on_open_folder
 
-        self.btn_convert_text = ft.Text(t("footer.btn_convert"), color=ft.Colors.WHITE, weight=ft.FontWeight.W_600)
+        self.btn_convert_text = ft.Text(t("footer.btn_convert"), color=ft.Colors.WHITE, size=12, weight=ft.FontWeight.W_600)
         self.btn_convert = ft.ElevatedButton(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.TRANSFORM, color=ft.Colors.WHITE),
+                    ft.Icon(ft.Icons.TRANSFORM, color=ft.Colors.WHITE, size=16),
                     self.btn_convert_text,
                 ],
-                spacing=8,
+                spacing=6,
                 tight=True,
             ),
             on_click=self.on_convert_clicked,
             style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                padding=ft.Padding(left=24, top=16, right=24, bottom=16),
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=14, top=6, right=14, bottom=6),
             ),
         )
-        self.btn_open_file_text = ft.Text(t("footer.btn_open_file"))
+        self.btn_open_file_text = ft.Text(t("footer.btn_open_file"), size=12)
         self.btn_open_file = ft.ElevatedButton(
             content=ft.Row(
-                controls=[ft.Icon(ft.Icons.OPEN_IN_NEW), self.btn_open_file_text],
+                controls=[ft.Icon(ft.Icons.OPEN_IN_NEW, size=16), self.btn_open_file_text],
                 spacing=6,
                 tight=True,
+            ),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=6, right=12, bottom=6),
             ),
             visible=False,
             on_click=self.on_open_file,
         )
-        self.btn_open_folder_text = ft.Text(t("footer.btn_open_folder"))
+        self.btn_open_folder_text = ft.Text(t("footer.btn_open_folder"), size=12)
         self.btn_open_folder = ft.ElevatedButton(
             content=ft.Row(
-                controls=[ft.Icon(ft.Icons.FOLDER_OPEN), self.btn_open_folder_text],
+                controls=[ft.Icon(ft.Icons.FOLDER_OPEN, size=16), self.btn_open_folder_text],
                 spacing=6,
                 tight=True,
+            ),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=6, right=12, bottom=6),
             ),
             visible=False,
             on_click=self.on_open_folder,
         )
 
         self.progress_bar = ft.ProgressBar(visible=False, expand=True)
-        self.status_text = ft.Text(t("footer.status_ready"), size=13)
+        self.status_text = ft.Text(t("footer.status_ready"), size=12)
 
         self.status_container = ft.Container(
             content=self.status_text,
@@ -76,7 +84,7 @@ class FooterBar:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=10,
             ),
-            padding=ft.Padding(left=12, top=8, right=12, bottom=8),
+            padding=ft.Padding(left=10, top=4, right=10, bottom=4),
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
         )

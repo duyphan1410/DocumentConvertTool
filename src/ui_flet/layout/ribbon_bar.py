@@ -1,7 +1,8 @@
 """
-Office Ribbon Navbar Layout Component for Flet UI.
-Provides a modern 4-Tab Office Ribbon Navbar (File, Edit, Convert, View)
-with integrated Mode, Palette, Theme selectors, and Formatting Toolbar (Headings H1-H6).
+Simplified Single-Row Ribbon Layout Component for Flet UI.
+Provides a modern, ultra-compact single-row Ribbon Bar (38–40px)
+integrating File I/O actions, Heading selector (H1-H6), Markdown formatting tools,
+Search & Replace toggle, Conversion Mode selector, and View toggles.
 """
 import os
 import flet as ft
@@ -14,6 +15,7 @@ from src.ui_flet.components.formatting_toolbar import FormattingToolbar
 
 if TYPE_CHECKING:
     from src.ui_flet.components.search_replace_bar import SearchReplaceBar
+
 
 class RibbonBar(ft.Container):
     def __init__(
@@ -43,7 +45,6 @@ class RibbonBar(ft.Container):
         search_replace_bar: Optional["SearchReplaceBar"] = None,
         **kwargs
     ):
-
         super().__init__(**kwargs)
         self.on_mode_changed = on_mode_changed
         self.on_palette_changed = on_palette_changed
@@ -65,18 +66,32 @@ class RibbonBar(ft.Container):
         self.on_show_help = on_show_help
         self.on_show_editor = on_show_editor
         self.search_replace_bar = search_replace_bar
-        self._search_visible = False
-        self._search_toggling = False  # re-entrant guard for toggle_search
 
+        self._search_visible = False
+        self._search_toggling = False
         self.is_expanded = True
         self.active_tab = "edit"
+        self._is_preview_visible = True
+        self._is_path_bar_visible = True
 
-        # ── Integrated Mode, Palette & Theme Selectors ───────────────────────────
+        # ── 1. Branding / Logo ──────────────────────────────────────────────────
+        self.logo_icon = ft.Icon(
+            ft.Icons.AUTO_AWESOME_ROUNDED,
+            color=ft.Colors.PRIMARY,
+            size=20,
+        )
+        self.logo_text = ft.Text(
+            "DocConvert",
+            weight=ft.FontWeight.BOLD,
+            size=13,
+        )
+
+        # ── 2. Integrated Mode, Palette & Theme Selectors ────────────────────────
         self.mode_dropdown = ft.Dropdown(
             label="Conversion Mode",
             value=current_mode,
             options=[ft.dropdown.Option(m) for m in MODES.keys()],
-            width=210,
+            width=190,
             dense=True,
         )
         self.mode_dropdown.on_change = self.on_mode_changed
@@ -87,6 +102,7 @@ class RibbonBar(ft.Container):
             value=current_palette,
             options=[ft.dropdown.Option(p) for p in PALETTES.keys()],
             dense=True,
+            visible=False,  # Accessible via Settings dialog/view
         )
         self.palette_dropdown.on_change = self.on_palette_changed
         self.palette_dropdown.on_select = self.on_palette_changed
@@ -99,25 +115,41 @@ class RibbonBar(ft.Container):
                 ft.dropdown.Option("Light"),
                 ft.dropdown.Option("System"),
             ],
-            # width=110,
             dense=True,
+            visible=False,  # Accessible via Settings dialog/view
         )
         self.theme_mode_dropdown.on_change = self.on_theme_mode_changed
         self.theme_mode_dropdown.on_select = self.on_theme_mode_changed
 
-        # ── Formatting Toolbar Instance ──────────────────────────────────────────
-        self.formatting_toolbar = FormattingToolbar(
-            on_format_action=self.on_format_action,
-            on_heading_change=self.on_heading_change,
-            on_insert_image=self.on_insert_image,
+        # ── 3. File Action Buttons (Vector Icons) ────────────────────────────────
+        self.btn_file_open = ft.IconButton(
+            icon=ft.Icons.FILE_OPEN_ROUNDED,
+            tooltip=t("ribbon.btn_open"),
+            icon_size=18,
+            on_click=self._on_browse_in_click,
+        )
+        self.btn_file_save = ft.IconButton(
+            icon=ft.Icons.SAVE_OUTLINED,
+            tooltip=t("ribbon.btn_save"),
+            icon_size=18,
+            on_click=self._on_browse_out_click,
+        )
+        self.btn_file_clear = ft.IconButton(
+            icon=ft.Icons.DELETE_OUTLINED,
+            tooltip=t("ribbon.btn_clear"),
+            icon_size=18,
+            on_click=self._on_clear_click,
         )
 
-        # ── Tab Navigation Buttons ───────────────────────────────────────────────
+        # Backward compatibility references for tests and legacy callers
         self.btn_tab_file = ft.TextButton("File", on_click=lambda _: self._select_tab("file"))
         self.btn_tab_edit = ft.TextButton("Edit", on_click=lambda _: self._select_tab("edit"))
         self.btn_tab_view = ft.TextButton("View", on_click=lambda _: self._select_tab("view"))
         self.btn_tab_settings = ft.TextButton("Settings", on_click=lambda _: self._select_tab("settings"))
         self.btn_tab_help = ft.TextButton("Help", on_click=lambda _: self._select_tab("help"))
+        self.btn_tab_file_open = self.btn_file_open
+        self.btn_tab_file_save = self.btn_file_save
+        self.btn_tab_file_clear = self.btn_file_clear
 
         self._tabs_map = {
             "file": self.btn_tab_file,
@@ -127,144 +159,124 @@ class RibbonBar(ft.Container):
             "help": self.btn_tab_help,
         }
 
+        # ── 4. Formatting Toolbar (Headings & Markdown tools) ───────────────────
+        self.formatting_toolbar = FormattingToolbar(
+            on_format_action=self.on_format_action,
+            on_heading_change=self.on_heading_change,
+            on_insert_image=self.on_insert_image,
+        )
+
+        # ── 5. Search & Replace Toggle Button ────────────────────────────────────
+        self.btn_tab_edit_search = ft.IconButton(
+            icon=ft.Icons.SEARCH_ROUNDED,
+            tooltip=t("ribbon.btn_search"),
+            icon_size=18,
+            on_click=self._on_search_click,
+        )
+
+        # ── 6. View & Navigation Actions ─────────────────────────────────────────
+        self.btn_tab_view_preview = ft.IconButton(
+            icon=ft.Icons.PREVIEW_ROUNDED,
+            tooltip=t("ribbon.tooltip_preview"),
+            icon_size=18,
+            on_click=self._on_preview_click,
+        )
+        self.btn_tab_view_pathbar = ft.IconButton(
+            icon=ft.Icons.ALT_ROUTE_ROUNDED,
+            tooltip=t("ribbon.tooltip_pathbar"),
+            icon_size=18,
+            on_click=self._on_toggle_file_path_bar_click,
+        )
+        self.btn_tab_view_editor = ft.IconButton(
+            icon=ft.Icons.EDIT_NOTE_OUTLINED,
+            tooltip=t("ribbon.tooltip_editor"),
+            icon_size=18,
+            on_click=self._on_toggle_editor_click,
+        )
+        self.btn_tab_view_statusbar = ft.IconButton(
+            icon=ft.Icons.SPACE_DASHBOARD_OUTLINED,
+            tooltip=t("ribbon.tooltip_statusbar"),
+            icon_size=18,
+            on_click=self._on_toggle_status_bar_click,
+        )
+        self.btn_settings = ft.IconButton(
+            icon=ft.Icons.SETTINGS_OUTLINED,
+            tooltip=t("ribbon.tab_settings"),
+            icon_size=18,
+            on_click=lambda _: self.select_tab("settings"),
+        )
+        self.btn_help = ft.IconButton(
+            icon=ft.Icons.HELP_OUTLINE_ROUNDED,
+            tooltip=t("ribbon.tab_help"),
+            icon_size=18,
+            on_click=lambda _: self.select_tab("help"),
+        )
+
         self.btn_collapse = ft.IconButton(
             icon=ft.Icons.KEYBOARD_ARROW_UP,
             tooltip="Toggle Ribbon Collapse/Expand",
-            on_click=self._toggle_collapse
+            icon_size=18,
+            on_click=self._toggle_collapse,
+            visible=False,
         )
 
-        self.logo_icon = ft.Icon(
-            ft.Icons.AUTO_AWESOME_ROUNDED,
-            color=ft.Colors.PRIMARY,
-            size=22,
-        )
-
-        self.logo_text = ft.Text(
-            "DocConvert",
-            weight=ft.FontWeight.BOLD,
-            size=14,
-        )
-
+        # ── 7. Single-Row Ribbon Ribbon Strip ────────────────────────────────────
         self.mode_dropdown_container = ft.Container(
             content=self.mode_dropdown,
-            padding=ft.Padding(left=8, top=4, right=8, bottom=8),
+            padding=ft.Padding(left=4, top=0, right=4, bottom=0),
+            alignment=ft.alignment.Alignment(0.0, 0.0),
         )
 
-        self.tab_strip = ft.Row(
+        self.ribbon_row = ft.Row(
             controls=[
                 self.logo_icon,
                 self.logo_text,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.btn_tab_file,
-                self.btn_tab_edit,
-                self.btn_tab_view,
-                self.btn_tab_settings,
-                self.btn_tab_help,
-                ft.Container(expand=True),
-                self.mode_dropdown_container,
-                self.btn_collapse,
-            ],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4,
-        )
-
-        # ── Tab Content Containers ───────────────────────────────────────────────
-        self.btn_tab_file_open = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_open")), icon=ft.Icons.FOLDER_OPEN, on_click=self._on_browse_in_click)
-        self.btn_tab_file_save = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_save")), icon=ft.Icons.SAVE_AS, on_click=self._on_browse_out_click)
-        self.btn_tab_file_clear = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_clear")), icon=ft.Icons.DELETE_OUTLINED, on_click=self._on_clear_click)
-
-        self.file_tab_content = ft.Row(
-            controls=[
-                self.btn_tab_file_open,
-                self.btn_tab_file_save,
-                self.btn_tab_file_clear,
-            ],
-            spacing=8
-        )
-
-        # Edit tab: formatting toolbar row
-        self.btn_tab_edit_search = ft.OutlinedButton(content=ft.Text(t("ribbon.btn_search")), icon=ft.Icons.SEARCH, on_click=self._on_search_click)
-        self.edit_tab_formatting = ft.Row(
-            controls=[
+                self.btn_file_open,
+                self.btn_file_save,
+                self.btn_file_clear,
+                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.btn_tab_edit_search,
+                ft.Container(expand=True),
+                self.mode_dropdown_container,
+                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
+                self.btn_tab_view_preview,
+                self.btn_tab_view_pathbar,
+                self.btn_settings,
+                self.btn_help,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=8,
-        )
-
-        # Edit tab: Find row always visible + collapsible Replace row via ▼
-        self.edit_tab_content = ft.Column(
-            controls=[
-                self.edit_tab_formatting,
-            ],
             spacing=4,
         )
 
-        self.btn_tab_view_preview = ft.OutlinedButton(
-            content=ft.Text(t("ribbon.btn_preview")),
-            icon=ft.Icons.PREVIEW,
-            on_click=self._on_preview_click,
-            tooltip=t("ribbon.tooltip_preview"),
-        )
-        self.btn_tab_view_pathbar = ft.OutlinedButton(
-            content=ft.Text(t("ribbon.btn_pathbar")),
-            icon=ft.Icons.FOLDER_OUTLINED,
-            on_click=self._on_toggle_file_path_bar_click,
-            tooltip=t("ribbon.tooltip_pathbar"),
-        )
-        self.btn_tab_view_editor = ft.OutlinedButton(
-            content=ft.Text(t("ribbon.btn_editor")),
-            icon=ft.Icons.EDIT_NOTE_OUTLINED,
-            on_click=self._on_toggle_editor_click,
-            tooltip=t("ribbon.tooltip_editor"),
-        )
-        self.btn_tab_view_statusbar = ft.OutlinedButton(
-            content=ft.Text(t("ribbon.btn_statusbar")),
-            icon=ft.Icons.SPACE_DASHBOARD_OUTLINED,
-            on_click=self._on_toggle_status_bar_click,
-            tooltip=t("ribbon.tooltip_statusbar"),
+        # ── 8. Collapsible Search Panel Container ────────────────────────────────
+        self.search_panel_container = ft.Container(
+            visible=False,
+            padding=ft.Padding(left=4, top=2, right=4, bottom=2),
         )
 
-        self.view_tab_content = ft.Row(
-            controls=[
-                self.btn_tab_view_preview,
-                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.btn_tab_view_pathbar,
-                self.btn_tab_view_editor,
-                self.btn_tab_view_statusbar,
-            ],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-
-        # Settings / Help tabs: panel is collapsed (workspace view takes over)
-        self.settings_tab_content = ft.Container(height=0)
-        self.help_tab_content = ft.Container(height=0)
-
-        self.panel_container = ft.Container(
-            content=self.edit_tab_content,
-            padding=ft.Padding(left=12, top=2, right=12, bottom=2),
-            height=60,
-            alignment=ft.alignment.Alignment(-1.0, 0.0),
-            border_radius=8,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-        )
+        # Backward compatibility panel_container placeholder
+        self.panel_container = self.search_panel_container
 
         self.main_column = ft.Column(
             controls=[
-                self.tab_strip,
-                self.panel_container,
+                self.ribbon_row,
+                self.search_panel_container,
             ],
-            spacing=4
+            spacing=2,
         )
-        self.content = self.main_column
-        self.border_radius = 10
-        self.padding = ft.Padding(left=10, top=6, right=10, bottom=6)
 
-        # Synchronize default active tab highlight and panel content at startup
-        self._update_tab_highlights()
+        self.content = self.main_column
+        self.border_radius = 8
+        self.padding = ft.Padding(left=8, top=2, right=8, bottom=2)
+
+        self._refresh_locale_strings()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Public APIs & Mode Selection
+    # ─────────────────────────────────────────────────────────────────────────
 
     def update_mode_options(self, input_ext: str = "", preferred_mode: str = ""):
         """Updates available modes in Ribbon mode dropdown, prioritizing preferred_mode if valid."""
@@ -291,81 +303,24 @@ class RibbonBar(ft.Container):
                 print(f"[DEBUG] on_mode_changed error in update_mode_options: {ex}")
 
     def select_tab(self, tab_name: str, force: bool = False):
-        """Programmatically or manually select a ribbon tab. If force=True, never toggle-collapse."""
-        # Click active tab again to toggle collapse/expand or close settings/help unless force=True
-        if not force and self.active_tab == tab_name:
-            if tab_name in ("settings", "help"):
-                if self.on_show_editor:
-                    self.on_show_editor()
-                return
-            elif self.panel_container.visible:
-                self._toggle_collapse(None)
-                return
-
+        """
+        Safe API to switch views or toggle panel for callers (WorkspaceView, FileController).
+        """
         self.active_tab = tab_name
-        self.is_expanded = True
-        self.panel_container.visible = True
-        self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_UP
-
-        self._refresh_locale_strings()
-
-        if tab_name == "file":
-            self.panel_container.height = 60
-            self.panel_container.content = self.file_tab_content
-            if self.on_show_editor:
-                self.on_show_editor()
-        elif tab_name == "edit":
-            if self._search_visible:
-                self._ensure_find_row_in_edit()
-                self.panel_container.height = None
-            else:
-                self._remove_find_row_from_edit()
-                self.panel_container.height = 60
-            self.panel_container.content = self.edit_tab_content
-            if self.on_show_editor:
-                self.on_show_editor()
-        elif tab_name == "view":
-            self.panel_container.height = 60
-            self.panel_container.content = self.view_tab_content
-            if self.on_show_editor:
-                self.on_show_editor()
-        elif tab_name == "settings":
-            # SettingsView occupies workspace — collapse ribbon panel
-            self.panel_container.visible = False
-            self.is_expanded = False
-            self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
+        if tab_name == "settings":
             if self.on_show_settings:
                 self.on_show_settings()
         elif tab_name == "help":
-            # HelpView occupies workspace — collapse ribbon panel
-            self.panel_container.visible = False
-            self.is_expanded = False
-            self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
             if self.on_show_help:
                 self.on_show_help()
-
-        # Hide or show results container based on tab visibility
-        if self.search_replace_bar:
-            if tab_name == "edit" and self._search_visible:
-                # Trigger search matches update
-                if self.on_toggle_search:
-                    self.on_toggle_search(True)
-            else:
-                self.search_replace_bar.results_container.visible = False
-                try:
-                    if self.search_replace_bar.results_container.page:
-                        self.search_replace_bar.results_container.update()
-                except Exception:
-                    pass
-                if self.on_toggle_search:
-                    self.on_toggle_search(False)
-
-        if self.on_ribbon_toggle:
-            self.on_ribbon_toggle()
+        elif tab_name in ("edit", "file", "view", ""):
+            if self.on_show_editor:
+                self.on_show_editor()
 
         self._update_tab_highlights()
         try:
-            self.update()
+            if self.page:
+                self.update()
         except Exception:
             pass
 
@@ -373,30 +328,78 @@ class RibbonBar(ft.Container):
         self.select_tab(tab_name, force=False)
 
     def deselect_all_tabs(self):
-        """Collapse ribbon panel and clear active tab selection for Welcome Screen."""
+        """Clear active tab selection (for Welcome Screen or clean state)."""
         self.active_tab = ""
-        self.is_expanded = False
-        self.panel_container.visible = False
-        self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_DOWN
-        if self.on_ribbon_toggle:
-            self.on_ribbon_toggle()
         self._update_tab_highlights()
         try:
-            self.update()
+            if self.page:
+                self.update()
         except Exception:
             pass
 
     def _toggle_collapse(self, e):
         self.is_expanded = not self.is_expanded
-        self.panel_container.visible = self.is_expanded
-        self.btn_collapse.icon = ft.Icons.KEYBOARD_ARROW_UP if self.is_expanded else ft.Icons.KEYBOARD_ARROW_DOWN
         if self.on_ribbon_toggle:
             self.on_ribbon_toggle()
-        self._update_tab_highlights()
+
+    def _update_tab_highlights(self):
+        """Update button active visual states based on active_tab."""
+        palette = getattr(self, "_current_palette", None)
+        is_dark = getattr(self, "_is_dark", True)
+        accent_primary = resolve_color(palette, "text_accent_primary", is_dark) if palette else ft.Colors.PRIMARY
+
+        if hasattr(self, "btn_settings"):
+            self.btn_settings.icon_color = accent_primary if self.active_tab == "settings" else None
+        if hasattr(self, "btn_help"):
+            self.btn_help.icon_color = accent_primary if self.active_tab == "help" else None
+
+        self._update_toggle_states()
+
+    def set_preview_visible(self, is_visible: bool):
+        """Update Preview toggle visual state (icon, accent color, tooltip)."""
+        self._is_preview_visible = is_visible
+        self._update_toggle_states()
         try:
-            self.update()
+            if hasattr(self, "btn_tab_view_preview") and self.btn_tab_view_preview.page:
+                self.btn_tab_view_preview.update()
         except Exception:
             pass
+
+    def set_path_bar_visible(self, is_visible: bool):
+        """Update Path Bar toggle visual state (icon, accent color, tooltip)."""
+        self._is_path_bar_visible = is_visible
+        self._update_toggle_states()
+        try:
+            if hasattr(self, "btn_tab_view_pathbar") and self.btn_tab_view_pathbar.page:
+                self.btn_tab_view_pathbar.update()
+        except Exception:
+            pass
+
+    def _update_toggle_states(self):
+        """Update toggle button icons and colors to reflect current active/inactive status."""
+        palette = getattr(self, "_current_palette", None)
+        is_dark = getattr(self, "_is_dark", True)
+        accent_primary = resolve_color(palette, "text_accent_primary", is_dark) if palette else ft.Colors.PRIMARY
+
+        if hasattr(self, "btn_tab_view_preview"):
+            if getattr(self, "_is_preview_visible", True):
+                self.btn_tab_view_preview.icon = ft.Icons.PREVIEW_ROUNDED
+                self.btn_tab_view_preview.icon_color = accent_primary
+            else:
+                self.btn_tab_view_preview.icon = ft.Icons.PREVIEW_OUTLINED
+                self.btn_tab_view_preview.icon_color = None
+
+        if hasattr(self, "btn_tab_view_pathbar"):
+            if getattr(self, "_is_path_bar_visible", True):
+                self.btn_tab_view_pathbar.icon = ft.Icons.ALT_ROUTE_ROUNDED
+                self.btn_tab_view_pathbar.icon_color = accent_primary
+            else:
+                self.btn_tab_view_pathbar.icon = ft.Icons.ROUTE_OUTLINED
+                self.btn_tab_view_pathbar.icon_color = None
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Action Click Handlers
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _on_browse_in_click(self, e):
         if self.on_browse_in:
@@ -410,86 +413,8 @@ class RibbonBar(ft.Container):
         if self.on_clear_editor:
             self.on_clear_editor(e)
 
-    def toggle_search(self, visible: Optional[bool] = None):
-        """Programmatically toggle or set search panel visibility in Ribbon Bar."""
-        # Guard against re-entrant / spammed calls while a toggle is still processing.
-        if self._search_toggling:
-            return
-        self._search_toggling = True
-        try:
-            currently_viewing_find = (
-                self.active_tab == "edit"
-                and self.panel_container.visible
-            )
-            if visible is None:
-                # Only close if user is actively on Edit tab seeing the Find bar.
-                # If they've switched to another tab, Ctrl+F always re-opens.
-                if currently_viewing_find:
-                    visible = not self._search_visible
-                else:
-                    visible = True
-
-            self._search_visible = visible
-            # Re-open Edit tab only when not currently viewing it.
-            if not currently_viewing_find:
-                self._select_tab("edit")
-
-            if self._search_visible:
-                self._ensure_find_row_in_edit()
-                self.panel_container.height = None
-                if self.search_replace_bar:
-                    self.search_replace_bar.focus_search_input()
-            else:
-                self._remove_find_row_from_edit()
-                self.panel_container.height = 60
-                if self.search_replace_bar:
-                    self.search_replace_bar.results_container.visible = False
-                    try:
-                        if self.search_replace_bar.results_container.page:
-                            self.search_replace_bar.results_container.update()
-                    except Exception:
-                        pass
-
-            if self.on_toggle_search:
-                self.on_toggle_search(self._search_visible)
-
-            try:
-                self.update()
-            except Exception:
-                pass
-        finally:
-            self._search_toggling = False
-
-
     def _on_search_click(self, e):
-        """Toggle Find & Replace panel in Edit tab."""
         self.toggle_search()
-
-    def _ensure_find_row_in_edit(self):
-        """Adds Find container + Replace container to edit_tab_content."""
-        if not self.search_replace_bar:
-            return
-        find_container = self.search_replace_bar.find_container
-        replace_container = self.search_replace_bar.replace_container
-        if find_container not in self.edit_tab_content.controls:
-            self.edit_tab_content.controls.append(find_container)
-        if replace_container not in self.edit_tab_content.controls:
-            self.edit_tab_content.controls.append(replace_container)
-
-    def _remove_find_row_from_edit(self):
-        """Removes Find container + Replace container from edit_tab_content."""
-        if not self.search_replace_bar:
-            return
-        find_container = self.search_replace_bar.find_container
-        replace_container = self.search_replace_bar.replace_container
-        if find_container in self.edit_tab_content.controls:
-            self.edit_tab_content.controls.remove(find_container)
-        if replace_container in self.edit_tab_content.controls:
-            self.edit_tab_content.controls.remove(replace_container)
-
-    def _on_convert_click_handler(self, e):
-        if self.on_convert_click:
-            self.on_convert_click(e)
 
     def _on_preview_click(self, e):
         if self.on_toggle_preview:
@@ -507,119 +432,108 @@ class RibbonBar(ft.Container):
         if self.on_toggle_status_bar:
             self.on_toggle_status_bar(e)
 
-    def _update_tab_highlights(self):
-        """Highlight active tab with background container fill of palette accent_primary and clean white text."""
-        palette = getattr(self, "_current_palette", None)
-        is_dark = getattr(self, "_is_dark", True)
-        accent_primary = resolve_color(palette, "text_accent_primary", is_dark) if palette else ft.Colors.PRIMARY
+    # ─────────────────────────────────────────────────────────────────────────
+    # Search & Replace Panel Toggle
+    # ─────────────────────────────────────────────────────────────────────────
 
-        for tab_name, btn in self._tabs_map.items():
-            if tab_name in ("settings", "help"):
-                is_active = (tab_name == self.active_tab)
-            else:
-                is_active = (tab_name == self.active_tab and self.panel_container.visible)
+    def toggle_search(self, visible: Optional[bool] = None):
+        """Programmatically toggle or set search panel visibility in Ribbon Bar."""
+        if self._search_toggling:
+            return
+        self._search_toggling = True
+        try:
+            if visible is None:
+                visible = not self._search_visible
 
-            if is_active:
-                btn.style = ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.Padding(left=14, top=8, right=14, bottom=8),
-                    bgcolor=accent_primary,
-                    color=ft.Colors.WHITE,
-                )
+            self._search_visible = visible
+
+            if self._search_visible and self.search_replace_bar:
+                self.search_panel_container.content = self.search_replace_bar.ribbon_search_panel
+                self.search_panel_container.visible = True
+                self.search_replace_bar.focus_search_input()
             else:
-                btn.style = ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.Padding(left=14, top=8, right=14, bottom=8),
-                    bgcolor=None,
-                    color=ft.Colors.WHITE70 if is_dark else ft.Colors.BLACK87,
-                )
+                self.search_panel_container.visible = False
+                if self.search_replace_bar:
+                    self.search_replace_bar.results_container.visible = False
+                    try:
+                        if self.search_replace_bar.results_container.page:
+                            self.search_replace_bar.results_container.update()
+                    except Exception:
+                        pass
+
+            if self.on_toggle_search:
+                self.on_toggle_search(self._search_visible)
+
+            try:
+                if self.search_panel_container.page:
+                    self.search_panel_container.update()
+                if self.page:
+                    self.update()
+            except Exception:
+                pass
+        finally:
+            self._search_toggling = False
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Palette & Theming
+    # ─────────────────────────────────────────────────────────────────────────
 
     def apply_palette(self, palette: dict, is_dark: bool):
-        """Apply palette colors to the Ribbon bar, active tabs, and its dropdowns."""
+        """Apply palette colors to the Ribbon bar and its dropdowns/buttons."""
         self._current_palette = palette
         self._is_dark = is_dark
 
         bg_header = resolve_color(palette, "bg_header", is_dark)
-        bg_component = resolve_color(palette, "bg_component", is_dark)
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
         border_color = resolve_color(palette, "border_color", is_dark)
 
-        # Ribbon bar background (header area)
         self.bgcolor = bg_header
-        self.border_radius = 10
+        self.border_radius = 8
         self.border = make_border(1, border_color)
 
-        # Panel container (active tab content area)
-        self.panel_container.bgcolor = bg_component
-
-        # Logo icon and text
         self.logo_icon.color = accent_primary
         self.logo_text.color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
 
-        # Apply clean readable styles to Ribbon dropdowns (White text, colored label & focus border)
         for dd in [self.mode_dropdown, self.palette_dropdown, self.theme_mode_dropdown]:
             dd.border_color = accent_primary
             dd.focused_border_color = accent_primary
             dd.color = ft.Colors.WHITE if is_dark else ft.Colors.BLACK87
             dd.label_style = ft.TextStyle(color=accent_primary, size=12)
 
-        # Apply tab active highlights
+        self.formatting_toolbar.apply_palette(palette, is_dark)
         self._update_tab_highlights()
 
-        # Style outlined buttons inside tab panel with Palette accent border and clean white text
-        for btn in [
-            self.btn_tab_file_open, self.btn_tab_file_save, self.btn_tab_file_clear,
-            self.btn_tab_edit_search,
-            self.btn_tab_view_preview, self.btn_tab_view_pathbar, self.btn_tab_view_editor, self.btn_tab_view_statusbar
-        ]:
-            if hasattr(btn, "style"):
-                btn.style = ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    color=ft.Colors.WHITE if is_dark else ft.Colors.BLACK87,
-                    side=ft.BorderSide(1, accent_primary),
-                )
-
-        # Forward palette update to FormattingToolbar
-        self.formatting_toolbar.apply_palette(palette, is_dark)
-
         try:
-            self.update()
+            if self.page:
+                self.update()
         except Exception:
             pass
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # i18n Localization
+    # ─────────────────────────────────────────────────────────────────────────
+
     def _refresh_locale_strings(self):
-        """Refresh string values on ribbon tabs, buttons, tooltips, and mode dropdown."""
-        def set_btn_text(btn, text_key):
-            if hasattr(btn, "content"):
-                if isinstance(btn.content, ft.Text):
-                    btn.content.value = t(text_key)
-                else:
-                    btn.content = ft.Text(t(text_key))
-
-        set_btn_text(self.btn_tab_file, "ribbon.tab_file")
-        set_btn_text(self.btn_tab_edit, "ribbon.tab_edit")
-        set_btn_text(self.btn_tab_view, "ribbon.tab_view")
-        set_btn_text(self.btn_tab_settings, "ribbon.tab_settings")
-        set_btn_text(self.btn_tab_help, "ribbon.tab_help")
-
-        set_btn_text(self.btn_tab_file_open, "ribbon.btn_open")
-        set_btn_text(self.btn_tab_file_save, "ribbon.btn_save")
-        set_btn_text(self.btn_tab_file_clear, "ribbon.btn_clear")
-
-        set_btn_text(self.btn_tab_edit_search, "ribbon.btn_search")
-
-        set_btn_text(self.btn_tab_view_preview, "ribbon.btn_preview")
-        set_btn_text(self.btn_tab_view_pathbar, "ribbon.btn_pathbar")
-        set_btn_text(self.btn_tab_view_editor, "ribbon.btn_editor")
-        set_btn_text(self.btn_tab_view_statusbar, "ribbon.btn_statusbar")
-
+        """Refresh string values on tooltips and dropdowns."""
         self.logo_text.value = t("ribbon.logo")
-        self.btn_collapse.tooltip = t("ribbon.tooltip_collapse")
+        self.btn_file_open.tooltip = t("ribbon.btn_open")
+        self.btn_file_save.tooltip = t("ribbon.btn_save")
+        self.btn_file_clear.tooltip = t("ribbon.btn_clear")
+        self.btn_tab_edit_search.tooltip = t("ribbon.btn_search")
 
         self.btn_tab_view_preview.tooltip = t("ribbon.tooltip_preview")
         self.btn_tab_view_pathbar.tooltip = t("ribbon.tooltip_pathbar")
         self.btn_tab_view_editor.tooltip = t("ribbon.tooltip_editor")
         self.btn_tab_view_statusbar.tooltip = t("ribbon.tooltip_statusbar")
+        self.btn_settings.tooltip = t("ribbon.tab_settings")
+        self.btn_help.tooltip = t("ribbon.tab_help")
+
+        # Text button backward compatibility
+        self.btn_tab_file.content = ft.Text(t("ribbon.tab_file"))
+        self.btn_tab_edit.content = ft.Text(t("ribbon.tab_edit"))
+        self.btn_tab_view.content = ft.Text(t("ribbon.tab_view"))
+        self.btn_tab_settings.content = ft.Text(t("ribbon.tab_settings"))
+        self.btn_tab_help.content = ft.Text(t("ribbon.tab_help"))
 
         self.mode_dropdown.label = t("ribbon.label_mode")
         current_mode = self.mode_dropdown.value
@@ -645,15 +559,19 @@ class RibbonBar(ft.Container):
     def update_locale(self):
         """Refresh all text to current locale and force update controls."""
         self._refresh_locale_strings()
-
         for ctrl in [
-            self.btn_tab_file, self.btn_tab_edit, self.btn_tab_view,
-            self.btn_tab_settings, self.btn_tab_help, self.logo_text, self.btn_collapse,
-            self.btn_tab_file_open, self.btn_tab_file_save, self.btn_tab_file_clear,
+            self.logo_text,
+            self.btn_file_open,
+            self.btn_file_save,
+            self.btn_file_clear,
             self.btn_tab_edit_search,
-            self.btn_tab_view_preview, self.btn_tab_view_pathbar,
-            self.btn_tab_view_editor, self.btn_tab_view_statusbar,
-            self.mode_dropdown, self.palette_dropdown, self.theme_mode_dropdown
+            self.btn_tab_view_preview,
+            self.btn_tab_view_pathbar,
+            self.btn_settings,
+            self.btn_help,
+            self.mode_dropdown,
+            self.palette_dropdown,
+            self.theme_mode_dropdown,
         ]:
             try:
                 if hasattr(ctrl, "page") and ctrl.page:
@@ -662,10 +580,6 @@ class RibbonBar(ft.Container):
                 pass
 
         try:
-            if self.tab_strip.page:
-                self.tab_strip.update()
-            if self.panel_container.page:
-                self.panel_container.update()
             if self.page:
                 self.update()
         except Exception:

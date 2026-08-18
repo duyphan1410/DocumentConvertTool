@@ -175,17 +175,18 @@ class MarkdownPreview(ft.Container):
         super().__init__(**kwargs)
         self.expand = True
         self.border_radius = 8
-        self.padding = 12
+        self.padding = ft.Padding(left=8, top=4, right=8, bottom=6)
         self._last_raw_text = None
         self._cached_processed_text = None
 
         # Header elements — owned by MarkdownPreview for palette sync
-        self.header_icon = ft.Icon(ft.Icons.PREVIEW, size=18)
+        self.header_icon = ft.Icon(ft.Icons.PREVIEW_ROUNDED, size=16)
         self.header_title = ft.Text(
             t("preview.title"),
+            size=12,
             weight=ft.FontWeight.W_600,
         )
-        self.doc_info_text = ft.Text(t("preview.no_doc"), size=12)
+        self.doc_info_text = ft.Text(t("preview.no_doc"), size=11)
 
         self.header_row = ft.Row(
             controls=[
@@ -195,6 +196,7 @@ class MarkdownPreview(ft.Container):
                 self.doc_info_text,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=4,
         )
 
         self.markdown = ft.Markdown(
@@ -221,10 +223,11 @@ class MarkdownPreview(ft.Container):
         self.content = ft.Column(
             controls=[
                 self.header_row,
-                ft.Divider(),
+                ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.scroll_column,
             ],
             expand=True,
+            spacing=4,
         )
 
     def show_loading(self, message: str = None):

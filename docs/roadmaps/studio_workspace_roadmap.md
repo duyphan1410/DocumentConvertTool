@@ -81,13 +81,13 @@ Giao diện kiểu VS Code / Obsidian giải quyết các hạn chế của than
 |  DocConvert Studio v1.4                                                 _  [square]  X |
 +----+-------------------+----------------------------------------------------------+
 |    | EXPLORER          | [Baocao.md x] [DuLieu.csv x] [Guide.docx x]               |
-| 📁 | ----------------- | -------------------------------------------------------- |
+| [F]| ----------------- | -------------------------------------------------------- |
 |    | > docs/           | # Báo Cáo Doanh Thu Q3                                   |
-| ✍️ |   ├── Baocao.md   |                                                          |
+| [E]|   ├── Baocao.md   |                                                          |
 |    |   └── Guide.docx  | Nội dung tài liệu hiển thị tại đây...                     |
-| ⚡ | > data/           |                                                          |
+| [B]| > data/           |                                                          |
 |    |   └── DuLieu.csv  |                                                          |
-| ⚙️ |                   |                                                          |
+| [S]|                   |                                                          |
 +----+-------------------+----------------------------------------------------------+
 | [=]| Ready | UTF-8 | Markdown -> Excel | Words: 1,250 | Chars: 8,400                 |
 +----+------------------------------------------------------------------------------+
@@ -95,11 +95,11 @@ Giao diện kiểu VS Code / Obsidian giải quyết các hạn chế của than
 
 ### Các Thành Phần Kiến Trúc Mới:
 
-1. **Activity Bar (Dải biểu tượng dọc 48px)**:
-   - 📁 **Explorer Icon**: Bật/tắt Sidebar cây thư mục file dự án (`Ctrl+B`).
-   - ✍️ **Editor & Converter Icon**: Chế độ tập trung viết văn bản & xem Ribbon công cụ.
-   - ⚡ **Batch Converter Icon**: Giao diện chuyển đổi hàng loạt (Bulk Processing).
-   - ⚙️ **Settings Icon**: Quản lý Palette màu và Chế độ Theme (Light/Dark).
+1. **Activity Bar (Dải biểu tượng dọc 48px - Sử dụng 100% Vector Icons `ft.Icons.*`)**:
+   - `ft.Icons.FOLDER_OUTLINED` (**Explorer Icon**): Bật/tắt Sidebar cây thư mục file dự án (`Ctrl+B`).
+   - `ft.Icons.EDIT_NOTE_OUTLINED` (**Editor & Converter Icon**): Chế độ tập trung viết văn bản & xem Ribbon công cụ.
+   - `ft.Icons.FLASH_ON_ROUNDED` (**Batch Converter Icon**): Giao diện chuyển đổi hàng loạt (Bulk Processing).
+   - `ft.Icons.SETTINGS_OUTLINED` (**Settings Icon**): Quản lý Palette màu, Ngôn ngữ, và Chế độ Theme (Light/Dark).
 2. **Collapsible Sidebar (Cây thư mục & Quản lý Dự án)**:
    - Hiển thị cấu trúc thư mục, cho phép kéo thả file hoặc click để mở nhanh trong Workspace.
 3. **Multi-Tab Workspace (Không gian biên tập Đa Tab)**:
@@ -123,7 +123,7 @@ timeline
 - Sử dụng `ft.NavigationRail` của Flet để tạo dải biểu tượng chuyển tab dọc bên trái.
 
 ### Bước 2: Tích hợp `FileExplorer` Component (`src/ui_flet/views/explorer_view.py`)
-- Xây dựng cây thư mục `ft.TreeView` / `ft.ListView` hiển thị các file trong thư mục làm việc.
+- Xây dựng cây thư mục bằng `ft.ListView` kết hợp lồng `ft.ExpansionTile` (hoặc `ft.Column` với indentation phân cấp) hiển thị các file/thư mục làm việc.
 
 ### Bước 3: Đưa `EditorView` vào `TabManager` (`src/ui_flet/views/workspace_view.py`)
 - Quản lý danh sách Tab đang mở qua `ft.Tabs`, lưu trữ state riêng cho từng file.

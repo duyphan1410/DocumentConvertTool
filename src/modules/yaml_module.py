@@ -196,6 +196,7 @@ class YAMLModule(BaseDocumentModule):
         # Stack elements: [level, container, section_key, parent_container]
         root_container = {}
         stack = [[0, root_container, None, None]]
+        last_target = None
         lines = content.splitlines()
         i = 0
 
@@ -209,6 +210,7 @@ class YAMLModule(BaseDocumentModule):
 
             # A. Markdown Table check
             if line_str.startswith("|") and "|" in line_str[1:]:
+                last_target = None
                 table_lines = []
                 while i < len(lines) and lines[i].strip().startswith("|"):
                     table_lines.append(lines[i].strip())
@@ -249,6 +251,7 @@ class YAMLModule(BaseDocumentModule):
             # B. Header check: # Section Name
             header_match = re.match(r"^(#{1,6})\s+(.*)", line_str)
             if header_match:
+                last_target = None
                 h_level = len(header_match.group(1))
                 section_name = header_match.group(2).strip()
                 if section_name.startswith("**") and section_name.endswith("**") and len(section_name) >= 4:
@@ -267,6 +270,7 @@ class YAMLModule(BaseDocumentModule):
 
             # C. Empty Section Markers inside content
             if line_str in ("*(Empty List)*", "*(Empty Table)*"):
+                last_target = None
                 curr_level, curr_container, curr_key, curr_parent = stack[-1]
                 if curr_parent is not None and curr_key is not None:
                     curr_parent[curr_key] = []
@@ -278,6 +282,7 @@ class YAMLModule(BaseDocumentModule):
                 continue
 
             if line_str in ("*(Empty Object)*", "*(Empty JSON)*", "*(Empty YAML)*"):
+                last_target = None
                 curr_level, curr_container, curr_key, curr_parent = stack[-1]
                 if curr_parent is not None and curr_key is not None:
                     curr_parent[curr_key] = {}
@@ -296,16 +301,18 @@ class YAMLModule(BaseDocumentModule):
                 curr_level, curr_container, curr_key, curr_parent = stack[-1]
                 if isinstance(curr_container, dict):
                     curr_container[key] = coerced_val
+                    last_target = ('kv', curr_container, key)
                 elif isinstance(curr_container, list):
+                    new_dict = {key: coerced_val}
                     if len(curr_container) == 0:
-                        new_dict = {key: coerced_val}
                         if curr_parent is not None and curr_key is not None:
                             curr_parent[curr_key] = new_dict
                         else:
                             root_container = new_dict
                         stack[-1][1] = new_dict
                     else:
-                        curr_container.append({key: coerced_val})
+                        curr_container.append(new_dict)
+                    last_target = ('kv', new_dict, key)
                 i += 1
                 continue
 
@@ -336,6 +343,7 @@ class YAMLModule(BaseDocumentModule):
                             curr_container["_items"].append(new_sub_list)
                     elif isinstance(curr_container, list):
                         curr_container.append(new_sub_list)
+                    last_target = ('list_item', new_sub_list)
                     i += 1
                     continue
 
@@ -343,6 +351,7 @@ class YAMLModule(BaseDocumentModule):
                 if indent_len >= 2 and isinstance(curr_container, list) and len(curr_container) > 0 and isinstance(curr_container[-1], list):
                     sub_val = self._coerce_value(val_raw.replace(r"\|", "|"))
                     curr_container[-1].append(sub_val)
+                    last_target = ('list_item', curr_container[-1])
                     i += 1
                     continue
 
@@ -362,16 +371,31 @@ class YAMLModule(BaseDocumentModule):
                         else:
                             root_container = new_list
                         stack[-1][1] = new_list
+                        last_target = ('list_item', new_list)
                     else:
                         if "_items" not in curr_container:
                             curr_container["_items"] = []
                         curr_container["_items"].append(coerced_val)
+                        last_target = ('list_item', curr_container["_items"])
                 elif isinstance(curr_container, list):
                     curr_container.append(coerced_val)
+                    last_target = ('list_item', curr_container)
                 i += 1
                 continue
 
-            # Unmatched line
+            # Unmatched line: treat as multi-line continuation for previous key or list item
+            if last_target is not None:
+                cont_line = line.rstrip("\r\n")
+                target_type = last_target[0]
+                if target_type == 'kv':
+                    target_dict, target_key = last_target[1], last_target[2]
+                    if target_key in target_dict:
+                        target_dict[target_key] = str(target_dict[target_key]) + "\n" + cont_line
+                elif target_type == 'list_item':
+                    target_list = last_target[1]
+                    if len(target_list) > 0:
+                        target_list[-1] = str(target_list[-1]) + "\n" + cont_line
+
             i += 1
 
         if isinstance(root_container, dict):
@@ -422,6 +446,9 @@ class YAMLModule(BaseDocumentModule):
                 return float(val)
             except ValueError:
                 pass
+
+        if "\\n" in val or "\\r" in val or "\\t" in val:
+            val = val.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n").replace("\\t", "\t")
 
         return val
 

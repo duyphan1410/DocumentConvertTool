@@ -42,6 +42,7 @@ Download the latest standalone executable (no Python installation required):
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 | **JSON (`.json`)** | ✅ | ✅ | Tabular array-to-table conversion, nested key-value formatting, fenced code blocks |
 | **YAML (`.yaml`, `.yml`)** | ✅ | ✅ | Structured tree formatting, pipe table conversion, safe PyYAML parsing |
+| **YouTube (`URL`)** | ✅ | — | Trích xuất phụ đề (captions/subtitles) đa ngôn ngữ, tự động nhận diện mốc thời gian (Timestamps) sang Markdown |
 
 ### 🎨 Modern Flet UI & Architecture
 * **3-Tier Pure MVC Architecture**: Clean decoupling between `Views`, `Controllers` (6 specialized controllers), `AppState`, and `Layout`.

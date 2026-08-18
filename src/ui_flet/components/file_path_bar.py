@@ -19,12 +19,13 @@ class FilePathBar:
         self.on_out_path_changed = on_out_path_changed
 
         self.btn_browse_in = ft.IconButton(
-            icon=ft.Icons.FOLDER_OPEN,
+            icon=ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("pathbar.tooltip_browse_in"),
+            icon_size=18,
             on_click=self.on_browse_in,
             style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(4, 4, 4, 4),
             )
         )
 
@@ -33,15 +34,18 @@ class FilePathBar:
             value="",
             expand=True,
             dense=True,
+            text_size=12,
+            border_radius=6,
         )
 
         self.btn_browse_out = ft.IconButton(
-            icon=ft.Icons.SAVE,
+            icon=ft.Icons.SAVE_OUTLINED,
             tooltip=t("pathbar.tooltip_browse_out"),
+            icon_size=18,
             on_click=self.on_browse_out,
             style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(4, 4, 4, 4),
             )
         )
 
@@ -50,18 +54,36 @@ class FilePathBar:
             value="",
             expand=True,
             dense=True,
+            text_size=12,
+            border_radius=6,
             on_change=self.on_out_path_changed,
         )
 
+        self.in_row = ft.Row(
+            controls=[self.in_path_text, self.btn_browse_in],
+            expand=True,
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        self.out_row = ft.Row(
+            controls=[self.out_path_text, self.btn_browse_out],
+            expand=True,
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
         self.container = ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 controls=[
-                    ft.Row(controls=[self.in_path_text, self.btn_browse_in], spacing=6),
-                    ft.Row(controls=[self.out_path_text, self.btn_browse_out], spacing=6),
+                    self.in_row,
+                    ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
+                    self.out_row,
                 ],
-                spacing=6,
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding(left=10, top=8, right=10, bottom=8),
+            padding=ft.Padding(left=8, top=2, right=8, bottom=2),
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
             visible=False,
@@ -109,11 +131,18 @@ class FilePathBar:
             self.container.update()
 
     def apply_palette(self, palette: dict, is_dark: bool):
-        """Apply palette colors to the file path bar container."""
+        """Apply palette colors to the file path bar container and its controls."""
         bg = resolve_color(palette, "bg_component", is_dark)
         border = resolve_color(palette, "border_color", is_dark)
+        accent = resolve_color(palette, "text_accent_primary", is_dark)
         self.container.bgcolor = bg
         self.container.border = make_border(1, border)
+        self.btn_browse_in.icon_color = accent
+        self.btn_browse_out.icon_color = accent
+        self.in_path_text.border_color = border
+        self.in_path_text.focused_border_color = accent
+        self.out_path_text.border_color = border
+        self.out_path_text.focused_border_color = accent
         try:
             self.container.update()
         except Exception:

@@ -27,6 +27,8 @@ class SearchReplaceBar:
             label=t("search.label_find"),
             dense=True,
             expand=True,
+            text_size=12,
+            border_radius=6,
             on_submit=self.on_find_next,
             on_change=self.on_search_changed,
         )
@@ -34,6 +36,8 @@ class SearchReplaceBar:
             label=t("search.label_replace"),
             dense=True,
             expand=True,
+            text_size=12,
+            border_radius=6,
             on_submit=self.on_replace,
         )
         self.chk_regex = ft.Checkbox(
@@ -48,23 +52,23 @@ class SearchReplaceBar:
         )
         self.lbl_search_match = ft.Text(
             t("search.match_zero"),
-            size=12,
+            size=11,
             color=ft.Colors.GREY_500,
         )
 
 
         # ── Results List Panel (goes into EditorView) ────────────────────────
         self.results_column = ft.Column(
-            spacing=3,
+            spacing=2,
             scroll=ft.ScrollMode.AUTO,
         )
         side = ft.BorderSide(width=1, color=ft.Colors.OUTLINE_VARIANT)
         self.results_container = ft.Container(
             content=self.results_column,
-            height=130,
+            height=110,
             visible=False,
-            padding=ft.Padding(left=10, top=6, right=10, bottom=6),
-            border_radius=8,
+            padding=ft.Padding(left=8, top=4, right=8, bottom=4),
+            border_radius=6,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
             border=ft.Border(left=side, top=side, right=side, bottom=side),
         )
@@ -72,12 +76,27 @@ class SearchReplaceBar:
         # ── Toggle Replace ▼/▲ ───────────────────────────────────────────────
         self.btn_toggle_replace = ft.IconButton(
             icon=ft.Icons.EXPAND_MORE,
+            icon_size=16,
             tooltip=t("search.tooltip_toggle_replace"),
             on_click=self._toggle_replace_row,
         )
 
-        self.btn_replace = ft.ElevatedButton(content=ft.Text(t("search.btn_replace")), on_click=self.on_replace)
-        self.btn_replace_all = ft.ElevatedButton(content=ft.Text(t("search.btn_replace_all")), on_click=self.on_replace_all)
+        self.btn_replace = ft.ElevatedButton(
+            content=ft.Text(t("search.btn_replace"), size=12),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=10, top=4, right=10, bottom=4),
+            ),
+            on_click=self.on_replace,
+        )
+        self.btn_replace_all = ft.ElevatedButton(
+            content=ft.Text(t("search.btn_replace_all"), size=12),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=10, top=4, right=10, bottom=4),
+            ),
+            on_click=self.on_replace_all,
+        )
 
         self.replace_row = ft.Row(
             controls=[
@@ -85,16 +104,20 @@ class SearchReplaceBar:
                 self.btn_replace,
                 self.btn_replace_all,
             ],
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         # ── Find Row (inline in Ribbon) ──────────────────────────────────────
         self.btn_prev = ft.IconButton(
             ft.Icons.NAVIGATE_BEFORE,
+            icon_size=16,
             tooltip=t("search.tooltip_prev"),
             on_click=self.on_find_prev,
         )
         self.btn_next = ft.IconButton(
             ft.Icons.NAVIGATE_NEXT,
+            icon_size=16,
             tooltip=t("search.tooltip_next"),
             on_click=self.on_find_next,
         )
@@ -116,12 +139,12 @@ class SearchReplaceBar:
         # ── Containers with padding for clean layout ─────────────────────────
         self.find_container = ft.Container(
             content=self.find_row,
-            padding=ft.Padding(left=2, top=6, right=12, bottom=2),
+            padding=ft.Padding(left=4, top=2, right=4, bottom=2),
         )
 
         self.replace_container = ft.Container(
             content=self.replace_row,
-            padding=ft.Padding(left=2, top=6, right=12, bottom=6),
+            padding=ft.Padding(left=4, top=2, right=4, bottom=2),
             visible=False,
         )
 
@@ -132,7 +155,7 @@ class SearchReplaceBar:
                 self.find_container,
                 self.replace_container,
             ],
-            spacing=4,
+            spacing=2,
         )
 
         # Legacy container kept for backward compatibility but no longer used

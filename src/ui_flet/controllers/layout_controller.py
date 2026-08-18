@@ -89,6 +89,13 @@ class LayoutController:
         if footer_bar and hasattr(footer_bar, "container"):
             footer_bar.container.visible = getattr(self.state, "show_status_bar", True)
 
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        if ribbon_bar:
+            if hasattr(ribbon_bar, "set_preview_visible"):
+                ribbon_bar.set_preview_visible(getattr(self.state, "show_preview", True))
+            if hasattr(ribbon_bar, "set_path_bar_visible"):
+                ribbon_bar.set_path_bar_visible(getattr(self.state, "show_path_bar", True))
+
         self.update_editor_dynamic_height()
         try:
             if self.page:
@@ -135,6 +142,9 @@ class LayoutController:
         if right_pane:
             right_pane.visible = not right_pane.visible
             self.state.show_preview = right_pane.visible
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "set_preview_visible"):
+                ribbon_bar.set_preview_visible(self.state.show_preview)
             self._safe_save_settings()
             try:
                 self.page.update()
@@ -146,6 +156,9 @@ class LayoutController:
         if file_path_bar:
             file_path_bar.container.visible = not file_path_bar.container.visible
             self.state.show_path_bar = file_path_bar.container.visible
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "set_path_bar_visible"):
+                ribbon_bar.set_path_bar_visible(self.state.show_path_bar)
             self.update_editor_dynamic_height()
             self._safe_save_settings()
             try:

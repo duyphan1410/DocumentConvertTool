@@ -389,7 +389,8 @@ def fetch_youtube_transcript(
     for ts, p_text in zip(timestamps, paragraph_list):
         if include_timestamps:
             ts_str = format_timestamp(ts)
-            md_lines.append(f"**[{ts_str}]** {p_text}\n")
+            sec = int(ts)
+            md_lines.append(f"**[[{ts_str}]](yt://{video_id}?t={sec})** {p_text}\n")
         else:
             md_lines.append(f"{p_text}\n")
 

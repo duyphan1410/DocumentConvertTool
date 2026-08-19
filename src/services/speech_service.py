@@ -160,7 +160,8 @@ def transcribe_youtube_speech(
         for start_sec, text in chunks:
             if include_timestamps:
                 ts_str = format_timestamp(start_sec)
-                md_lines.append(f"**[{ts_str}]** {text}\n")
+                sec = int(start_sec)
+                md_lines.append(f"**[[{ts_str}]](yt://{video_id}?t={sec})** {text}\n")
             else:
                 md_lines.append(f"{text}\n")
 

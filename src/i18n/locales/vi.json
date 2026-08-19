@@ -357,6 +357,8 @@
   "youtube.invalid_url": "Liên kết YouTube không hợp lệ. Vui lòng kiểm tra lại URL.",
   "youtube.video_unavailable": "Video không khả dụng hoặc đã bị xóa / chuyển sang chế độ riêng tư.",
   "youtube.fetch_success": "Đã trích xuất thành công phụ đề YouTube ({lang})!",
-  "youtube.error_title": "Thông báo YouTube"
+  "youtube.error_title": "Thông báo YouTube",
+  "preview.watch_video": "Xem Video",
+  "preview.watch_video_tooltip": "Phát video YouTube trực tiếp trong phần mềm"
 }
 

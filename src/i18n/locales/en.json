@@ -357,6 +357,8 @@
   "youtube.invalid_url": "Invalid YouTube link. Please verify the URL.",
   "youtube.video_unavailable": "Video is unavailable, deleted, or set to private.",
   "youtube.fetch_success": "Successfully extracted YouTube subtitles ({lang})!",
-  "youtube.error_title": "YouTube Notice"
+  "youtube.error_title": "YouTube Notice",
+  "preview.watch_video": "Watch Video",
+  "preview.watch_video_tooltip": "Play YouTube video directly inside the app"
 }
 

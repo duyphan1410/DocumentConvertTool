@@ -24,7 +24,8 @@ docs/
 │   ├── v1.5.0.md
 │   ├── v1.5.3.md
 │   ├── v1.6.0.md
-│   └── v1.6.0_en.md
+│   ├── v1.6.0_en.md
+│   └── v1.7.0.md
 └── archive/                              # PR completion snapshots & refactoring logs
     ├── 20260729_refactoring_summary.md
     ├── 20260730_conversion_performance_analysis.md
@@ -36,7 +37,8 @@ docs/
     ├── 20260810_auto_draft_loading_ux_summary.md
     ├── 20260812_pptx_conversion.md
     ├── 20260813_pptx_module_refactoring_and_table_deduplication.md
-    └── 20260814_json_yaml_conversion_modules.md
+    ├── 20260814_json_yaml_conversion_modules.md
+    └── 20260818_youtube_transcript_and_json_yaml_formatting_fixes.md
 ```
 
 ---
@@ -64,6 +66,7 @@ docs/
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
+- [v1.7.0.md](releases/v1.7.0.md): Version 1.7.0 Release Notes (YouTube Subtitles/Transcript Extractor with Auto-Translate & Non-AI Speech Fallback, Direct Markdown Export, Win32 Clipboard URL Auto-Fill, Simplified Single-Row Ribbon, and JSON/YAML multiline fixes).
 - [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Architecture Refactoring, Table Parsing Deduplication, Word/PDF Formatting Fixes, and Universal Dynamic Window Focus).
 - [v1.5.3.md](releases/v1.5.3.md): Version 1.5.3 Release Notes (Async draft restoration UX, 60fps LoadingView, 1-Click Smart Auto-Rename, and Exact Filename Highlight).
 - [v1.5.0.md](releases/v1.5.0.md): Version 1.5.0 Release Notes (Ribbon UI, Theme/Palette hot-swapping, i18n localization, and Global Shortcut Manager).
@@ -72,6 +75,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260818_youtube_transcript_and_json_yaml_formatting_fixes.md](archive/20260818_youtube_transcript_and_json_yaml_formatting_fixes.md): YouTube Subtitles/Transcript Extractor (Multi-tier Strategy: Subtitles & Server-side Auto-Translate + Lightweight Non-AI Speech Fallback), Direct Markdown Export (`.md`), Win32 Clipboard (`Win + V`) & JSON/YAML multiline formatting fixes.
 - [20260814_json_yaml_conversion_modules.md](archive/20260814_json_yaml_conversion_modules.md): Bi-directional JSON ↔ MD & YAML ↔ MD conversion modules, Lazy Import Rule compliance, and unit tests integration.
 - [20260813_pptx_module_refactoring_and_table_deduplication.md](archive/20260813_pptx_module_refactoring_and_table_deduplication.md): Refactoring log for PPTX un-nesting, table parsing deduplication, and cell formatting fixes.
 - [20260812_pptx_conversion.md](archive/20260812_pptx_conversion.md): PowerPoint bi-directional conversion engine & dynamic window focus integration log.

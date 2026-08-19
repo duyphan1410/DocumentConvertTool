@@ -67,7 +67,6 @@ class EditorView:
                 self.title_text,
                 ft.Container(expand=True),
                 self.btn_open_file,
-                self.btn_save_md,
                 self.btn_undo,
                 self.btn_redo,
                 self.btn_clear_editor,
@@ -195,9 +194,24 @@ class EditorView:
         except Exception:
             pass
 
+    def insert_text_at_cursor(self, text: str):
+        """Inserts text at the current cursor selection range and updates editor state."""
+        if not text or getattr(self.editor, "read_only", False):
+            return
+        raw_val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else len(raw_val)
+        end = self.selection_end if self.selection_end is not None else start
+        start = max(0, min(start, len(raw_val)))
+        end = max(start, min(end, len(raw_val)))
 
-
-
+        new_val = raw_val[:start] + text + raw_val[end:]
+        self.editor.value = new_val
+        new_cursor = start + len(text)
+        self.selection_start = new_cursor
+        self.selection_end = new_cursor
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+        self.select_range(new_cursor, new_cursor, focus=True)
 
     def get_text(self) -> str:
         return self.editor.value or ""

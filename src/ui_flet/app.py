@@ -121,8 +121,10 @@ class DocumentConvertApp:
         # Build UI Shell & Controllers
         self._build_controls()
 
-        # Register Window State Tracking Event through LayoutController (MVC pattern)
+        # Register Window State & Resize Tracking Events through LayoutController (MVC pattern)
         self.page.window.on_event = self.layout_controller.on_window_event
+        self.page.on_resized = self.layout_controller.on_page_resized
+        self.layout_controller.on_page_resized(None)
 
         # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+S, Ctrl+F, Ctrl+Z, Ctrl+Y)
         ShortcutManager.register(

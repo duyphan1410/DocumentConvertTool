@@ -288,7 +288,7 @@ def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
     except Exception:
         pass
 
-    page.theme = ft.Theme(
+    app_theme = ft.Theme(
         color_scheme=ft.ColorScheme(
             primary=primary_color,
             secondary=secondary_color,
@@ -296,5 +296,14 @@ def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
             surface_container=bg_main,
         ),
         font_family=STYLE["font_family_body"],
+        scrollbar_theme=ft.ScrollbarTheme(
+            thickness=8,
+            radius=4,
+            track_visibility=False,
+            thumb_visibility=False,
+            interactive=True,
+        ),
     )
+    page.theme = app_theme
+    page.dark_theme = app_theme
 

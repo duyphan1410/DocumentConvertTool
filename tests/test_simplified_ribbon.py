@@ -104,6 +104,24 @@ class TestSimplifiedRibbon(unittest.TestCase):
         ribbon.set_path_bar_visible(False)
         self.assertEqual(ribbon.btn_tab_view_pathbar.icon, ft.Icons.ROUTE_OUTLINED)
 
+    def test_formatting_toolbar_responsive_compact(self):
+        """Verify FormattingToolbar switches between full icon mode and compact mode."""
+        ribbon = RibbonBar()
+        fmt = ribbon.formatting_toolbar
+        self.assertEqual(fmt.heading_dropdown.width, 165)
+
+        # Full mode
+        fmt.set_compact_mode(False)
+        self.assertFalse(fmt.is_compact)
+        self.assertTrue(fmt.btn_strike.visible)
+        self.assertFalse(fmt.btn_more.visible)
+
+        # Compact mode
+        fmt.set_compact_mode(True)
+        self.assertTrue(fmt.is_compact)
+        self.assertFalse(fmt.btn_strike.visible)
+        self.assertTrue(fmt.btn_more.visible)
+
 
 if __name__ == "__main__":
     unittest.main()

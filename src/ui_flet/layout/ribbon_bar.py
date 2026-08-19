@@ -76,6 +76,18 @@ class RibbonBar(ft.Container):
         self._is_preview_visible = True
         self._is_path_bar_visible = True
 
+        # Ribbon-specific ultra-sleek micro scrollbar (3px) for both Light and Dark modes
+        self.theme = ft.Theme(
+            scrollbar_theme=ft.ScrollbarTheme(
+                thickness=3,
+                radius=2,
+                track_visibility=False,
+                thumb_visibility=False,
+                interactive=True,
+            )
+        )
+        self.dark_theme = self.theme
+
         # ── 1. Branding / Logo ──────────────────────────────────────────────────
         self.logo_icon = ft.Icon(
             ft.Icons.AUTO_AWESOME_ROUNDED,
@@ -92,8 +104,8 @@ class RibbonBar(ft.Container):
         self.mode_dropdown = ft.Dropdown(
             label="Conversion Mode",
             value=current_mode,
-            options=[ft.dropdown.Option(m) for m in MODES.keys()],
-            width=190,
+            options=[ft.dropdown.Option(m, t(MODE_DISPLAY_KEYS.get(m, m))) for m in MODES.keys()],
+            width=165,
             dense=True,
         )
         self.mode_dropdown.on_change = self.on_mode_changed
@@ -228,12 +240,14 @@ class RibbonBar(ft.Container):
             visible=False,
         )
 
-        # ── 7. Single-Row Ribbon Ribbon Strip ────────────────────────────────────
+        # ── 7. Single-Row Unified Ribbon Strip ──────────────────────────────────
         self.mode_dropdown_container = ft.Container(
             content=self.mode_dropdown,
             padding=ft.Padding(left=4, top=0, right=4, bottom=0),
             alignment=ft.alignment.Alignment(0.0, 0.0),
         )
+
+        self.ribbon_spacer = ft.Container(expand=True)
 
         self.ribbon_row = ft.Row(
             controls=[
@@ -248,7 +262,7 @@ class RibbonBar(ft.Container):
                 self.formatting_toolbar,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.btn_tab_edit_search,
-                ft.Container(expand=True),
+                self.ribbon_spacer,
                 self.mode_dropdown_container,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.btn_tab_view_preview,
@@ -256,8 +270,9 @@ class RibbonBar(ft.Container):
                 self.btn_settings,
                 self.btn_help,
             ],
+            scroll=None,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4,
+            spacing=3,
         )
 
         # ── 8. Collapsible Search Panel Container ────────────────────────────────
@@ -295,7 +310,9 @@ class RibbonBar(ft.Container):
             valid_modes = [m for m, cfg in MODES.items() if cfg["in_ext"] == input_ext.lower()]
             if not valid_modes:
                 valid_modes = list(MODES.keys())
-        self.mode_dropdown.options = [ft.dropdown.Option(m) for m in valid_modes]
+        self.mode_dropdown.options = [
+            ft.dropdown.Option(m, t(MODE_DISPLAY_KEYS.get(m, m))) for m in valid_modes
+        ]
         if preferred_mode and preferred_mode in valid_modes:
             self.mode_dropdown.value = preferred_mode
         elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
@@ -310,6 +327,59 @@ class RibbonBar(ft.Container):
                 self.on_mode_changed(None)
             except Exception as ex:
                 print(f"[DEBUG] on_mode_changed error in update_mode_options: {ex}")
+
+    def update_responsive_layout(self, width: int):
+        """Dynamically manages responsive modes and switches scroll mode when squeezed."""
+        if not width:
+            return
+
+        # Calibrated width thresholds guaranteeing scroll stays OFF at all standard desktop sizes
+        full_needed = 1360          # Wide desktop / Full size: Full tools + Full logo + Float Right
+        compact_with_logo = 1080    # Medium size: Compact ('⋯ More') + Full logo + Float Right
+        compact_min = 1000           # Minimum standard window (900px): Compact + Icon-only logo + Float Right
+
+        # 1. Mode dropdown width: Always fixed at 165px
+        self.mode_dropdown.width = 165
+
+        # 2. Dynamic state switching with Scroll On/Off control
+        if width >= full_needed:
+            # Full size: Full formatting tools + Full logo text + Scroll OFF (Native Float Right)
+            self.logo_text.visible = True
+            if hasattr(self, "formatting_toolbar"):
+                self.formatting_toolbar.set_compact_mode(False)
+                self.formatting_toolbar.heading_dropdown.width = 165
+            self.ribbon_spacer.visible = True
+            self.ribbon_row.scroll = None
+        elif width >= compact_with_logo:
+            # Medium size: Compact formatting tools ('⋯ More') + Full logo text + Scroll OFF
+            self.logo_text.visible = True
+            if hasattr(self, "formatting_toolbar"):
+                self.formatting_toolbar.set_compact_mode(True)
+                self.formatting_toolbar.heading_dropdown.width = 165
+            self.ribbon_spacer.visible = True
+            self.ribbon_row.scroll = None
+        elif width >= compact_min:
+            # Small size: Compact formatting tools + Hide logo text + Scroll OFF
+            self.logo_text.visible = False
+            if hasattr(self, "formatting_toolbar"):
+                self.formatting_toolbar.set_compact_mode(True)
+                self.formatting_toolbar.heading_dropdown.width = 165
+            self.ribbon_spacer.visible = True
+            self.ribbon_row.scroll = None
+        else:
+            # Extra small (< 1000px): Turn ON Scroll to allow smooth unified scrolling across entire menu
+            self.logo_text.visible = False
+            if hasattr(self, "formatting_toolbar"):
+                self.formatting_toolbar.set_compact_mode(True)
+                self.formatting_toolbar.heading_dropdown.width = 165
+            self.ribbon_spacer.visible = False
+            self.ribbon_row.scroll = ft.ScrollMode.AUTO
+
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
 
     def select_tab(self, tab_name: str, force: bool = False):
         """

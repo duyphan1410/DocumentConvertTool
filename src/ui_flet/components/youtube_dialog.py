@@ -9,7 +9,6 @@ import flet as ft
 
 from src.i18n import t
 from src.services.youtube_service import extract_video_id, fetch_youtube_transcript
-from src.ui_flet.components.message_dialog import show_message_dialog, DialogType
 from src.ui_flet.theme import PALETTES, resolve_color, get_style_color
 
 
@@ -70,6 +69,12 @@ def show_youtube_dialog(
 
     progress_ring = ft.ProgressRing(width=18, height=18, stroke_width=2.5, visible=False)
     status_text = ft.Text("", size=12, color=accent_primary, visible=False, expand=True)
+
+    def _show_inline_error(msg: str):
+        status_text.color = ft.Colors.RED_400
+        status_text.value = msg
+        status_text.visible = True
+        page.update()
 
     btn_fetch = ft.ElevatedButton(
         t("youtube.btn_fetch"),
@@ -214,45 +219,19 @@ def show_youtube_dialog(
         status_text.visible = False
 
         if not success:
-            page.update()
             if err_code == "ERR_NO_SUBTITLES" or err_code == "ERR_EMPTY_SUBTITLES":
-                show_message_dialog(
-                    page=page,
-                    payload=t("youtube.no_subs_found"),
-                    title=t("youtube.error_title"),
-                    dialog_type=DialogType.WARNING,
-                )
+                _show_inline_error(t("youtube.no_subs_found"))
             elif err_code == "ERR_NO_SPEECH_DETECTED":
-                show_message_dialog(
-                    page=page,
-                    payload=t("youtube.no_speech_detected"),
-                    title=t("youtube.error_title"),
-                    dialog_type=DialogType.WARNING,
-                )
+                _show_inline_error(t("youtube.no_speech_detected"))
             elif err_code == "ERR_INVALID_URL" or err_code == "ERR_INVALID_VIDEO_ID":
                 url_input.error_text = t("youtube.invalid_url")
                 page.update()
             elif err_code == "ERR_VIDEO_UNAVAILABLE":
-                show_message_dialog(
-                    page=page,
-                    payload=t("youtube.video_unavailable"),
-                    title=t("youtube.error_title"),
-                    dialog_type=DialogType.ERROR,
-                )
+                _show_inline_error(t("youtube.video_unavailable"))
             elif err_code == "ERR_AUDIO_DOWNLOAD_FAILED":
-                show_message_dialog(
-                    page=page,
-                    payload=t("youtube.audio_download_failed"),
-                    title=t("youtube.error_title"),
-                    dialog_type=DialogType.ERROR,
-                )
+                _show_inline_error(t("youtube.audio_download_failed"))
             else:
-                show_message_dialog(
-                    page=page,
-                    payload=err_code or "Unknown Error",
-                    title=t("youtube.error_title"),
-                    dialog_type=DialogType.ERROR,
-                )
+                _show_inline_error(err_code or "Unknown Error")
             return
 
         # Success: close dialog and inject into workspace
@@ -266,7 +245,8 @@ def show_youtube_dialog(
     btn_cancel.on_click = close_dialog
 
     dialog = ft.AlertDialog(
-        modal=True,
+        modal=False,
+        on_dismiss=close_dialog,
         title=ft.Row(
             controls=[
                 ft.Icon(ft.Icons.PLAY_CIRCLE_FILLED_ROUNDED, color=ft.Colors.RED_500, size=28),

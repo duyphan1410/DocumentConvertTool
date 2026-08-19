@@ -42,6 +42,7 @@ def set_clipboard_text(text: str, page: Optional[object] = None) -> bool:
             kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
             kernel32.GlobalUnlock.restype = wintypes.BOOL
 
+            import time
             utf16_bytes = text.encode("utf-16le") + b"\x00\x00"
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(utf16_bytes))
             if h_mem:
@@ -49,14 +50,15 @@ def set_clipboard_text(text: str, page: Optional[object] = None) -> bool:
                 if ptr:
                     ctypes.memmove(ptr, utf16_bytes, len(utf16_bytes))
                     kernel32.GlobalUnlock(h_mem)
-                    if user32.OpenClipboard(None):
-                        user32.EmptyClipboard()
-                        user32.SetClipboardData(CF_UNICODETEXT, h_mem)
-                        user32.CloseClipboard()
-                        # Also sync Flet page clipboard if available
-                        if page:
-                            _safe_flet_page_clipboard(page, text)
-                        return True
+                    for _ in range(5):
+                        if user32.OpenClipboard(None):
+                            user32.EmptyClipboard()
+                            user32.SetClipboardData(CF_UNICODETEXT, h_mem)
+                            user32.CloseClipboard()
+                            if page:
+                                _safe_flet_page_clipboard(page, text)
+                            return True
+                        time.sleep(0.02)
         except Exception as ex:
             print(f"[DEBUG] Win32 clipboard error: {ex}")
 
@@ -134,16 +136,20 @@ def get_clipboard_text(page: Optional[object] = None) -> str:
             kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
             kernel32.GlobalUnlock.restype = wintypes.BOOL
 
-            if user32.OpenClipboard(None):
-                h_data = user32.GetClipboardData(CF_UNICODETEXT)
-                if h_data:
-                    ptr = kernel32.GlobalLock(h_data)
-                    if ptr:
-                        text = ctypes.c_wchar_p(ptr).value or ""
-                        kernel32.GlobalUnlock(h_data)
-                        user32.CloseClipboard()
-                        return text
-                user32.CloseClipboard()
+            import time
+            for _ in range(5):
+                if user32.OpenClipboard(None):
+                    h_data = user32.GetClipboardData(CF_UNICODETEXT)
+                    if h_data:
+                        ptr = kernel32.GlobalLock(h_data)
+                        if ptr:
+                            text = ctypes.c_wchar_p(ptr).value or ""
+                            kernel32.GlobalUnlock(h_data)
+                            user32.CloseClipboard()
+                            return text
+                    user32.CloseClipboard()
+                    break
+                time.sleep(0.02)
         except Exception as ex:
             print(f"[DEBUG] Win32 get_clipboard error: {ex}")
 

@@ -20,17 +20,20 @@
 
 ---
 
-### ✅ v1.7.0 Release (Simplified Single-Row Ribbon, Core I/O & UI Polish):
+### ✅ v1.7.0 Release (Simplified Single-Row Ribbon, YouTube Extractor, Direct MD Export & UI Polish):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
+| **YouTube Subtitle & Speech Transcriber** | `src/services/youtube_service.py`, `src/services/speech_service.py` | Kiến trúc đa tầng: Tầng 1 lấy phụ đề gốc/Server Auto-Translate (0% CPU/RAM); Tầng 2 Fallback nhận diện giọng nói Non-AI (`SpeechRecognition` + `yt-dlp`), phân đoạn 20s kèm timestamp `[mm:ss]`. | ✅ Completed (v1.7.0) |
+| **Direct Markdown Export (`.md`)** | `src/ui_flet/views/editor_view.py`, `src/ui_flet/controllers/file_controller.py` | Nút Tải nhanh Markdown (`[⬇]`), mode `MD -> Markdown`, kích hoạt tức thì nút Mở tệp/Mở thư mục trên Footer Bar. | ✅ Completed (v1.7.0) |
+| **Win32 Clipboard & URL Auto-Fill** | `src/utils/clipboard.py`, `src/ui_flet/components/youtube_dialog.py` | Đọc Clipboard Win32 qua `CF_UNICODETEXT` an toàn tiếng Việt có dấu, hỗ trợ `Win + V`, tự động điền link YouTube khi mở modal. | ✅ Completed (v1.7.0) |
+| **JSON / YAML Multiline Formatting Fix** | `src/modules/json_module.py`, `src/modules/yaml_module.py` | Khắc phục hiển thị ký tự thoát (`\n`, `\t`), hỗ trợ chuỗi nhiều dòng thụt lề (multiline continuation) và tab preservation. | ✅ Completed (v1.7.0) |
 | **Simplified Single-Row Ribbon** | `src/ui_flet/layout/ribbon_bar.py` | Tinh gọn thanh Ribbon thành 1 hàng duy nhất (38px–40px) đặt trên Editor, tối ưu diện tích dọc theo chuẩn UX 4/8dp rhythm, 100% Vector Icons. | ✅ Completed (v1.7.0) |
 | **Folder Native Picker** | `src/ui_flet/native_dialogs.py` | Thêm `pick_directory_sync` / `pick_directory_async` qua `filedialog.askdirectory` chọn folder dự án với High-DPI Per-Monitor v2. | ✅ Completed (v1.7.0) |
 | **File Path Bar Single-Row** | `src/ui_flet/components/file_path_bar.py` | Chuyển đổi từ xếp chồng 2 hàng (~90px) sang 1 hàng ngang chia đôi 50/50 (~38px), nút Browse trong suốt, đồng bộ Palette. | ✅ Completed (v1.7.0) |
 | **Search & Replace Bar Ultra-Compact** | `src/ui_flet/components/search_replace_bar.py` | Thu gọn phông chữ `text_size=12`, `dense=True`, nút điều hướng `16px`, giảm >50% chiều cao panel. | ✅ Completed (v1.7.0) |
 | **Help & User Guide Card Grid** | `src/ui_flet/views/help_view.py` | Tái thiết kế bố cục 2 cột dạng Thẻ Card, bảng phím tắt, tra cứu cú pháp Markdown, ma trận định dạng đầy đủ, và FAQ Accordion mượt mà. | ✅ Completed (v1.7.0) |
 | **Option Settings & i18n View** | `src/ui_flet/views/settings_view.py` | Chuẩn hóa Typography Scale, menu Settings điều hướng 160px, đa ngôn ngữ Việt ↔ Anh, font size, autosave interval. | ✅ Completed (v1.7.0) |
-| **YouTube Subtitle Transcriber** | `src/services/youtube_service.py` | Trích xuất phụ đề/nội dung từ liên kết YouTube thành bài viết Markdown kèm Video Title, Channel và mốc thời gian (Timestamps). | ✅ Completed (v1.7.0) |
 
 ---
 

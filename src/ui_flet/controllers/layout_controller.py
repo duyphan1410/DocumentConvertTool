@@ -53,6 +53,9 @@ class LayoutController:
 
         _sync_geometry()
 
+        # Dynamic Responsive Ribbon Layout
+        self.on_page_resized(None)
+
         # Debounce disk I/O by 500ms
         import threading
         if self._window_save_timer:
@@ -74,6 +77,21 @@ class LayoutController:
         self._window_save_timer = threading.Timer(0.5, _delayed_save)
         self._window_save_timer.daemon = True
         self._window_save_timer.start()
+
+    def on_page_resized(self, e=None):
+        """Dispatched on live window/canvas resizing to update responsive UI."""
+        w = None
+        if e and hasattr(e, "width") and e.width:
+            w = e.width
+        elif hasattr(self.page, "width") and self.page.width:
+            w = self.page.width
+        elif hasattr(self.page.window, "width") and self.page.window.width:
+            w = self.page.window.width
+
+        if w:
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "update_responsive_layout"):
+                ribbon_bar.update_responsive_layout(int(w))
 
     def apply_panel_visibility(self):
         """Restore panel visibilities from AppState."""

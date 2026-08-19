@@ -245,9 +245,9 @@ class FileController:
         self.state.in_path = ""
         self.file_path_bar.set_in_path(f"YouTube: {source_url}")
 
-        # Set conversion mode (defaulting to user default or MD -> Markdown)
+        # Automatically switch conversion mode to 'MD -> Markdown' (Save as MD)
         ext = ".md"
-        preferred_mode = getattr(self.state, "default_mode", "") or "MD -> Markdown"
+        preferred_mode = "MD -> Markdown"
         self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
         self.state.current_mode = self.ribbon_bar.mode_dropdown.value
 

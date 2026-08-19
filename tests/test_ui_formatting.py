@@ -57,6 +57,17 @@ class TestUIFormatting(unittest.TestCase):
         self.editor_view.apply_heading(0)
         self.assertEqual(self.editor_view.get_text(), "My Document Title")
 
+    def test_insert_text_at_cursor(self):
+        self.editor_view.set_text("Hello World")
+        self.editor_view.select_range(5, 5)
+        self.editor_view.insert_text_at_cursor(" Beautiful")
+        self.assertEqual(self.editor_view.get_text(), "Hello Beautiful World")
+
+    def test_insert_text_replaces_selection(self):
+        self.editor_view.set_text("Hello World")
+        self.editor_view.select_range(6, 11)
+        self.editor_view.insert_text_at_cursor("Universe")
+        self.assertEqual(self.editor_view.get_text(), "Hello Universe")
 
 
 if __name__ == "__main__":

@@ -206,6 +206,128 @@ class FileController:
             token = f"![{alt_text}]({normalized_path})"
             self.editor_view.insert_image_token(token)
 
+    def trigger_youtube_import(self, e=None):
+        """Opens modal dialog to import subtitles from a YouTube URL."""
+        from src.ui_flet.components.youtube_dialog import show_youtube_dialog
+        current_pal = getattr(self.state, "palette", "Violet Cyberpunk")
+        show_youtube_dialog(
+            page=self.page,
+            on_transcript_loaded=self.handle_youtube_transcript_loaded,
+            current_palette=current_pal,
+        )
+
+    def handle_youtube_transcript_loaded(self, content: str, source_url: str):
+        """Injects extracted YouTube Markdown transcript directly into editor workspace."""
+        if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
+            self.app_controls["on_show_editor"]()
+        try:
+            self.ribbon_bar.select_tab("edit", force=True)
+        except Exception:
+            pass
+
+        from src.services.youtube_service import extract_video_id
+        vid_id = extract_video_id(source_url) or "video"
+        def_dir = get_default_output_dir()
+
+        # Extract title from markdown header for meaningful default filename
+        import re
+        first_line = content.splitlines()[0] if content else ""
+        if first_line.startswith("# "):
+            title_candidate = first_line[2:].strip()
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", title_candidate)
+            safe_title = re.sub(r'\s+', "_", safe_title).strip("_")[:60]
+        else:
+            safe_title = ""
+
+        file_stem = safe_title if safe_title else f"youtube_{vid_id}"
+        virtual_name = f"{file_stem}.md"
+
+        self.state.in_path = ""
+        self.file_path_bar.set_in_path(f"YouTube: {source_url}")
+
+        # Set conversion mode (defaulting to user default or MD -> Markdown)
+        ext = ".md"
+        preferred_mode = getattr(self.state, "default_mode", "") or "MD -> Markdown"
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+
+        out_ext = MODES.get(self.state.current_mode, {"out_ext": ".md"})["out_ext"]
+        self.state.out_path = os.path.join(def_dir, f"{file_stem}{out_ext}")
+        self.file_path_bar.set_out_path(self.state.out_path)
+
+        self.state.full_content = content
+        self.state.undo_stack.clear()
+        self.state.redo_stack.clear()
+
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+        else:
+            self.editor_view.set_text(content)
+
+        self.state.undo_stack.append(self.editor_view.get_text())
+        self.state.is_dirty = True
+
+        words = len(content.split())
+        chars = len(content)
+        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+        self.preview.update_preview(content, base_dir=None)
+
+        self.footer_bar.set_status_key(
+            "status.file_loaded",
+            color=ft.Colors.GREEN_400,
+            filename=virtual_name,
+            duration="0.00",
+        )
+        self.footer_bar.set_processing(False)
+        self.perform_autosave()
+        self.page.update()
+
+    def trigger_save_markdown(self, e=None):
+        """Asynchronously triggers Save As dialog for Markdown content."""
+        asyncio.create_task(self.async_save_markdown())
+
+    async def async_save_markdown(self):
+        """Directly prompts to save the current editor Markdown content to a .md file."""
+        content = self.editor_view.get_text() if self.editor_view else ""
+        if not content or not content.strip():
+            self.footer_bar.set_status(t("status.empty_editor"), ft.Colors.AMBER_400)
+            self.page.update()
+            return
+
+        init_file = "document.md"
+        if self.state.out_path:
+            base = os.path.splitext(os.path.basename(self.state.out_path))[0]
+            init_file = f"{base}.md"
+        elif self.state.in_path:
+            base = os.path.splitext(os.path.basename(self.state.in_path))[0]
+            init_file = f"{base}.md"
+
+        file_path = await pick_output_file_async(
+            default_ext=".md",
+            initial_file=init_file,
+            page=self.page,
+            picker=self.file_picker_out,
+        )
+        if file_path:
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                self.state.out_path = file_path
+                self.state.last_converted_path = file_path
+                self.state.is_dirty = False
+                self.file_path_bar.set_out_path(file_path)
+                self.footer_bar.set_result_buttons_visible(True)
+                self.footer_bar.set_status_key(
+                    "status.conversion_success",
+                    color=ft.Colors.GREEN_400,
+                    message=f"Lưu Markdown thành công -> {os.path.basename(file_path)}",
+                    duration="0.01",
+                )
+                self.page.update()
+            except Exception as ex:
+                self.footer_bar.set_status(f"Save error: {ex}", ft.Colors.RED_400)
+                self.page.update()
+
     def has_draft_on_disk(self) -> bool:
         """Returns True if auto draft file exists on disk and is non-empty."""
         return os.path.exists(DRAFT_PATH) and os.path.getsize(DRAFT_PATH) > 0

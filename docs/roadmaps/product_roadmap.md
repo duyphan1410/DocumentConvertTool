@@ -30,6 +30,7 @@
 | **Search & Replace Bar Ultra-Compact** | `src/ui_flet/components/search_replace_bar.py` | Thu gọn phông chữ `text_size=12`, `dense=True`, nút điều hướng `16px`, giảm >50% chiều cao panel. | ✅ Completed (v1.7.0) |
 | **Help & User Guide Card Grid** | `src/ui_flet/views/help_view.py` | Tái thiết kế bố cục 2 cột dạng Thẻ Card, bảng phím tắt, tra cứu cú pháp Markdown, ma trận định dạng đầy đủ, và FAQ Accordion mượt mà. | ✅ Completed (v1.7.0) |
 | **Option Settings & i18n View** | `src/ui_flet/views/settings_view.py` | Chuẩn hóa Typography Scale, menu Settings điều hướng 160px, đa ngôn ngữ Việt ↔ Anh, font size, autosave interval. | ✅ Completed (v1.7.0) |
+| **YouTube Subtitle Transcriber** | `src/services/youtube_service.py` | Trích xuất phụ đề/nội dung từ liên kết YouTube thành bài viết Markdown kèm Video Title, Channel và mốc thời gian (Timestamps). | ✅ Completed (v1.7.0) |
 
 ---
 
@@ -60,7 +61,6 @@
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **YouTube URL Transcriber** | `src/services/youtube_service.py` | Trích xuất phụ đề/nội dung từ liên kết YouTube (`youtube.com/watch?v=...`) thành bài viết Markdown kèm mốc thời gian (Timestamps). | ⏳ Planned |
 | **Audio/Video Speech Transcriber** | `src/services/speech_service.py` | Plugin Whisper AI trích xuất giọng nói từ video `.mp4` và audio `.mp3` thành văn bản Markdown ghi chú cuộc họp. | ⏳ Planned |
 | **EPub eBook Engine (`.epub`)** | `src/modules/epub_module.py` | Đọc và đóng gói sách điện tử `.epub` hai chiều với Markdown (`EPUB ↔ MD`). | ⏳ Planned |
 | **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ⏳ Planned |

@@ -348,25 +348,33 @@ class ConversionController:
             show_message_dialog(self.page, doc_err)
 
     def open_converted_file(self, e=None):
-        if self.state.last_converted_path and os.path.exists(
-            self.state.last_converted_path
-        ):
-            file_path = os.path.normpath(
-                os.path.abspath(self.state.last_converted_path)
-            )
+        target = self.state.last_converted_path or self.state.out_path or (self.file_path_bar.out_path_text.value if self.file_path_bar else "")
+        if target and os.path.exists(target):
+            file_path = os.path.normpath(os.path.abspath(target))
             try:
                 open_file_or_folder_foreground(file_path, is_folder=False)
             except Exception as ex:
                 print(f"[DEBUG] Failed to open file '{file_path}': {ex}")
+                try:
+                    os.startfile(file_path)
+                except Exception as e_start:
+                    print(f"[DEBUG] os.startfile fallback error: {e_start}")
+        else:
+            print(f"[DEBUG] Cannot open file: target path does not exist '{target}'")
 
     def open_converted_folder(self, e=None):
-        if self.state.last_converted_path and os.path.exists(
-            self.state.last_converted_path
-        ):
-            file_path = os.path.normpath(
-                os.path.abspath(self.state.last_converted_path)
-            )
-            try:
-                open_file_or_folder_foreground(file_path, is_folder=True)
-            except Exception as ex:
-                print(f"[DEBUG] Failed to open folder for '{file_path}': {ex}")
+        target = self.state.last_converted_path or self.state.out_path or (self.file_path_bar.out_path_text.value if self.file_path_bar else "")
+        if target:
+            folder_path = target if os.path.isdir(target) else os.path.dirname(target)
+            if os.path.exists(folder_path):
+                folder_path = os.path.normpath(os.path.abspath(folder_path))
+                try:
+                    open_file_or_folder_foreground(folder_path, is_folder=True)
+                except Exception as ex:
+                    print(f"[DEBUG] Failed to open folder for '{folder_path}': {ex}")
+                    try:
+                        os.startfile(folder_path)
+                    except Exception as e_start:
+                        print(f"[DEBUG] os.startfile folder fallback error: {e_start}")
+            else:
+                print(f"[DEBUG] Cannot open folder: path does not exist '{folder_path}'")

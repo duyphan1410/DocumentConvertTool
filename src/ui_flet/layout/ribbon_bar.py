@@ -29,6 +29,7 @@ class RibbonBar(ft.Container):
         on_browse_in: Optional[Callable] = None,
         on_browse_out: Optional[Callable] = None,
         on_clear_editor: Optional[Callable] = None,
+        on_import_youtube: Optional[Callable] = None,
         on_format_action: Optional[Callable[[str, str], None]] = None,
         on_heading_change: Optional[Callable[[int], None]] = None,
         on_toggle_search: Optional[Callable] = None,
@@ -52,6 +53,7 @@ class RibbonBar(ft.Container):
         self.on_browse_in = on_browse_in
         self.on_browse_out = on_browse_out
         self.on_clear_editor = on_clear_editor
+        self.on_import_youtube = on_import_youtube
         self.on_format_action = on_format_action
         self.on_heading_change = on_heading_change
         self.on_toggle_search = on_toggle_search
@@ -139,6 +141,12 @@ class RibbonBar(ft.Container):
             tooltip=t("ribbon.btn_clear"),
             icon_size=18,
             on_click=self._on_clear_click,
+        )
+        self.btn_youtube = ft.IconButton(
+            icon=ft.Icons.PLAY_CIRCLE_OUTLINE_ROUNDED,
+            tooltip=t("ribbon.btn_youtube"),
+            icon_size=18,
+            on_click=self._on_youtube_click,
         )
 
         # Backward compatibility references for tests and legacy callers
@@ -235,6 +243,7 @@ class RibbonBar(ft.Container):
                 self.btn_file_open,
                 self.btn_file_save,
                 self.btn_file_clear,
+                self.btn_youtube,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
@@ -413,6 +422,10 @@ class RibbonBar(ft.Container):
         if self.on_clear_editor:
             self.on_clear_editor(e)
 
+    def _on_youtube_click(self, e):
+        if self.on_import_youtube:
+            self.on_import_youtube(e)
+
     def _on_search_click(self, e):
         self.toggle_search()
 
@@ -519,6 +532,7 @@ class RibbonBar(ft.Container):
         self.btn_file_open.tooltip = t("ribbon.btn_open")
         self.btn_file_save.tooltip = t("ribbon.btn_save")
         self.btn_file_clear.tooltip = t("ribbon.btn_clear")
+        self.btn_youtube.tooltip = t("ribbon.btn_youtube")
         self.btn_tab_edit_search.tooltip = t("ribbon.btn_search")
 
         self.btn_tab_view_preview.tooltip = t("ribbon.tooltip_preview")
@@ -564,6 +578,7 @@ class RibbonBar(ft.Container):
             self.btn_file_open,
             self.btn_file_save,
             self.btn_file_clear,
+            self.btn_youtube,
             self.btn_tab_edit_search,
             self.btn_tab_view_preview,
             self.btn_tab_view_pathbar,

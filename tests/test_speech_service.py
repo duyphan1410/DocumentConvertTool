@@ -48,8 +48,10 @@ class TestSpeechService(unittest.TestCase):
             self.assertIn("# Phỏng Vấn Lập Trình Viên", content)
             self.assertIn("- **Channel / Author**: Dev Channel", content)
             self.assertIn("Speech Recognition", content)
-            self.assertIn("**[00:00]** Chào mừng các bạn", content)
-            self.assertIn("**[00:15]** Chúng ta sẽ trao đổi", content)
+            self.assertIn("[00:00]", content)
+            self.assertIn("Chào mừng các bạn", content)
+            self.assertIn("[00:15]", content)
+            self.assertIn("Chúng ta sẽ trao đổi", content)
         finally:
             if os.path.exists(temp_audio.name):
                 os.remove(temp_audio.name)

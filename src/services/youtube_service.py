@@ -213,6 +213,77 @@ def _fetch_via_ytdlp(
     return False, {}
 
 
+SENTENCE_END_RE = re.compile(r'[.!?。！？]["\'\)\]]*$')
+
+
+def _group_snippets_into_sentences(
+    snippets: List[dict],
+    group_interval_seconds: float = 15.0,
+    max_interval_seconds: float = 35.0,
+) -> Tuple[List[float], List[str]]:
+    """
+    Groups subtitle snippets into coherent paragraphs of complete sentences.
+    Ensures that a timestamp block completes full sentences (ending with . / ? / !)
+    before advancing to the next timestamp marker.
+    """
+    import html
+
+    if not snippets:
+        return [], []
+
+    timestamps = []
+    paragraph_list = []
+
+    curr_snippets = []
+    paragraph_start = None
+
+    for item in snippets:
+        raw_text = html.unescape(item.get("text", "")).strip()
+        if not raw_text:
+            continue
+        start = float(item.get("start", 0.0))
+
+        if paragraph_start is None:
+            paragraph_start = start
+
+        curr_snippets.append(raw_text)
+        duration = start - paragraph_start
+
+        # Check if the current snippet finishes a sentence
+        is_sentence_end = bool(SENTENCE_END_RE.search(raw_text))
+
+        # Advance to next timestamp if:
+        # 1. Full sentence completed AND duration >= group_interval_seconds
+        # 2. OR safety max interval reached (e.g. unpunctuated auto-subs) with at least 3 snippets
+        should_split = (is_sentence_end and duration >= group_interval_seconds) or (
+            duration >= max_interval_seconds and len(curr_snippets) >= 3
+        )
+
+        if should_split:
+            joined = re.sub(r"\s+", " ", " ".join(curr_snippets)).strip()
+            if joined:
+                if not SENTENCE_END_RE.search(joined):
+                    joined += "."
+                # Capitalize first character if lowercase
+                joined = joined[0].upper() + joined[1:] if len(joined) > 1 else joined.upper()
+                timestamps.append(paragraph_start)
+                paragraph_list.append(joined)
+
+            curr_snippets = []
+            paragraph_start = None
+
+    if curr_snippets:
+        joined = re.sub(r"\s+", " ", " ".join(curr_snippets)).strip()
+        if joined:
+            if not SENTENCE_END_RE.search(joined):
+                joined += "."
+            joined = joined[0].upper() + joined[1:] if len(joined) > 1 else joined.upper()
+            timestamps.append(paragraph_start if paragraph_start is not None else 0.0)
+            paragraph_list.append(joined)
+
+    return timestamps, paragraph_list
+
+
 def fetch_youtube_transcript(
     url_or_id: str,
     preferred_languages: Optional[List[str]] = None,
@@ -335,30 +406,10 @@ def fetch_youtube_transcript(
     if not snippets:
         return False, "", "ERR_NO_SUBTITLES", None
 
-    # Grouping snippets into coherent paragraphs
-    paragraph_list = []
-    timestamps = []
-    curr_paragraph = []
-    paragraph_start = None
-
-    for item in snippets:
-        text = item["text"]
-        start = item["start"]
-
-        if paragraph_start is None:
-            paragraph_start = start
-
-        curr_paragraph.append(text)
-
-        if (start - paragraph_start >= group_interval_seconds) or len(curr_paragraph) >= 5:
-            timestamps.append(paragraph_start)
-            paragraph_list.append(" ".join(curr_paragraph))
-            curr_paragraph = []
-            paragraph_start = None
-
-    if curr_paragraph:
-        timestamps.append(paragraph_start if paragraph_start is not None else 0.0)
-        paragraph_list.append(" ".join(curr_paragraph))
+    # Grouping snippets into coherent paragraphs of complete sentences
+    timestamps, paragraph_list = _group_snippets_into_sentences(
+        snippets, group_interval_seconds=group_interval_seconds
+    )
 
     # Apply batch auto-translation if required
     if needs_post_translation and paragraph_list:

@@ -451,6 +451,8 @@ class FileController:
         self.preview._cached_processed_text = processed_md
         self.preview.markdown.value = processed_md
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+        if hasattr(self.preview, "detect_youtube_video"):
+            self.preview.detect_youtube_video(draft_content)
         try:
             if self.preview.page:
                 self.preview.update()

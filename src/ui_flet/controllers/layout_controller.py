@@ -43,6 +43,11 @@ class LayoutController:
         if "close" in evt_name:
             _sync_geometry()
             self._safe_save_settings()
+            try:
+                from src.services.youtube_player import YouTubePlayerManager
+                YouTubePlayerManager.get_instance().close()
+            except Exception:
+                pass
             print(
                 f"[DEBUG][WINDOW] 💾 Đã lưu khi đóng app: "
                 f"width={self.state.window_width}, height={self.state.window_height}, "

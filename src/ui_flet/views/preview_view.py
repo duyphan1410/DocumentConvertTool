@@ -161,6 +161,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
         return ""
 
     content = clean_html_tags_for_preview(content)
+    content = process_markdown_timestamps(content)
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
@@ -395,6 +396,27 @@ class MarkdownPreview(ft.Container):
         except Exception:
             pass
 
+    def detect_youtube_video(self, markdown_text: str):
+        """Scans document text for YouTube video references and toggles Watch Video button visibility."""
+        if not markdown_text or not markdown_text.strip():
+            self._detected_video_id = None
+            self._detected_video_title = None
+            self.btn_watch_video.visible = False
+            return
+
+        vid_match = re.search(
+            r"(?:youtube\.com/watch\?v=|youtu\.be/|yt://)([a-zA-Z0-9_-]{11})", markdown_text
+        )
+        if vid_match:
+            self._detected_video_id = vid_match.group(1)
+            t_match = re.search(r"^#\s+(.+)$", markdown_text, re.MULTILINE)
+            self._detected_video_title = t_match.group(1).strip() if t_match else ""
+            self.btn_watch_video.visible = True
+        else:
+            self._detected_video_id = None
+            self._detected_video_title = None
+            self.btn_watch_video.visible = False
+
     def set_content(self, markdown_text: str, base_dir: str = None):
         """Updates preview with processed markdown content, using cache if text hasn't changed."""
         if not markdown_text or not markdown_text.strip():
@@ -402,27 +424,12 @@ class MarkdownPreview(ft.Container):
             self.markdown_text = ""
             self._last_raw_text = ""
             self._cached_processed_text = "*No content to preview.*"
-            self._detected_video_id = None
-            self._detected_video_title = None
-            self.btn_watch_video.visible = False
+            self.detect_youtube_video("")
         else:
             if markdown_text != self._last_raw_text:
                 self._last_raw_text = markdown_text
                 self._cached_processed_text = process_markdown_media(markdown_text, base_dir=base_dir)
-
-                # Detect YouTube video ID and title in document
-                vid_match = re.search(
-                    r"(?:youtube\.com/watch\?v=|youtu\.be/|yt://)([a-zA-Z0-9_-]{11})", markdown_text
-                )
-                if vid_match:
-                    self._detected_video_id = vid_match.group(1)
-                    t_match = re.search(r"^#\s+(.+)$", markdown_text, re.MULTILINE)
-                    self._detected_video_title = t_match.group(1).strip() if t_match else ""
-                    self.btn_watch_video.visible = True
-                else:
-                    self._detected_video_id = None
-                    self._detected_video_title = None
-                    self.btn_watch_video.visible = False
+                self.detect_youtube_video(markdown_text)
 
             self.markdown.value = self._cached_processed_text
 

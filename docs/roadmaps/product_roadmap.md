@@ -37,6 +37,18 @@
 
 ---
 
+### ✅ v1.7.2 Release (YouTube In-App Companion Player, Interactive Timestamps & WebView2 Optimization):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **In-App YouTube Companion Player** | `src/services/youtube_player.py` | Cửa sổ WebView2 (`540x335`, 16:9, Top-Left `x=24, y=65`), Local HTTP Bridge Server `127.0.0.1` chống Error 153, cờ `--autoplay-policy=no-user-gesture-required`. | ✅ Completed (v1.7.2) |
+| **Interactive Timestamps (`yt://...`)** | `src/ui_flet/views/preview_view.py` | Tự động phân tích mốc `[mm:ss]` thành link tương tác `[mm:ss](yt://<id>?t=sec)`, click để tua video trực tiếp trong app hoặc fallback trình duyệt. | ✅ Completed (v1.7.2) |
+| **Dynamic Win32 Window Focus (Non-Pinning)** | `src/services/youtube_player.py` | `on_top=False`, sử dụng `_force_window_foreground` với Win32 `AttachThreadInput` và `SetForegroundWindow` đưa cửa sổ lên đỉnh tức thì khi click timestamp. | ✅ Completed (v1.7.2) |
+| **Auto YouTube Draft Restoration** | `src/ui_flet/controllers/file_controller.py` | Nhận diện phụ đề YouTube khi nạp lại bản nháp khởi động, tự động bật nút `▶ Watch Video` và phân giải timestamp. | ✅ Completed (v1.7.2) |
+| **3-Layer Sync Auto-Close & PyInstaller Packaging** | `Document Converter.spec`, `run.py`, `layout_controller.py` | Đóng đồng bộ khi tắt app chính qua Window Event + `atexit` + `stdin` EOF; hỗ trợ chạy subprocess độc lập trong file `.exe`. | ✅ Completed (v1.7.2) |
+
+---
+
 ### 🔄 v1.8.0 Roadmap (Studio Workspace & Multi-Doc Architecture):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |

@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.7.1)
+# Document Converter Workspace (v1.7.2)
 
 ![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
 ![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.7.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.7.2-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, **HTML**, **JSON**, and **YAML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.7.1) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.7.2) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -42,15 +42,16 @@ Download the latest standalone executable (no Python installation required):
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 | **JSON (`.json`)** | ✅ | ✅ | Tabular array-to-table conversion, nested key-value formatting, fenced code blocks |
 | **YAML (`.yaml`, `.yml`)** | ✅ | ✅ | Structured tree formatting, pipe table conversion, safe PyYAML parsing |
-| **YouTube (`URL`)** | ✅ | — | Multi-tier subtitle extraction: Tier 1 Subtitles & Server-side Auto-Translate (0% CPU/RAM), Tier 2 Non-AI Speech Recognition Fallback (`SpeechRecognition` + `yt-dlp`), oEmbed video metadata & timestamps |
+| **YouTube (`URL`)** | ✅ | — | Multi-tier subtitle extraction: Tier 1 Subtitles & Server-side Auto-Translate (0% CPU/RAM), Tier 2 Non-AI Speech Recognition Fallback (`SpeechRecognition` + `yt-dlp`), oEmbed video metadata, interactive clickable timestamps & In-App Companion Player |
 
 ### 🎨 Modern Flet UI & Architecture
+* **In-App YouTube Companion Player**: Dedicated Edge WebView2 mini player (`540x335`, 16:9) with interactive clickable timestamp seeking (`yt://...`), local HTTP bridge server (Error 153 immune), instant unmuted autoplay, and Win32 Z-Index #1 focus elevation.
 * **3-Tier Pure MVC Architecture**: Clean decoupling between `Views`, `Controllers` (6 specialized controllers), `AppState`, and `Layout`.
 * **Simplified Single-Row Ribbon**: Ultra-compact 38–40px single-row ribbon with 100% Vector Icons, UX 4/8dp rhythm, and dynamic toggle visual states.
 * **Direct Markdown Export & Quick Download**: 1-click `[⬇]` save to `.md` from editor buffer, instant footer actions (`Open File`, `Open Folder`).
 * **Win32 Clipboard Integration**: Native Unicode-safe `CF_UNICODETEXT` reader with `Win + V` support and automatic URL detection.
 * **Production Error Handling & Modal System**: Standardized `DocumentError` domain exceptions (10 `ErrorCode`s), `ErrorMapper` stage context, and theme-aware `MessageDialog` modals with Error ID tracking and one-click copy.
-* **Single Responsibility Autosave Draft Protection**: Preserves `draft_autosave.md` safely across welcome screens, startup, and file loads; cancels pending timers before text clear.
+* **Single Responsibility Autosave Draft Protection**: Preserves `draft_autosave.md` safely across welcome screens, startup, and file loads; cancels pending timers before text clear; auto-detects YouTube transcripts on draft restore.
 * **Card-Grid Help & Documentation View**: 2-column card grid layout, comprehensive shortcut cheatsheet, quick Markdown syntax reference, and custom left-aligned FAQ accordion.
 * **Welcome Dashboard & Quick Open**: Instant onboarding card for new notes / quick document opening (`Ctrl+O`).
 * **Live Document Preview**: Real-time Base64 RAM cache & dynamic image scaling with zero UI freezing (`asyncio.to_thread`).
@@ -93,7 +94,8 @@ The output executable will be created at `dist/Document Converter.exe`.
 - **v1.6 — PowerPoint Engine, Universal Dynamic Focus & Browser Elevation**: Bi-directional PPTX ↔ MD engine (16:9 widescreen, auto-numbering, chart extraction, legend padding, slide overflow protection), 100% dynamic Win32 window focus & `AttachThreadInput` browser elevation.
 - **v1.6.5 — JSON & YAML Modules**: Bi-directional JSON ↔ MD & YAML ↔ MD conversion plugins (pipe table conversion, nested object tree formatting, code block fallback, safe PyYAML lazy loading).
 - **v1.6.6 — PDF Card Table Layout, Image Artifact Filter & High-Speed Pipeline**: N-column spatial card table router ($N=2..5$), hierarchy tree alignment, illustration pseudo-table linguistic guard, Polaroid blank core frame filter, button glow/halo filter, and thumbnail downsampling (20x faster).
-- **v1.7.0 — YouTube Extractor, Direct MD Export, Single-Row Ribbon & Studio UI (Current)**: Multi-tier YouTube Subtitle & Non-AI Speech Transcriber, direct Markdown file download (`[⬇]`) & save flow, Win32 Clipboard auto-fill (`Win + V`), simplified single-row Ribbon Bar (38–40px), dynamic toggle visual states, native directory picker dialogs, single-row File Path Bar, JSON/YAML multiline & escape sequence fixes, and card-grid Help View.
+- **v1.7.0 — YouTube Extractor, Direct MD Export, Single-Row Ribbon & Studio UI**: Multi-tier YouTube Subtitle & Non-AI Speech Transcriber, direct Markdown file download (`[⬇]`) & save flow, Win32 Clipboard auto-fill (`Win + V`), simplified single-row Ribbon Bar (38–40px), dynamic toggle visual states, native directory picker dialogs, single-row File Path Bar, JSON/YAML multiline & escape sequence fixes, and card-grid Help View.
+- **v1.7.2 — YouTube In-App Companion Player, Interactive Timestamps & WebView2 Optimization (Current)**: Embedded Microsoft Edge WebView2 Mini Player (`540x335`, 16:9) with clickable transcript timestamps (`yt://...`), local HTTP bridge server eliminating YouTube Error 153, instant unmuted autoplay (`--autoplay-policy=no-user-gesture-required`), Win32 dynamic focus elevation without permanent window pinning, auto YouTube draft detection, and 3-layer sync auto-close.
 
 > [!NOTE]
 > Detailed developer documentation, technical architecture summaries, and feature logs are organized in the [`docs/`](docs/) directory.

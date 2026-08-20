@@ -78,6 +78,141 @@ def fetch_video_metadata(video_id: str) -> dict:
     return meta
 
 
+def translate_paragraphs_batch(paragraphs: List[str], target_lang: str = "vi", chunk_size: int = 25) -> List[str]:
+    """
+    Translates a list of paragraphs to target_lang using Google Translate web service.
+    Batches requests using POST to avoid URL length limits and IP bans.
+    """
+    if not paragraphs or not target_lang or target_lang in ["auto", "raw"]:
+        return paragraphs
+
+    tl = "vi" if target_lang.lower().startswith("vi") else ("en" if target_lang.lower().startswith("en") else target_lang)
+    translated_all = []
+
+    try:
+        import urllib.request
+        import urllib.parse
+        import json
+
+        for i in range(0, len(paragraphs), chunk_size):
+            batch = paragraphs[i : i + chunk_size]
+            joined = "\n<<<SEG>>>\n".join(batch)
+            encoded = urllib.parse.quote(joined)
+
+            url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={tl}&dt=t"
+            req = urllib.request.Request(
+                url,
+                data=f"q={encoded}".encode("utf-8"),
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=8.0) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    translated_full = "".join([part[0] for part in data[0] if part and part[0]])
+                    parts = [p.strip() for p in translated_full.split("<<<SEG>>>")]
+                    if len(parts) == len(batch):
+                        translated_all.extend(parts)
+                    else:
+                        translated_all.extend(batch)
+            except Exception:
+                translated_all.extend(batch)
+        return translated_all
+    except Exception:
+        return paragraphs
+
+
+def _fetch_via_ytdlp(
+    video_id: str,
+    target_lang: str = "vi",
+) -> Tuple[bool, dict]:
+    """
+    Extracts subtitles/captions using yt-dlp with mobile client simulation.
+    Bypasses YouTube 429 IP rate-limits without requiring VPN / 1.1.1.1.
+    """
+    try:
+        import yt_dlp
+        import json
+    except ImportError:
+        return False, {}
+
+    ydl_opts = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "quiet": True,
+        "no_warnings": True,
+        "extractor_args": {"youtube": {"player_client": ["android", "ios"]}},
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            title = info.get("title", "")
+            channel = info.get("uploader") or info.get("channel") or ""
+
+            subs = info.get("subtitles") or {}
+            auto_subs = info.get("automatic_captions") or {}
+
+            # Candidate language list
+            candidates = []
+            # 1. Exact target match in manual subtitles
+            if target_lang in subs:
+                candidates.append((target_lang, subs[target_lang], False))
+            # 2. Other manual subtitles
+            for l, caps in subs.items():
+                if l != target_lang:
+                    candidates.append((l, caps, False))
+            # 3. Original auto captions (e.g. en-orig, en, vi-orig, vi)
+            for orig in ["en-orig", "en", "vi-orig", "vi", "ja", "ko", "zh"]:
+                if orig in auto_subs:
+                    candidates.append((orig, auto_subs[orig], True))
+            # 4. Any other auto caption
+            for l, caps in auto_subs.items():
+                if l not in [c[0] for c in candidates]:
+                    candidates.append((l, caps, True))
+
+            snippets = []
+            used_lang = ""
+            is_gen = False
+
+            for lang_code, caps, is_generated in candidates:
+                json3 = next((f for f in caps if f.get("ext") == "json3"), caps[0] if caps else None)
+                if not json3 or not json3.get("url"):
+                    continue
+                try:
+                    resp = ydl.urlopen(json3["url"])
+                    data = json.loads(resp.read().decode("utf-8"))
+                    raw_events = data.get("events", [])
+                    for ev in raw_events:
+                        start_sec = ev.get("tStartMs", 0) / 1000.0
+                        segs = ev.get("segs", [])
+                        text = "".join([s.get("utf8", "") for s in segs]).strip()
+                        if text and text != "\n":
+                            snippets.append({"start": start_sec, "text": text})
+                    if snippets:
+                        used_lang = lang_code
+                        is_gen = is_generated
+                        break
+                except Exception:
+                    continue
+
+            if snippets:
+                return True, {
+                    "title": title,
+                    "channel": channel,
+                    "lang": used_lang,
+                    "is_generated": is_gen,
+                    "snippets": snippets,
+                }
+    except Exception as e:
+        print(f"[DEBUG] yt-dlp subtitle extraction failed: {e}")
+
+    return False, {}
+
+
 def fetch_youtube_transcript(
     url_or_id: str,
     preferred_languages: Optional[List[str]] = None,
@@ -87,7 +222,8 @@ def fetch_youtube_transcript(
 ) -> Tuple[bool, str, Optional[str], Optional[str]]:
     """
     Fetches transcript from YouTube and formats it into Markdown.
-    Supports native multi-lingual transcripts and server-side Auto-Translate.
+    Supports multi-tiered fallback: YouTubeTranscriptApi -> yt-dlp Android/iOS client -> Auto-translation.
+    Eliminates IP-blocking (429/IpBoundException) directly in-software without requiring 1.1.1.1/VPN.
 
     Args:
         url_or_id: YouTube video URL or ID.
@@ -103,21 +239,21 @@ def fetch_youtube_transcript(
     if not video_id:
         return False, "", "ERR_INVALID_URL", None
 
-    # Lazy import third-party dependency
+    target_lang = preferred_languages[0] if preferred_languages else "vi"
+    lang_preferences = preferred_languages or ["vi", "en"]
+
+    snippets = []
+    video_title = ""
+    author_name = ""
+    lang_name = ""
+    lang_code = ""
+    type_str = ""
+    needs_post_translation = False
+
+    # Tier 1: Try youtube-transcript-api
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
-        from youtube_transcript_api._errors import (
-            TranscriptsDisabled,
-            NoTranscriptFound,
-            VideoUnavailable,
-            InvalidVideoId,
-            CouldNotRetrieveTranscript,
-        )
-    except ImportError as e:
-        return False, "", f"Missing dependency 'youtube-transcript-api': {e}", None
 
-    try:
-        # Fetch Video Title & Author
         meta = fetch_video_metadata(video_id)
         video_title = meta.get("title") or f"YouTube Video ({video_id})"
         author_name = meta.get("author") or ""
@@ -126,18 +262,14 @@ def fetch_youtube_transcript(
         transcript_list = ytt_api.list(video_id)
 
         target_transcript = None
-        target_lang = preferred_languages[0] if preferred_languages else "vi"
-        lang_preferences = preferred_languages or ["vi", "en"]
         is_translated = False
         original_lang_name = ""
 
-        # 1. Try finding direct match by preferred languages (manual or generated)
         try:
             target_transcript = transcript_list.find_transcript(lang_preferences)
         except Exception:
             target_transcript = None
 
-        # 2. If preferred language not found directly and auto-translate is allowed
         if not target_transcript and allow_auto_translate:
             for t in transcript_list:
                 if getattr(t, "is_translatable", False):
@@ -146,123 +278,121 @@ def fetch_youtube_transcript(
                         is_translated = True
                         original_lang_name = getattr(t, "language", getattr(t, "language_code", "foreign"))
                         break
-                    except Exception as ex_tr:
-                        print(f"[DEBUG] Translation to {target_lang} failed: {ex_tr}")
+                    except Exception:
+                        pass
 
-        # 3. Fallback to manually created transcripts in any language
         if not target_transcript:
             for t in transcript_list:
                 if not getattr(t, "is_generated", True):
                     target_transcript = t
                     break
 
-        # 4. Fallback to first available generated transcript
         if not target_transcript:
             for t in transcript_list:
                 target_transcript = t
                 break
 
-        if not target_transcript:
-            return False, "", "ERR_NO_SUBTITLES", None
+        if target_transcript:
+            fetched = target_transcript.fetch()
+            for item in fetched:
+                txt = getattr(item, "text", "")
+                if not txt and isinstance(item, dict):
+                    txt = item.get("text", "")
+                st = getattr(item, "start", 0.0)
+                if not st and isinstance(item, dict):
+                    st = item.get("start", 0.0)
+                if txt and str(txt).strip():
+                    snippets.append({"start": float(st), "text": str(txt).strip()})
 
-        # Fetch snippets
-        fetched = target_transcript.fetch()
-        lang_code = getattr(target_transcript, "language_code", target_lang if is_translated else "unknown")
-        lang_name = getattr(target_transcript, "language", lang_code)
-        is_gen = getattr(target_transcript, "is_generated", False)
-        
-        if is_translated:
-            type_str = f"Auto-translated from {original_lang_name}"
-        else:
+            lang_code = getattr(target_transcript, "language_code", target_lang if is_translated else "unknown")
+            lang_name = getattr(target_transcript, "language", lang_code)
+            is_gen = getattr(target_transcript, "is_generated", False)
+            if is_translated:
+                type_str = f"Auto-translated from {original_lang_name}"
+            else:
+                type_str = "Auto-generated" if is_gen else "Manual"
+    except Exception as e:
+        print(f"[DEBUG] youtube-transcript-api failed ({e}), falling back to yt-dlp engine...")
+
+    # Tier 2: Fallback to yt-dlp with mobile client spoofing (bypasses 429 IP bans)
+    if not snippets:
+        success_ydl, ydl_data = _fetch_via_ytdlp(video_id, target_lang=target_lang)
+        if success_ydl and ydl_data.get("snippets"):
+            snippets = ydl_data["snippets"]
+            if not video_title or video_title.startswith("YouTube Video"):
+                video_title = ydl_data.get("title") or video_title
+            if not author_name:
+                author_name = ydl_data.get("channel") or ""
+            lang_code = ydl_data.get("lang") or "unknown"
+            lang_name = lang_code
+            is_gen = ydl_data.get("is_generated", False)
             type_str = "Auto-generated" if is_gen else "Manual"
 
-        # Format into Markdown with clean Header and Title
-        md_lines = [
-            f"# {video_title}",
-            "",
-        ]
-        if author_name:
-            md_lines.append(f"- **Channel / Author**: {author_name}")
-        md_lines.extend([
-            f"- **Source URL**: https://www.youtube.com/watch?v={video_id}",
-            f"- **Language**: {lang_name} (`{lang_code}`) [{type_str}]",
-            "",
-            "---",
-            "",
-            "## Transcript",
-            "",
-        ])
+            # Check if post-translation is needed
+            if allow_auto_translate and target_lang in ["vi", "en"] and not lang_code.startswith(target_lang):
+                needs_post_translation = True
 
-        if not fetched:
-            return False, "", "ERR_EMPTY_SUBTITLES", lang_code
+    if not snippets:
+        return False, "", "ERR_NO_SUBTITLES", None
 
-        # Grouping snippets into coherent paragraphs with timestamps
-        if include_timestamps:
-            current_paragraph = []
-            curr_start = 0.0
+    # Grouping snippets into coherent paragraphs
+    paragraph_list = []
+    timestamps = []
+    curr_paragraph = []
+    paragraph_start = None
+
+    for item in snippets:
+        text = item["text"]
+        start = item["start"]
+
+        if paragraph_start is None:
+            paragraph_start = start
+
+        curr_paragraph.append(text)
+
+        if (start - paragraph_start >= group_interval_seconds) or len(curr_paragraph) >= 5:
+            timestamps.append(paragraph_start)
+            paragraph_list.append(" ".join(curr_paragraph))
+            curr_paragraph = []
             paragraph_start = None
 
-            for item in fetched:
-                text = getattr(item, "text", "")
-                if not text and isinstance(item, dict):
-                    text = item.get("text", "")
-                text = str(text).strip()
-                if not text:
-                    continue
+    if curr_paragraph:
+        timestamps.append(paragraph_start if paragraph_start is not None else 0.0)
+        paragraph_list.append(" ".join(curr_paragraph))
 
-                start = getattr(item, "start", 0.0)
-                if not start and isinstance(item, dict):
-                    start = item.get("start", 0.0)
+    # Apply batch auto-translation if required
+    if needs_post_translation and paragraph_list:
+        orig_lang_tag = lang_name or lang_code
+        paragraph_list = translate_paragraphs_batch(paragraph_list, target_lang=target_lang)
+        target_display = "Vietnamese (vi)" if target_lang.startswith("vi") else "English (en)"
+        type_str = f"Auto-translated to {target_display} from {orig_lang_tag}"
+        lang_name = target_display
+        lang_code = target_lang
 
-                if paragraph_start is None:
-                    paragraph_start = start
+    # Format Markdown document
+    md_lines = [
+        f"# {video_title}",
+        "",
+    ]
+    if author_name:
+        md_lines.append(f"- **Channel / Author**: {author_name}")
+    md_lines.extend([
+        f"- **Source URL**: https://www.youtube.com/watch?v={video_id}",
+        f"- **Language**: {lang_name} (`{lang_code}`) [{type_str}]",
+        "",
+        "---",
+        "",
+        "## Transcript",
+        "",
+    ])
 
-                current_paragraph.append(text)
-
-                # Group by interval or newline threshold
-                if (start - paragraph_start >= group_interval_seconds) or len(current_paragraph) >= 5:
-                    ts_str = format_timestamp(paragraph_start)
-                    paragraph_text = " ".join(current_paragraph)
-                    md_lines.append(f"**[{ts_str}]** {paragraph_text}\n")
-                    current_paragraph = []
-                    paragraph_start = None
-
-            if current_paragraph:
-                ts_str = format_timestamp(paragraph_start if paragraph_start is not None else 0.0)
-                paragraph_text = " ".join(current_paragraph)
-                md_lines.append(f"**[{ts_str}]** {paragraph_text}\n")
+    for ts, p_text in zip(timestamps, paragraph_list):
+        if include_timestamps:
+            ts_str = format_timestamp(ts)
+            sec = int(ts)
+            md_lines.append(f"**[[{ts_str}]](yt://{video_id}?t={sec})** {p_text}\n")
         else:
-            # Plain paragraphs without timestamps
-            current_paragraph = []
-            for item in fetched:
-                text = getattr(item, "text", "")
-                if not text and isinstance(item, dict):
-                    text = item.get("text", "")
-                text = str(text).strip()
-                if not text:
-                    continue
+            md_lines.append(f"{p_text}\n")
 
-                current_paragraph.append(text)
-                if len(current_paragraph) >= 6:
-                    md_lines.append(" ".join(current_paragraph) + "\n")
-                    current_paragraph = []
-
-            if current_paragraph:
-                md_lines.append(" ".join(current_paragraph) + "\n")
-
-        markdown_output = "\n".join(md_lines)
-        return True, markdown_output, None, lang_code
-
-    except (TranscriptsDisabled, NoTranscriptFound):
-        return False, "", "ERR_NO_SUBTITLES", None
-    except VideoUnavailable:
-        return False, "", "ERR_VIDEO_UNAVAILABLE", None
-    except InvalidVideoId:
-        return False, "", "ERR_INVALID_VIDEO_ID", None
-    except CouldNotRetrieveTranscript as e:
-        return False, "", f"ERR_RETRIEVE_FAILED: {str(e)}", None
-    except Exception as e:
-        err_str = str(e).lower()
-        if "no transcript" in err_str or "subtitles are disabled" in err_str or "transcriptsdisabled" in err_str:
-            return False, "", "ERR_NO_SUBTITLES", None
-        return False, "", f"ERR_UNKNOWN: {str(e)}", None
+    markdown_output = "\n".join(md_lines)
+    return True, markdown_output, None, lang_code

@@ -44,8 +44,9 @@ class TestYouTubeService(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(error, "ERR_INVALID_URL")
 
+    @patch("src.services.youtube_service._fetch_via_ytdlp", return_value=(False, {}))
     @patch("youtube_transcript_api.YouTubeTranscriptApi")
-    def test_fetch_youtube_transcript_no_subtitles(self, mock_api_cls):
+    def test_fetch_youtube_transcript_no_subtitles(self, mock_api_cls, mock_ytdlp):
         from youtube_transcript_api._errors import NoTranscriptFound
 
         mock_instance = MagicMock()
@@ -66,8 +67,8 @@ class TestYouTubeService(unittest.TestCase):
         mock_transcript.language = "Vietnamese"
         mock_transcript.is_generated = False
         mock_transcript.fetch.return_value = [
-            {"text": "Xin chào các bạn", "start": 0.5, "duration": 2.0},
-            {"text": "Hôm nay chúng ta cùng học Python", "start": 3.0, "duration": 3.0},
+            {"text": "Xin chào các bạn.", "start": 0.5, "duration": 2.0},
+            {"text": "Hôm nay chúng ta cùng học Python.", "start": 3.0, "duration": 3.0},
         ]
 
         mock_transcript_list = MagicMock()
@@ -79,8 +80,8 @@ class TestYouTubeService(unittest.TestCase):
         )
         self.assertTrue(success)
         self.assertEqual(lang, "vi")
-        self.assertIn("Xin chào các bạn", content)
-        self.assertIn("**[00:00]**", content)
+        self.assertIn("Xin chào các bạn.", content)
+        self.assertIn("[00:00]", content)
 
     @patch("youtube_transcript_api.YouTubeTranscriptApi")
     def test_fetch_youtube_transcript_auto_translate(self, mock_api_cls):
@@ -97,7 +98,7 @@ class TestYouTubeService(unittest.TestCase):
         mock_vi_translated.language_code = "vi"
         mock_vi_translated.language = "Vietnamese"
         mock_vi_translated.fetch.return_value = [
-            {"text": "Bản dịch tiếng Việt tự động", "start": 1.0, "duration": 2.0}
+            {"text": "Bản dịch tiếng Việt tự động.", "start": 1.0, "duration": 2.0}
         ]
         mock_en_transcript.translate.return_value = mock_vi_translated
 
@@ -112,7 +113,7 @@ class TestYouTubeService(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(lang, "vi")
         self.assertIn("Auto-translated from English", content)
-        self.assertIn("Bản dịch tiếng Việt tự động", content)
+        self.assertIn("Bản dịch tiếng Việt tự động.", content)
 
     @patch("urllib.request.urlopen")
     def test_fetch_video_metadata(self, mock_urlopen):
@@ -130,6 +131,37 @@ class TestYouTubeService(unittest.TestCase):
         meta = fetch_video_metadata("dQw4w9WgXcQ")
         self.assertEqual(meta["title"], "Learn Python in 10 Minutes")
         self.assertEqual(meta["author"], "Tech Channel")
+
+    def test_group_snippets_complete_sentence_rule(self):
+        from src.services.youtube_service import _group_snippets_into_sentences
+
+        # Snippets where sentence 1 finishes at 6.0s (ends with '.')
+        # and sentence 2 finishes at 16.0s (>= 15s interval)
+        snippets = [
+            {"start": 0.0, "text": "Xin chào"},
+            {"start": 2.0, "text": "các bạn,"},
+            {"start": 4.0, "text": "chúc mọi người"},
+            {"start": 6.0, "text": "một ngày tốt lành."},  # Sentence 1 ends
+            {"start": 10.0, "text": "Hôm nay"},
+            {"start": 12.0, "text": "chúng ta sẽ học"},
+            {"start": 16.0, "text": "lập trình Python."},  # Sentence 2 ends (duration 16.0 >= 15s)
+            {"start": 20.0, "text": "Bắt đầu ngay thôi nào!"},  # Sentence 3
+        ]
+
+        timestamps, paragraphs = _group_snippets_into_sentences(snippets, group_interval_seconds=15.0)
+
+        # Paragraph 1 should include all of sentence 1 and sentence 2, ending with '.'
+        self.assertEqual(len(timestamps), 2)
+        self.assertEqual(timestamps[0], 0.0)
+        self.assertEqual(
+            paragraphs[0],
+            "Xin chào các bạn, chúc mọi người một ngày tốt lành. Hôm nay chúng ta sẽ học lập trình Python."
+        )
+        self.assertTrue(paragraphs[0].endswith("."))
+
+        # Paragraph 2 starts at 20.0s
+        self.assertEqual(timestamps[1], 20.0)
+        self.assertEqual(paragraphs[1], "Bắt đầu ngay thôi nào!")
 
 
 if __name__ == "__main__":

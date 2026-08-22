@@ -8,7 +8,7 @@ import sys
 from src.main import main
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--youtube-player":
+    if "--youtube-player" in sys.argv:
         from src.services.youtube_player import _run_player_subprocess
         _run_player_subprocess()
     else:

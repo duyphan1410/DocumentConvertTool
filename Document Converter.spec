@@ -85,6 +85,10 @@ hiddenimports = [
     'speech_recognition',
     'yt_dlp',
     'webview',
+    'webview.platforms.winforms',
+    'webview.platforms.edgechromium',
+    'webview.platforms.win32',
+    'webview.platforms.mshtml',
     'clr',
     'pythonnet',
 ]

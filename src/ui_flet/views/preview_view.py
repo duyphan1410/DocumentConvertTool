@@ -17,11 +17,14 @@ import pathlib
 import flet as ft
 from src.i18n import t
 
+import threading
 from src.services.media_asset_manager import MediaAssetManager
 
 _BASE64_CACHE: dict[str, str] = {}
 MAX_MERMAID_CACHE_SIZE = 128
 _MERMAID_CACHE: collections.OrderedDict[tuple[str, bool], str] = collections.OrderedDict()
+_MERMAID_CACHE_LOCK = threading.Lock()
+_CLOUD_FETCH_SEMAPHORE = threading.Semaphore(3)
 
 
 def encode_mermaid_payload(code: str, is_dark: bool = False, palette_name: str = "Violet Cyberpunk") -> str:
@@ -51,9 +54,10 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
         return f"```mermaid\n{code}\n```"
 
     cache_key = (clean_code, is_dark, palette_name)
-    if cache_key in _MERMAID_CACHE:
-        _MERMAID_CACHE.move_to_end(cache_key)
-        return _MERMAID_CACHE[cache_key]
+    with _MERMAID_CACHE_LOCK:
+        if cache_key in _MERMAID_CACHE:
+            _MERMAID_CACHE.move_to_end(cache_key)
+            return _MERMAID_CACHE[cache_key]
 
     # Tier 1: Check for local mmdc (Mermaid CLI)
     mmdc_path = shutil.which("mmdc")
@@ -89,9 +93,10 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
                     except Exception:
                         pass
 
-                if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
-                    _MERMAID_CACHE.popitem(last=False)
-                _MERMAID_CACHE[cache_key] = md_img
+                with _MERMAID_CACHE_LOCK:
+                    if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                        _MERMAID_CACHE.popitem(last=False)
+                    _MERMAID_CACHE[cache_key] = md_img
                 return md_img
         except Exception as e:
             print(f"[DEBUG] Local mmdc render failed: {e}, falling back to cloud/code block...")
@@ -108,31 +113,37 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
             img_url = f"https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex}"
             req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             
-            with urllib.request.urlopen(req, timeout=5) as res:
-                if res.status == 200:
-                    png_bytes = res.read()
-                    png_b64 = base64.b64encode(png_bytes).decode("ascii")
-                    data_uri = f"data:image/png;base64,{png_b64}"
-                    md_img = f"![Mermaid Diagram]({data_uri})"
+            with _CLOUD_FETCH_SEMAPHORE:
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    if res.status == 200:
+                        png_bytes = res.read()
+                        png_b64 = base64.b64encode(png_bytes).decode("ascii")
+                        data_uri = f"data:image/png;base64,{png_b64}"
+                        md_img = f"![Mermaid Diagram]({data_uri})"
 
-                    if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
-                        _MERMAID_CACHE.popitem(last=False)
-                    _MERMAID_CACHE[cache_key] = md_img
-                    return md_img
+                        with _MERMAID_CACHE_LOCK:
+                            if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                                _MERMAID_CACHE.popitem(last=False)
+                            _MERMAID_CACHE[cache_key] = md_img
+                        return md_img
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="ignore").strip()
             first_err_line = err_body.split("\n")[0] if err_body else f"HTTP {e.code}"
             fallback_res = f"> ⚠️ **Mermaid Syntax Error**: `{first_err_line[:90]}`\n\n```mermaid\n{code}\n```"
-            if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
-                _MERMAID_CACHE.popitem(last=False)
-            _MERMAID_CACHE[cache_key] = fallback_res
+            with _MERMAID_CACHE_LOCK:
+                if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                    _MERMAID_CACHE.popitem(last=False)
+                _MERMAID_CACHE[cache_key] = fallback_res
             return fallback_res
         except Exception as e:
             print(f"[DEBUG] Mermaid payload fetch failed: {e}")
-            # Fallback to direct URL if network timeout on fetch
-            encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
-            md_img = f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
-            return md_img
+            try:
+                # Fallback to direct URL if network timeout on fetch
+                encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
+                md_img = f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
+                return md_img
+            except Exception:
+                return f"```mermaid\n{code}\n```"
 
     # Tier 3: Fallback keep code block
     return f"```mermaid\n{code}\n```"
@@ -140,19 +151,45 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
 
 def process_markdown_mermaid(content: str, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud: bool = True) -> str:
     """
-    Intercepts ```mermaid ... ``` code blocks in markdown and transforms them
-    into renderable diagram image tags for Flet ft.Markdown.
+    Intercepts ```mermaid ... ``` code blocks in markdown and renders them in parallel.
+    Uses adaptive worker pool: up to 8 workers for local mmdc CLI, or 3-4 workers for cloud endpoint.
+    Cloud requests are strictly throttled to 3 concurrent connections via _CLOUD_FETCH_SEMAPHORE.
     """
     if not content or "```mermaid" not in content.lower():
         return content
 
     mermaid_pattern = r"(?<!`)(?:`{3,4})mermaid[^\n]*\n([\s\S]*?)\n\s*(?:`{3,4})"
+    matches = list(re.finditer(mermaid_pattern, content))
+    if not matches:
+        return content
 
-    def replace_mermaid_match(match):
-        diagram_code = match.group(1)
-        return render_mermaid_diagram(diagram_code, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud)
+    import concurrent.futures
+    has_mmdc = shutil.which("mmdc") is not None
+    max_workers = min(8, os.cpu_count() or 4) if has_mmdc else 3
 
-    return re.sub(mermaid_pattern, replace_mermaid_match, content)
+    codes = [m.group(1) for m in matches]
+    results = [None] * len(codes)
+
+    def _worker(item):
+        idx, code = item
+        try:
+            return idx, render_mermaid_diagram(code, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud)
+        except Exception as e:
+            print(f"[DEBUG] Mermaid worker failed for diagram {idx}: {e}")
+            return idx, f"```mermaid\n{code}\n```"
+
+    t0 = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for idx, rendered in executor.map(_worker, enumerate(codes)):
+            results[idx] = rendered
+    print(f"[DEBUG] Mermaid: rendered {len(codes)} diagram(s) in {time.time()-t0:.2f}s (workers={max_workers}, mmdc={has_mmdc})")
+
+    result = content
+    for m, rendered in zip(reversed(matches), reversed(results)):
+        result = result[:m.start()] + rendered + result[m.end():]
+    return result
+
+
 
 
 def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85) -> str:
@@ -596,10 +633,30 @@ class MarkdownPreview(ft.Container):
         self._palette_name = palette_name
 
         if theme_changed and self._last_raw_text and "```mermaid" in self._last_raw_text.lower():
-            self._cached_processed_text = process_markdown_media(
-                self._last_raw_text, base_dir=self._base_dir, is_dark=self._is_dark, palette_name=self._palette_name
-            )
-            self.markdown.value = self._cached_processed_text
+            # Run Mermaid diagram re-rendering asynchronously in background thread so UI never freezes
+            raw_text = self._last_raw_text
+            base_dir = self._base_dir
+            cur_dark = self._is_dark
+            cur_palette = self._palette_name
+
+            def _bg_rerender():
+                try:
+                    processed = process_markdown_media(
+                        raw_text, base_dir=base_dir, is_dark=cur_dark, palette_name=cur_palette
+                    )
+                    # Only apply if user hasn't switched theme again in the meantime
+                    if self._is_dark == cur_dark and self._palette_name == cur_palette:
+                        self._cached_processed_text = processed
+                        self.markdown.value = processed
+                        try:
+                            if self.markdown.page:
+                                self.markdown.update()
+                        except Exception:
+                            pass
+                except Exception as ex:
+                    print(f"[DEBUG] Background mermaid re-render failed: {ex}")
+
+            threading.Thread(target=_bg_rerender, daemon=True).start()
 
         from src.ui_flet.theme import resolve_color, get_style_color
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)

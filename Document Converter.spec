@@ -93,14 +93,15 @@ hiddenimports = [
     'pythonnet',
 ]
 
-# Collect binaries & data assets for pywebview
-try:
-    tmp_webview = collect_all('webview')
-    datas += tmp_webview[0]
-    binaries += tmp_webview[1]
-    hiddenimports += tmp_webview[2]
-except Exception:
-    pass
+# Collect binaries & data assets for pywebview & pythonnet (.NET bridge)
+for pkg in ['webview', 'pythonnet']:
+    try:
+        tmp_pkg = collect_all(pkg)
+        datas += tmp_pkg[0]
+        binaries += tmp_pkg[1]
+        hiddenimports += tmp_pkg[2]
+    except Exception:
+        pass
 
 # Collect binaries & data assets for Flet Desktop framework
 tmp_ret = collect_all('flet')
@@ -181,15 +182,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='Document Converter',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -198,3 +197,13 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets/icons/app_icon.ico'],
 )
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name='Document Converter',
+)
+

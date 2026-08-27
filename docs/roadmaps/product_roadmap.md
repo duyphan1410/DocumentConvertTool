@@ -68,7 +68,7 @@
 | **Manual Wikilink `[[...]]`** | `src/services/link_parser.py` | Cú pháp `[[Tên File]]` tách biệt với link markdown cũ; Fuzzy Match (lowercase, bỏ dấu tiếng Việt `NFD`, trim space); In-memory graph index. | 🔮 Planned (v2.0) |
 | **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng màu cảnh báo / gạch chân; hỗ trợ Click để tự động tạo file `.md` mới trong workspace. | 🔮 Planned (v2.0) |
 | **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel thanh bên hiển thị danh sách các tài liệu đang dẫn liên kết tới tài liệu hiện hành. | 🔮 Planned (v2.0) |
-| **Folder Mode (`--onedir`) & Inno Setup Installer** | `Document Converter.spec` / Packaging | Chuyển đổi đóng gói từ Single-file (`--onefile`) sang Thư mục (`--onedir`) kết hợp bộ tạo cài đặt Inno Setup (`Setup.exe`) giúp tối ưu thời gian khởi động ứng dụng. | 🔮 Planned (v2.0) |
+| **Folder Mode (`--onedir`) & Inno Setup 7 Installer** | `Document Converter.spec` / `installer/` | Chuyển đổi đóng gói sang Thư mục (`--onedir`) kết hợp bộ cài đặt Inno Setup 7 (`Setup.exe`), khởi động tức thì < 1s, phân quyền `%LocalAppData%\Programs`. | ✅ Completed (v1.7.2) |
 
 ---
 
@@ -93,13 +93,14 @@
 python run.py
 ```
 
-### 2. Đóng gói file `.exe` thương mại bằng PyInstaller:
+### 2. Đóng gói bộ cài đặt tự động 1-Click (PyInstaller `--onedir` + Inno Setup 7):
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
+```
+Tự động xuất ra thư mục `--onedir` tại `dist/Document Converter/` và file cài đặt tại `dist/installer/Document_Converter_Setup_v1.7.2.exe`.
+
+### 3. Đóng gói thủ công bằng PyInstaller:
 ```powershell
 python -m PyInstaller "Document Converter.spec"
 ```
-File thực thi duy nhất sẽ được tạo tại: **`dist/Document Converter.exe`**.
 
-### 3. Đóng gói bằng Flet Pack CLI:
-```powershell
-flet pack run.py --name "Document Converter" --icon favicon.ico --windowed
-```

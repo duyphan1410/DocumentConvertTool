@@ -76,12 +76,16 @@ pip install -r requirements.txt
 python run.py
 ```
 
-### Packaging Executable (PyInstaller)
+### Packaging & Installer (PyInstaller + Inno Setup 7)
 
 ```powershell
+# 1-Click Automated Build (PyInstaller --onedir + Inno Setup 7 Setup.exe)
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
+
+# Or manual PyInstaller --onedir build
 python -m PyInstaller "Document Converter.spec"
 ```
-The output executable will be created at `dist/Document Converter.exe`.
+The standalone desktop bundle will be generated at `dist/Document Converter/` and the Windows installer at `dist/installer/Document_Converter_Setup_v1.7.2.exe`.
 
 ---
 
@@ -95,7 +99,8 @@ The output executable will be created at `dist/Document Converter.exe`.
 - **v1.6.5 — JSON & YAML Modules**: Bi-directional JSON ↔ MD & YAML ↔ MD conversion plugins (pipe table conversion, nested object tree formatting, code block fallback, safe PyYAML lazy loading).
 - **v1.6.6 — PDF Card Table Layout, Image Artifact Filter & High-Speed Pipeline**: N-column spatial card table router ($N=2..5$), hierarchy tree alignment, illustration pseudo-table linguistic guard, Polaroid blank core frame filter, button glow/halo filter, and thumbnail downsampling (20x faster).
 - **v1.7.0 — YouTube Extractor, Direct MD Export, Single-Row Ribbon & Studio UI**: Multi-tier YouTube Subtitle & Non-AI Speech Transcriber, direct Markdown file download (`[⬇]`) & save flow, Win32 Clipboard auto-fill (`Win + V`), simplified single-row Ribbon Bar (38–40px), dynamic toggle visual states, native directory picker dialogs, single-row File Path Bar, JSON/YAML multiline & escape sequence fixes, and card-grid Help View.
-- **v1.7.2 — YouTube In-App Companion Player, Interactive Timestamps & WebView2 Optimization (Current)**: Embedded Microsoft Edge WebView2 Mini Player (`540x335`, 16:9) with clickable transcript timestamps (`yt://...`), local HTTP bridge server eliminating YouTube Error 153, instant unmuted autoplay (`--autoplay-policy=no-user-gesture-required`), Win32 dynamic focus elevation without permanent window pinning, auto YouTube draft detection, and 3-layer sync auto-close.
+- **v1.7.2 — YouTube Companion Player & Inno Setup 7 Desktop Installer (Current)**: Embedded Microsoft Edge WebView2 Mini Player (`540x335`, 16:9) with clickable transcript timestamps (`yt://...`), local HTTP bridge server eliminating YouTube Error 153, instant unmuted autoplay, Win32 dynamic focus elevation, auto YouTube draft detection, and Inno Setup 7 modern installer (`--onedir`, `< 1s` instant launch, non-admin `%LocalAppData%\Programs` support).
+
 
 > [!NOTE]
 > Detailed developer documentation, technical architecture summaries, and feature logs are organized in the [`docs/`](docs/) directory.

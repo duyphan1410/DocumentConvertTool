@@ -78,7 +78,7 @@
 | :--- | :--- | :--- | :---: |
 | **Audio/Video Speech Transcriber** | `src/services/speech_service.py` | Plugin Whisper AI trích xuất giọng nói từ video `.mp4` và audio `.mp3` thành văn bản Markdown ghi chú cuộc họp. | ⏳ Planned |
 | **EPub eBook Engine (`.epub`)** | `src/modules/epub_module.py` | Đọc và đóng gói sách điện tử `.epub` hai chiều với Markdown (`EPUB ↔ MD`). | ⏳ Planned |
-| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ⏳ Planned |
+| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Hybrid Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ✅ Available |
 | **Image Settings Dialog & Format Tab** | `src/ui_flet/views/editor_view.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh Width/Height HTML) và bổ sung Contextual Format Tab trên thanh Ribbon Bar khi thao tác với hình ảnh. | ⏳ Planned |
 | **Recent Files History** | `src/ui_flet/views/welcome_view.py` | Lưu danh sách tệp vừa mở gần đây (Recent Documents) để mở lại nhanh từ Welcome Dashboard. | ⏳ Planned |
 | **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết thông minh giữa các ghi chú dựa trên Semantic Embeddings / Local Vector Search. | ⏳ Planned |

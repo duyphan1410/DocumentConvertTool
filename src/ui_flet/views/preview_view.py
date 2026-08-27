@@ -6,6 +6,11 @@ via MediaAssetManager, and embeds local images as base64 data URIs.
 import os
 import re
 import base64
+import json
+import shutil
+import subprocess
+import tempfile
+import collections
 import mimetypes
 import time
 import pathlib
@@ -15,6 +20,139 @@ from src.i18n import t
 from src.services.media_asset_manager import MediaAssetManager
 
 _BASE64_CACHE: dict[str, str] = {}
+MAX_MERMAID_CACHE_SIZE = 128
+_MERMAID_CACHE: collections.OrderedDict[tuple[str, bool], str] = collections.OrderedDict()
+
+
+def encode_mermaid_payload(code: str, is_dark: bool = False, palette_name: str = "Violet Cyberpunk") -> str:
+    """Encodes mermaid diagram text and unified palette theme config to base64 json format for mermaid.ink."""
+    from src.ui_flet.theme import get_diagram_theme_variables
+    theme_vars = get_diagram_theme_variables(palette_name=palette_name, is_dark=is_dark)
+    payload = {
+        "code": code,
+        "mermaid": {
+            "theme": "base",
+            "themeVariables": theme_vars
+        }
+    }
+    json_str = json.dumps(payload)
+    return base64.b64encode(json_str.encode("utf-8")).decode("ascii")
+
+
+def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud: bool = True) -> str:
+    """
+    Renders mermaid code into a markdown image tag.
+    Tier 1: Local `mmdc` CLI if available -> base64 PNG data URI with unified diagram theme.
+    Tier 2: Cloud `mermaid.ink` fetched to fast base64 PNG data URI (zero network latency in Flutter UI).
+    Tier 3 / Fallback: Gracefully returns code block with syntax error message if invalid.
+    """
+    clean_code = code.strip()
+    if not clean_code:
+        return f"```mermaid\n{code}\n```"
+
+    cache_key = (clean_code, is_dark, palette_name)
+    if cache_key in _MERMAID_CACHE:
+        _MERMAID_CACHE.move_to_end(cache_key)
+        return _MERMAID_CACHE[cache_key]
+
+    # Tier 1: Check for local mmdc (Mermaid CLI)
+    mmdc_path = shutil.which("mmdc")
+    if mmdc_path:
+        try:
+            from src.ui_flet.theme import get_diagram_theme_variables
+            theme_vars = get_diagram_theme_variables(palette_name=palette_name, is_dark=is_dark)
+            cfg_dict = {"theme": "base", "themeVariables": theme_vars}
+            bg_color = theme_vars.get("background", "#181a22" if is_dark else "#ffffff")
+
+            with tempfile.NamedTemporaryFile(suffix=".mmd", mode="w", encoding="utf-8", delete=False) as in_f, \
+                 tempfile.NamedTemporaryFile(suffix=".json", mode="w", encoding="utf-8", delete=False) as cfg_f, \
+                 tempfile.NamedTemporaryFile(suffix=".png", mode="r", encoding="utf-8", delete=False) as out_f:
+                in_f.write(clean_code)
+                cfg_f.write(json.dumps(cfg_dict))
+                in_path = in_f.name
+                cfg_path = cfg_f.name
+                out_path = out_f.name
+
+            cmd = [mmdc_path, "-i", in_path, "-o", out_path, "-c", cfg_path, "-b", bg_color]
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
+
+            if result.returncode == 0 and os.path.exists(out_path):
+                with open(out_path, "rb") as f:
+                    png_bytes = f.read()
+                png_b64 = base64.b64encode(png_bytes).decode("ascii")
+                data_uri = f"data:image/png;base64,{png_b64}"
+                md_img = f"![Mermaid Diagram]({data_uri})"
+
+                for p in (in_path, cfg_path, out_path):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+                if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                    _MERMAID_CACHE.popitem(last=False)
+                _MERMAID_CACHE[cache_key] = md_img
+                return md_img
+        except Exception as e:
+            print(f"[DEBUG] Local mmdc render failed: {e}, falling back to cloud/code block...")
+
+    # Tier 2: Cloud mermaid.ink endpoint
+    if enable_cloud:
+        import urllib.request
+        import urllib.error
+        from src.ui_flet.theme import get_diagram_theme_variables
+        theme_vars = get_diagram_theme_variables(palette_name=palette_name, is_dark=is_dark)
+        bg_hex = theme_vars.get("background", "181a22" if is_dark else "ffffff").lstrip("#")
+        try:
+            encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
+            img_url = f"https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex}"
+            req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            
+            with urllib.request.urlopen(req, timeout=5) as res:
+                if res.status == 200:
+                    png_bytes = res.read()
+                    png_b64 = base64.b64encode(png_bytes).decode("ascii")
+                    data_uri = f"data:image/png;base64,{png_b64}"
+                    md_img = f"![Mermaid Diagram]({data_uri})"
+
+                    if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                        _MERMAID_CACHE.popitem(last=False)
+                    _MERMAID_CACHE[cache_key] = md_img
+                    return md_img
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore").strip()
+            first_err_line = err_body.split("\n")[0] if err_body else f"HTTP {e.code}"
+            fallback_res = f"> ⚠️ **Mermaid Syntax Error**: `{first_err_line[:90]}`\n\n```mermaid\n{code}\n```"
+            if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
+                _MERMAID_CACHE.popitem(last=False)
+            _MERMAID_CACHE[cache_key] = fallback_res
+            return fallback_res
+        except Exception as e:
+            print(f"[DEBUG] Mermaid payload fetch failed: {e}")
+            # Fallback to direct URL if network timeout on fetch
+            encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
+            md_img = f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
+            return md_img
+
+    # Tier 3: Fallback keep code block
+    return f"```mermaid\n{code}\n```"
+
+
+def process_markdown_mermaid(content: str, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud: bool = True) -> str:
+    """
+    Intercepts ```mermaid ... ``` code blocks in markdown and transforms them
+    into renderable diagram image tags for Flet ft.Markdown.
+    """
+    if not content or "```mermaid" not in content.lower():
+        return content
+
+    mermaid_pattern = r"(?<!`)(?:`{3,4})mermaid[^\n]*\n([\s\S]*?)\n\s*(?:`{3,4})"
+
+    def replace_mermaid_match(match):
+        diagram_code = match.group(1)
+        return render_mermaid_diagram(diagram_code, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud)
+
+    return re.sub(mermaid_pattern, replace_mermaid_match, content)
 
 
 def image_to_base64_uri(file_path: str, max_width: int = 1000, quality: int = 85) -> str:
@@ -110,9 +248,9 @@ def process_markdown_timestamps(content: str) -> str:
     return content
 
 
-def process_markdown_media(content: str, base_dir: str = None) -> str:
+def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud_mermaid: bool = True) -> str:
     """
-    Parses Markdown content, resolves virtual URIs (such as @media/image.png)
+    Parses Markdown content, intercepts Mermaid diagram blocks, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
     Also links interactive YouTube timestamps.
     """
@@ -121,6 +259,7 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
 
     content = clean_html_tags_for_preview(content)
     content = process_markdown_timestamps(content)
+    content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
     img_count = 0
@@ -152,9 +291,9 @@ def process_markdown_media(content: str, base_dir: str = None) -> str:
     return result
 
 
-async def process_markdown_media_async(content: str, base_dir: str = None, progress_callback=None) -> str:
+async def process_markdown_media_async(content: str, base_dir: str = None, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud_mermaid: bool = True, progress_callback=None) -> str:
     """
-    Asynchronously parses Markdown content and converts images to base64.
+    Asynchronously parses Markdown content, intercepts Mermaid diagrams, and converts images to base64.
     Yields control back to the asyncio loop between images so Flet UI animations remain smooth.
     """
     if not content:
@@ -162,6 +301,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
 
     content = clean_html_tags_for_preview(content)
     content = process_markdown_timestamps(content)
+    content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
@@ -215,6 +355,9 @@ class MarkdownPreview(ft.Container):
         self._cached_processed_text = None
         self._detected_video_id = None
         self._detected_video_title = None
+        self._is_dark = False
+        self._palette_name = "Violet Cyberpunk"
+        self._base_dir = None
 
         # Header elements — owned by MarkdownPreview for palette sync
         self.header_icon = ft.Icon(ft.Icons.PREVIEW_ROUNDED, size=16)
@@ -419,6 +562,7 @@ class MarkdownPreview(ft.Container):
 
     def set_content(self, markdown_text: str, base_dir: str = None):
         """Updates preview with processed markdown content, using cache if text hasn't changed."""
+        self._base_dir = base_dir
         if not markdown_text or not markdown_text.strip():
             self.markdown.value = "*No content to preview.*"
             self.markdown_text = ""
@@ -428,7 +572,9 @@ class MarkdownPreview(ft.Container):
         else:
             if markdown_text != self._last_raw_text:
                 self._last_raw_text = markdown_text
-                self._cached_processed_text = process_markdown_media(markdown_text, base_dir=base_dir)
+                self._cached_processed_text = process_markdown_media(
+                    markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name
+                )
                 self.detect_youtube_video(markdown_text)
 
             self.markdown.value = self._cached_processed_text
@@ -443,7 +589,18 @@ class MarkdownPreview(ft.Container):
         self.set_content(markdown_text, base_dir=base_dir)
 
     def apply_palette(self, palette: dict, is_dark: bool, palette_name: str = ""):
-        """Apply palette accent colors to preview header, button, and code themes."""
+        """Apply palette accent colors to preview header, button, code themes, and diagram standard."""
+        palette_name = palette_name or self._palette_name or "Violet Cyberpunk"
+        theme_changed = (self._is_dark != is_dark) or (self._palette_name != palette_name)
+        self._is_dark = is_dark
+        self._palette_name = palette_name
+
+        if theme_changed and self._last_raw_text and "```mermaid" in self._last_raw_text.lower():
+            self._cached_processed_text = process_markdown_media(
+                self._last_raw_text, base_dir=self._base_dir, is_dark=self._is_dark, palette_name=self._palette_name
+            )
+            self.markdown.value = self._cached_processed_text
+
         from src.ui_flet.theme import resolve_color, get_style_color
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
         border_color = resolve_color(palette, "border_color", is_dark)
@@ -460,14 +617,13 @@ class MarkdownPreview(ft.Container):
         )
 
         code_text_color = "#ff79c6" if is_dark else "#c026d3"
-        code_bg_color = "#282a36" if is_dark else "#f3f4f6"
 
         # Dynamic Code Theme (Dark / Light)
         self.markdown.code_theme = (
             ft.MarkdownCodeTheme.ATOM_ONE_DARK if is_dark else ft.MarkdownCodeTheme.ATOM_ONE_LIGHT
         )
 
-        # Dynamic Markdown Style Sheet (Headings, Code, CodeBlock, Table & Blockquote)
+        # Dynamic Markdown Style Sheet (Headings, Code, CodeBlock, Checkbox, Table & Blockquote)
         self.markdown.md_style_sheet = ft.MarkdownStyleSheet(
             h1_text_style=ft.TextStyle(size=28, weight=ft.FontWeight.BOLD, color=text_primary),
             h2_text_style=ft.TextStyle(size=22, weight=ft.FontWeight.BOLD, color=text_primary),
@@ -476,6 +632,7 @@ class MarkdownPreview(ft.Container):
             h5_text_style=ft.TextStyle(size=14, weight=ft.FontWeight.W_500, color=text_primary),
             h6_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, color=text_primary),
             p_text_style=ft.TextStyle(color=text_primary, size=14, height=1.4),
+            checkbox_text_style=ft.TextStyle(color=text_primary, size=14),
             code_text_style=ft.TextStyle(
                 font_family="Consolas",
                 size=13,
@@ -500,6 +657,11 @@ class MarkdownPreview(ft.Container):
             ),
             table_head_text_style=ft.TextStyle(weight=ft.FontWeight.BOLD, color=text_primary),
         )
+
+        try:
+            self.update()
+        except Exception:
+            pass
 
         try:
             self.update()

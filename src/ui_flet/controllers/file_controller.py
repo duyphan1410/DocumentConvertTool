@@ -444,7 +444,9 @@ class FileController:
         if hasattr(self.preview, "show_loading"):
             self.preview.show_loading()
 
-        processed_md = await process_markdown_media_async(draft_content, base_dir=base_dir)
+        is_dark = getattr(self.preview, "_is_dark", False)
+        palette_name = getattr(self.preview, "_palette_name", "Violet Cyberpunk")
+        processed_md = await process_markdown_media_async(draft_content, base_dir=base_dir, is_dark=is_dark, palette_name=palette_name)
 
         # Assign processed markdown content and restore doc info stats
         self.preview._last_raw_text = draft_content

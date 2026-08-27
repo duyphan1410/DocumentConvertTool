@@ -26,7 +26,7 @@ $versionContent = Get-Content $versionFile -Raw
 if ($versionContent -match '__version__\s*=\s*["'']([^"'']+)["'']') {
     $AppVersion = $matches[1]
 } else {
-    $AppVersion = "1.7.2"
+    $AppVersion = "1.8.0"
 }
 Write-Host "[1/4] Target Version: v$AppVersion" -ForegroundColor Green
 

@@ -66,6 +66,7 @@ docs/
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
+- [v1.8.0.md](releases/v1.8.0.md): Version 1.8.0 Release Notes (Studio Workspace, Activity Bar, File Explorer Tree with inline filter, Quick Open File Switcher `Ctrl+P`, 60fps Dual Draggable Splitters, and 2x2 Welcome Screen with `<kbd>` shortcut badges).
 - [v1.7.0.md](releases/v1.7.0.md): Version 1.7.0 Release Notes (YouTube Subtitles/Transcript Extractor with Auto-Translate & Non-AI Speech Fallback, Direct Markdown Export, Win32 Clipboard URL Auto-Fill, Simplified Single-Row Ribbon, and JSON/YAML multiline fixes).
 - [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Architecture Refactoring, Table Parsing Deduplication, Word/PDF Formatting Fixes, and Universal Dynamic Window Focus).
 - [v1.5.3.md](releases/v1.5.3.md): Version 1.5.3 Release Notes (Async draft restoration UX, 60fps LoadingView, 1-Click Smart Auto-Rename, and Exact Filename Highlight).
@@ -75,6 +76,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260827_activity_bar_and_studio_workspace.md](archive/20260827_activity_bar_and_studio_workspace.md): Studio Workspace & File Explorer Architecture (v1.8.0) — Activity Bar navigation, recursive File Explorer tree with inline filter, Quick Open fuzzy file search modal (`Ctrl+P`), 60fps Draggable Splitters with ratio persistence, and 2x2 Welcome View overhaul.
 - [20260818_youtube_transcript_and_json_yaml_formatting_fixes.md](archive/20260818_youtube_transcript_and_json_yaml_formatting_fixes.md): YouTube Subtitles/Transcript Extractor (Multi-tier Strategy: Subtitles & Server-side Auto-Translate + Lightweight Non-AI Speech Fallback), Direct Markdown Export (`.md`), Win32 Clipboard (`Win + V`) & JSON/YAML multiline formatting fixes.
 - [20260814_json_yaml_conversion_modules.md](archive/20260814_json_yaml_conversion_modules.md): Bi-directional JSON ↔ MD & YAML ↔ MD conversion modules, Lazy Import Rule compliance, and unit tests integration.
 - [20260813_pptx_module_refactoring_and_table_deduplication.md](archive/20260813_pptx_module_refactoring_and_table_deduplication.md): Refactoring log for PPTX un-nesting, table parsing deduplication, and cell formatting fixes.

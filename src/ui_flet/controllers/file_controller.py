@@ -169,6 +169,11 @@ class FileController:
 
         self.footer_bar.set_processing(False)
         self.perform_autosave()
+
+        explorer_view = self.app_controls.get("explorer_view")
+        if explorer_view and hasattr(explorer_view, "set_active_file"):
+            explorer_view.set_active_file(actual_path)
+
         self.page.update()
 
     def trigger_browse_output(self, e=None):

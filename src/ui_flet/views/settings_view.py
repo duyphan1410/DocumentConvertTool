@@ -36,6 +36,7 @@ class SettingsView(ft.Container):
         on_default_mode_changed: Optional[Callable] = None,
         on_word_wrap_changed: Optional[Callable] = None,
         on_language_changed: Optional[Callable] = None,
+        on_sidebar_position_changed: Optional[Callable] = None,
         on_apply: Optional[Callable] = None,
         on_discard: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
@@ -51,6 +52,7 @@ class SettingsView(ft.Container):
         self._on_default_mode_changed = on_default_mode_changed
         self._on_word_wrap_changed = on_word_wrap_changed
         self._on_language_changed = on_language_changed
+        self._on_sidebar_position_changed = on_sidebar_position_changed
         self._on_apply = on_apply
         self._on_discard = on_discard
         self._on_close = on_close
@@ -211,8 +213,19 @@ class SettingsView(ft.Container):
             width=260,
             dense=True,
         ))
-        self._language_dropdown.on_change = self._on_language_change
-        self._language_dropdown.on_select = self._on_language_change
+        # ── Sidebar Position Radio ───────────────────────────────────────────
+        sidebar_pos_val = getattr(self._state, "sidebar_position", "left") if self._state else "left"
+        self._sidebar_pos_radio = ft.RadioGroup(
+            content=ft.Row(
+                [
+                    ft.Radio(value="left", label=t("settings.sidebar_pos_left")),
+                    ft.Radio(value="right", label=t("settings.sidebar_pos_right")),
+                ],
+                spacing=12,
+            ),
+            value=sidebar_pos_val,
+        )
+        self._sidebar_pos_radio.on_change = self._on_sidebar_pos_change
 
         return ft.Column(
             [
@@ -227,6 +240,15 @@ class SettingsView(ft.Container):
                 ft.Container(height=16),
                 self._section_title(t("settings.section_theme")),
                 self._theme_radio,
+                ft.Container(height=16),
+                self._section_title(t("settings.section_sidebar_pos")),
+                ft.Text(
+                    t("settings.sidebar_pos_hint"),
+                    size=12,
+                    color=ft.Colors.OUTLINE,
+                ),
+                ft.Container(height=4),
+                self._sidebar_pos_radio,
                 ft.Container(height=16),
                 self._section_title(t("settings.section_language")),
                 ft.Text(
@@ -570,6 +592,11 @@ class SettingsView(ft.Container):
     def _on_language_change(self, e):
         if self._on_language_changed:
             self._on_language_changed(e)
+        self.mark_dirty()
+
+    def _on_sidebar_pos_change(self, e):
+        if self._on_sidebar_position_changed:
+            self._on_sidebar_position_changed(e)
         self.mark_dirty()
 
     # ─────────────────────────────────────────────────────────────────────────

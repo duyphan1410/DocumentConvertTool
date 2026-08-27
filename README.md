@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.7.2)
+# Document Converter Workspace (v1.8.0)
 
 ![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
-![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%203--Tier%20MVC-purple)
+![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%20Studio%20MVC-purple)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.7.2-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, **HTML**, **JSON**, and **YAML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.7.2) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.8.0) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -29,6 +29,13 @@ Download the latest standalone executable (no Python installation required):
 ---
 
 ## ✨ Key Features
+
+### 🗂️ Studio Workspace & File Management
+* **Activity Bar Navigation**: Professional vertical dock (48px) with customizable left/right sidebar positioning, active highlight indicators, and workspace switcher.
+* **File Explorer Sidebar**: Recursive workspace directory tree with extension-specific icon mapping, breadcrumb headers, single/double-click instant file opening, and inline real-time search filter.
+* **Quick Open File Switcher (`Ctrl+P`)**: Blazing fast fuzzy file search modal palette across the entire project workspace with keyboard navigation (`Enter` to open, `Esc` to dismiss, click outside to close).
+* **Smooth 60fps Draggable Splitters**: Dual responsive splitters for adjusting Sidebar width (150px–500px) and Editor/Preview ratio (20%–80%) with permanent configuration persistence and double-click balance reset (`50:50`).
+* **Overhauled 2x2 Welcome Screen**: 4 large action cards (*Open Document*, *Open Project Folder*, *New Blank Note*, *YouTube Companion*) with physical `<kbd>` keyboard shortcut badges and high-contrast theme typography.
 
 ### 📄 Document Conversion Matrix
 
@@ -46,14 +53,13 @@ Download the latest standalone executable (no Python installation required):
 
 ### 🎨 Modern Flet UI & Architecture
 * **In-App YouTube Companion Player**: Dedicated Edge WebView2 mini player (`540x335`, 16:9) with interactive clickable timestamp seeking (`yt://...`), local HTTP bridge server (Error 153 immune), instant unmuted autoplay, and Win32 Z-Index #1 focus elevation.
-* **3-Tier Pure MVC Architecture**: Clean decoupling between `Views`, `Controllers` (6 specialized controllers), `AppState`, and `Layout`.
+* **Pure Orchestrator MVC Architecture**: Clean decoupling between `Views`, `Controllers` (7 specialized controllers), `AppState`, and `Layout`.
 * **Simplified Single-Row Ribbon**: Ultra-compact 38–40px single-row ribbon with 100% Vector Icons, UX 4/8dp rhythm, and dynamic toggle visual states.
 * **Direct Markdown Export & Quick Download**: 1-click `[⬇]` save to `.md` from editor buffer, instant footer actions (`Open File`, `Open Folder`).
 * **Win32 Clipboard Integration**: Native Unicode-safe `CF_UNICODETEXT` reader with `Win + V` support and automatic URL detection.
 * **Production Error Handling & Modal System**: Standardized `DocumentError` domain exceptions (10 `ErrorCode`s), `ErrorMapper` stage context, and theme-aware `MessageDialog` modals with Error ID tracking and one-click copy.
 * **Single Responsibility Autosave Draft Protection**: Preserves `draft_autosave.md` safely across welcome screens, startup, and file loads; cancels pending timers before text clear; auto-detects YouTube transcripts on draft restore.
 * **Card-Grid Help & Documentation View**: 2-column card grid layout, comprehensive shortcut cheatsheet, quick Markdown syntax reference, and custom left-aligned FAQ accordion.
-* **Welcome Dashboard & Quick Open**: Instant onboarding card for new notes / quick document opening (`Ctrl+O`).
 * **Live Document Preview**: Real-time Base64 RAM cache & dynamic image scaling with zero UI freezing (`asyncio.to_thread`).
 * **Universal Dynamic Win32 Focus & Browser Elevation**: 100% dynamic title-based window matching and `AttachThreadInput` Win32 API thread input attachment for seamless active focus across all Windows editors and web browsers.
 * **Instant 5-Palette Theme Engine**: Deep Ocean, Violet Cyberpunk, Emerald Obsidian, Slate Minimal, Amber Gold.

@@ -272,6 +272,21 @@ class SettingsController:
             set_locale(new_lang)
             self._rebuild_all_ui_text()
 
+    def on_sidebar_position_changed(self, e):
+        """Sidebar position radio changed -> preview new position."""
+        new_pos = None
+        if e and hasattr(e, "control") and e.control is not None:
+            new_pos = getattr(e.control, "value", None)
+        if not new_pos:
+            sv = self.app_controls.get("settings_view")
+            if sv and hasattr(sv, "_sidebar_pos_radio"):
+                new_pos = sv._sidebar_pos_radio.value
+        if new_pos in ("left", "right"):
+            self.state.sidebar_position = new_pos
+            layout_ctrl = self.app_controls.get("layout_controller")
+            if layout_ctrl and hasattr(layout_ctrl, "apply_sidebar_position"):
+                layout_ctrl.apply_sidebar_position()
+
     def _rebuild_all_ui_text(self):
         """Walk all registered UI components and trigger update_locale()."""
         from src.i18n import t
@@ -291,6 +306,9 @@ class SettingsController:
             "search_replace_bar",
             "footer_bar",
             "formatting_toolbar",
+            "activity_bar",
+            "explorer_view",
+            "help_view",
         ]:
             ctrl = self.app_controls.get(key)
             if ctrl and hasattr(ctrl, "update_locale"):

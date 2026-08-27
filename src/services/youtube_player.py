@@ -281,25 +281,40 @@ def _run_player_subprocess():
             pos_x = 24
             pos_y = 65
 
-    window = webview.create_window(
-        title=f"DocConvert - {title_text}",
-        url=player_url,
-        width=win_w,
-        height=win_h,
-        x=pos_x,
-        y=pos_y,
-        resizable=True,
-        on_top=False,
-    )
-    window.events.shown += on_shown
     try:
-        webview.start()
-    finally:
+        window = webview.create_window(
+            title=f"DocConvert - {title_text}",
+            url=player_url,
+            width=win_w,
+            height=win_h,
+            x=pos_x,
+            y=pos_y,
+            resizable=True,
+            on_top=False,
+        )
+        window.events.shown += on_shown
+        try:
+            webview.start()
+        finally:
+            try:
+                server.shutdown()
+                server.server_close()
+            except Exception:
+                pass
+    except Exception as ex:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        # Runtime crash in webview engine (e.g. missing .NET assembly) -> fallback to browser
         try:
             server.shutdown()
             server.server_close()
         except Exception:
             pass
+        import webbrowser
+        browser_url = f"https://www.youtube.com/watch?v={video_id}"
+        if start_sec > 0:
+            browser_url += f"&t={start_sec}s"
+        webbrowser.open(browser_url)
 
 
 class YouTubePlayerManager:
@@ -393,17 +408,27 @@ class YouTubePlayerManager:
                 str(start_seconds),
                 display_title,
             ]
+
+        # Log stderr to temp file for debugging and crash diagnosis during testing
+        import tempfile
+        log_path = os.path.join(tempfile.gettempdir(), "docconvert_player_crash.log")
+        try:
+            log_file = open(log_path, "a", encoding="utf-8")
+        except Exception:
+            log_file = subprocess.DEVNULL
+
         try:
             self._proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=log_file,
                 text=True,
                 bufsize=1,
             )
         except Exception as e:
             print(f"[DEBUG] Failed to launch YouTube player subprocess: {e}")
+
 
     def close(self):
         """Closes the player window if open."""

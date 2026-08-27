@@ -78,15 +78,49 @@ def clean_html_tags_for_preview(content: str) -> str:
     return "\n".join(cleaned_lines)
 
 
+def process_markdown_timestamps(content: str) -> str:
+    """
+    Detects if Markdown contains YouTube video references and converts timestamp tokens
+    like `**[01:23]**` or `[01:23]` into clickable interactive links `**[[⏱️ 01:23]](yt://VIDEO_ID?t=83)**`.
+    """
+    if not content:
+        return ""
+
+    vid_match = re.search(r"(?:youtube\.com/watch\?v=|youtu\.be/|yt://)([a-zA-Z0-9_-]{11})", content)
+    if not vid_match:
+        return content
+
+    vid = vid_match.group(1)
+
+    def parse_time_seconds(ts: str) -> int:
+        parts = [int(p) for p in ts.split(":")]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        elif len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        return 0
+
+    def repl_bold_ts(match):
+        ts = match.group(1)
+        sec = parse_time_seconds(ts)
+        return f"**[[⏱️ {ts}]](yt://{vid}?t={sec})**"
+
+    # Replace **[mm:ss]** or **[hh:mm:ss]** that are not already Markdown links
+    content = re.sub(r"\*\*\[(\d{1,2}:\d{2}(?::\d{2})?)\]\*\*(?!\()", repl_bold_ts, content)
+    return content
+
+
 def process_markdown_media(content: str, base_dir: str = None) -> str:
     """
     Parses Markdown content, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
+    Also links interactive YouTube timestamps.
     """
     if not content:
         return ""
 
     content = clean_html_tags_for_preview(content)
+    content = process_markdown_timestamps(content)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
     img_count = 0
@@ -127,6 +161,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, progr
         return ""
 
     content = clean_html_tags_for_preview(content)
+    content = process_markdown_timestamps(content)
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
@@ -175,26 +210,56 @@ class MarkdownPreview(ft.Container):
         super().__init__(**kwargs)
         self.expand = True
         self.border_radius = 8
-        self.padding = 12
+        self.padding = ft.Padding(left=8, top=4, right=8, bottom=6)
         self._last_raw_text = None
         self._cached_processed_text = None
+        self._detected_video_id = None
+        self._detected_video_title = None
 
         # Header elements — owned by MarkdownPreview for palette sync
-        self.header_icon = ft.Icon(ft.Icons.PREVIEW, size=18)
+        self.header_icon = ft.Icon(ft.Icons.PREVIEW_ROUNDED, size=16)
         self.header_title = ft.Text(
             t("preview.title"),
+            size=12,
             weight=ft.FontWeight.W_600,
         )
-        self.doc_info_text = ft.Text(t("preview.no_doc"), size=12)
+        self.btn_watch_video_text = ft.Text(
+            t("preview.watch_video"),
+            size=11,
+            weight=ft.FontWeight.W_600,
+            color=ft.Colors.WHITE,
+        )
+        self.btn_watch_video = ft.ElevatedButton(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.PLAY_ARROW_ROUNDED, size=15, color=ft.Colors.WHITE),
+                    self.btn_watch_video_text,
+                ],
+                spacing=3,
+                tight=True,
+            ),
+            visible=False,
+            tooltip=t("preview.watch_video_tooltip"),
+            height=26,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.RED_700,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=8, top=0, right=10, bottom=0),
+            ),
+            on_click=self._on_watch_video_clicked,
+        )
+        self.doc_info_text = ft.Text(t("preview.no_doc"), size=11)
 
         self.header_row = ft.Row(
             controls=[
                 self.header_icon,
                 self.header_title,
+                self.btn_watch_video,
                 ft.Container(expand=True),
                 self.doc_info_text,
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=6,
         )
 
         self.markdown = ft.Markdown(
@@ -203,7 +268,8 @@ class MarkdownPreview(ft.Container):
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK,
             expand=True,
-            soft_line_break=True
+            soft_line_break=True,
+            on_tap_link=self._on_markdown_link_clicked,
         )
 
         self.markdown_row = ft.Row(
@@ -221,11 +287,74 @@ class MarkdownPreview(ft.Container):
         self.content = ft.Column(
             controls=[
                 self.header_row,
-                ft.Divider(),
+                ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.scroll_column,
             ],
             expand=True,
+            spacing=4,
         )
+
+    def _on_markdown_link_clicked(self, e):
+        """Handles link clicks in MarkdownPreview. Interactive YouTube timestamps jump video position."""
+        url = getattr(e, "data", "") or ""
+        if not url:
+            return
+
+        from src.services.youtube_service import extract_video_id
+        from src.services.youtube_player import YouTubePlayerManager
+
+        vid = None
+        start_sec = 0
+
+        if url.startswith("yt://"):
+            parsed = url[5:]
+            if "?" in parsed:
+                part_id, query = parsed.split("?", 1)
+                vid = part_id.strip() if part_id and part_id != "seek" else None
+                for param in query.split("&"):
+                    if param.startswith("v=") and not vid:
+                        vid = param[2:]
+                    elif param.startswith("t="):
+                        try:
+                            start_sec = int(param[2:].rstrip("s"))
+                        except ValueError:
+                            start_sec = 0
+            else:
+                vid = parsed
+        elif "youtube.com" in url or "youtu.be" in url:
+            vid = extract_video_id(url)
+            m = re.search(r"[?&]t=(\d+)", url)
+            if m:
+                try:
+                    start_sec = int(m.group(1))
+                except ValueError:
+                    start_sec = 0
+
+        if vid:
+            title = self._detected_video_title or f"YouTube Video ({vid})"
+            YouTubePlayerManager.get_instance().play(vid, start_seconds=start_sec, title=title)
+            return
+
+        # Non-YouTube link: launch in system browser
+        try:
+            if self.page:
+                self.page.launch_url(url)
+            else:
+                import webbrowser
+                webbrowser.open(url)
+        except Exception as ex:
+            print(f"[DEBUG] Failed to launch URL '{url}': {ex}")
+
+    def _on_watch_video_clicked(self, e):
+        """Launches the in-app player for the detected YouTube video in the current document."""
+        if self._detected_video_id:
+            from src.services.youtube_player import YouTubePlayerManager
+            title = self._detected_video_title or f"YouTube Video ({self._detected_video_id})"
+            YouTubePlayerManager.get_instance().play(
+                self._detected_video_id,
+                start_seconds=0,
+                title=title,
+            )
 
     def show_loading(self, message: str = None):
         """Displays subtle header loading status in MarkdownPreview."""
@@ -267,6 +396,26 @@ class MarkdownPreview(ft.Container):
         except Exception:
             pass
 
+    def detect_youtube_video(self, markdown_text: str):
+        """Scans document text for YouTube video references and toggles Watch Video button visibility."""
+        if not markdown_text or not markdown_text.strip():
+            self._detected_video_id = None
+            self._detected_video_title = None
+            self.btn_watch_video.visible = False
+            return
+
+        vid_match = re.search(
+            r"(?:youtube\.com/watch\?v=|youtu\.be/|yt://)([a-zA-Z0-9_-]{11})", markdown_text
+        )
+        if vid_match:
+            self._detected_video_id = vid_match.group(1)
+            t_match = re.search(r"^#\s+(.+)$", markdown_text, re.MULTILINE)
+            self._detected_video_title = t_match.group(1).strip() if t_match else ""
+            self.btn_watch_video.visible = True
+        else:
+            self._detected_video_id = None
+            self._detected_video_title = None
+            self.btn_watch_video.visible = False
 
     def set_content(self, markdown_text: str, base_dir: str = None):
         """Updates preview with processed markdown content, using cache if text hasn't changed."""
@@ -275,10 +424,13 @@ class MarkdownPreview(ft.Container):
             self.markdown_text = ""
             self._last_raw_text = ""
             self._cached_processed_text = "*No content to preview.*"
+            self.detect_youtube_video("")
         else:
             if markdown_text != self._last_raw_text:
                 self._last_raw_text = markdown_text
                 self._cached_processed_text = process_markdown_media(markdown_text, base_dir=base_dir)
+                self.detect_youtube_video(markdown_text)
+
             self.markdown.value = self._cached_processed_text
 
         try:
@@ -291,7 +443,7 @@ class MarkdownPreview(ft.Container):
         self.set_content(markdown_text, base_dir=base_dir)
 
     def apply_palette(self, palette: dict, is_dark: bool, palette_name: str = ""):
-        """Apply palette accent colors to preview header and code themes."""
+        """Apply palette accent colors to preview header, button, and code themes."""
         from src.ui_flet.theme import resolve_color, get_style_color
         accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
         border_color = resolve_color(palette, "border_color", is_dark)
@@ -301,7 +453,11 @@ class MarkdownPreview(ft.Container):
 
         self.header_icon.color = accent_primary
         self.header_title.color = accent_primary
-
+        self.btn_watch_video.style = ft.ButtonStyle(
+            bgcolor=accent_primary,
+            shape=ft.RoundedRectangleBorder(radius=6),
+            padding=ft.Padding(left=8, top=0, right=10, bottom=0),
+        )
 
         code_text_color = "#ff79c6" if is_dark else "#c026d3"
         code_bg_color = "#282a36" if is_dark else "#f3f4f6"
@@ -313,22 +469,18 @@ class MarkdownPreview(ft.Container):
 
         # Dynamic Markdown Style Sheet (Headings, Code, CodeBlock, Table & Blockquote)
         self.markdown.md_style_sheet = ft.MarkdownStyleSheet(
-            # Heading hierarchy — size + weight differentiation (border-bottom not
-            # supported by Flet Markdown; accepted framework limitation).
-            h1_text_style=ft.TextStyle(size=28, weight=ft.FontWeight.BOLD,  color=text_primary),
-            h2_text_style=ft.TextStyle(size=22, weight=ft.FontWeight.BOLD,  color=text_primary),
+            h1_text_style=ft.TextStyle(size=28, weight=ft.FontWeight.BOLD, color=text_primary),
+            h2_text_style=ft.TextStyle(size=22, weight=ft.FontWeight.BOLD, color=text_primary),
             h3_text_style=ft.TextStyle(size=18, weight=ft.FontWeight.W_600, color=text_primary),
             h4_text_style=ft.TextStyle(size=16, weight=ft.FontWeight.W_600, color=text_primary),
             h5_text_style=ft.TextStyle(size=14, weight=ft.FontWeight.W_500, color=text_primary),
             h6_text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_500, color=text_primary),
-
             p_text_style=ft.TextStyle(color=text_primary, size=14, height=1.4),
             code_text_style=ft.TextStyle(
                 font_family="Consolas",
                 size=13,
                 color=code_text_color,
             ),
-
             codeblock_padding=ft.Padding(left=14, top=12, right=14, bottom=12),
             codeblock_decoration=ft.BoxDecoration(
                 bgcolor=bg_code,
@@ -346,11 +498,8 @@ class MarkdownPreview(ft.Container):
                 color=text_primary,
                 size=14,
             ),
-            # Table: only head text style is settable via MarkdownStyleSheet.
-            # Cell borders and zebra rows are unsupported by Flet Markdown (framework limit).
             table_head_text_style=ft.TextStyle(weight=ft.FontWeight.BOLD, color=text_primary),
         )
-
 
         try:
             self.update()
@@ -358,8 +507,11 @@ class MarkdownPreview(ft.Container):
             pass
 
     def update_locale(self):
-        """Refresh header title, doc info text, and placeholder to current locale."""
+        """Refresh header title, doc info text, watch video button, and placeholder to current locale."""
         self.header_title.value = t("preview.title")
+        self.btn_watch_video_text.value = t("preview.watch_video")
+        self.btn_watch_video.tooltip = t("preview.watch_video_tooltip")
+
         if not self._last_raw_text:
             self.doc_info_text.value = t("preview.no_doc")
             self.markdown.value = t("preview.placeholder")
@@ -368,7 +520,7 @@ class MarkdownPreview(ft.Container):
             chars = len(self._last_raw_text)
             self.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
-        for ctrl in [self.header_title, self.doc_info_text, self.markdown]:
+        for ctrl in [self.header_title, self.btn_watch_video, self.doc_info_text, self.markdown]:
             try:
                 if hasattr(ctrl, "page") and ctrl.page:
                     ctrl.update()

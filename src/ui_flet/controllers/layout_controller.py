@@ -43,6 +43,11 @@ class LayoutController:
         if "close" in evt_name:
             _sync_geometry()
             self._safe_save_settings()
+            try:
+                from src.services.youtube_player import YouTubePlayerManager
+                YouTubePlayerManager.get_instance().close()
+            except Exception:
+                pass
             print(
                 f"[DEBUG][WINDOW] 💾 Đã lưu khi đóng app: "
                 f"width={self.state.window_width}, height={self.state.window_height}, "
@@ -52,6 +57,9 @@ class LayoutController:
             return
 
         _sync_geometry()
+
+        # Dynamic Responsive Ribbon Layout
+        self.on_page_resized(None)
 
         # Debounce disk I/O by 500ms
         import threading
@@ -75,6 +83,21 @@ class LayoutController:
         self._window_save_timer.daemon = True
         self._window_save_timer.start()
 
+    def on_page_resized(self, e=None):
+        """Dispatched on live window/canvas resizing to update responsive UI."""
+        w = None
+        if e and hasattr(e, "width") and e.width:
+            w = e.width
+        elif hasattr(self.page, "width") and self.page.width:
+            w = self.page.width
+        elif hasattr(self.page.window, "width") and self.page.window.width:
+            w = self.page.window.width
+
+        if w:
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "update_responsive_layout"):
+                ribbon_bar.update_responsive_layout(int(w))
+
     def apply_panel_visibility(self):
         """Restore panel visibilities from AppState."""
         right_pane = self.app_controls.get("right_pane")
@@ -88,6 +111,13 @@ class LayoutController:
         footer_bar = self.app_controls.get("footer_bar")
         if footer_bar and hasattr(footer_bar, "container"):
             footer_bar.container.visible = getattr(self.state, "show_status_bar", True)
+
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        if ribbon_bar:
+            if hasattr(ribbon_bar, "set_preview_visible"):
+                ribbon_bar.set_preview_visible(getattr(self.state, "show_preview", True))
+            if hasattr(ribbon_bar, "set_path_bar_visible"):
+                ribbon_bar.set_path_bar_visible(getattr(self.state, "show_path_bar", True))
 
         self.update_editor_dynamic_height()
         try:
@@ -135,6 +165,9 @@ class LayoutController:
         if right_pane:
             right_pane.visible = not right_pane.visible
             self.state.show_preview = right_pane.visible
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "set_preview_visible"):
+                ribbon_bar.set_preview_visible(self.state.show_preview)
             self._safe_save_settings()
             try:
                 self.page.update()
@@ -146,6 +179,9 @@ class LayoutController:
         if file_path_bar:
             file_path_bar.container.visible = not file_path_bar.container.visible
             self.state.show_path_bar = file_path_bar.container.visible
+            ribbon_bar = self.app_controls.get("ribbon_bar")
+            if ribbon_bar and hasattr(ribbon_bar, "set_path_bar_visible"):
+                ribbon_bar.set_path_bar_visible(self.state.show_path_bar)
             self.update_editor_dynamic_height()
             self._safe_save_settings()
             try:

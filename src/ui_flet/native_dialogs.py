@@ -44,8 +44,18 @@ OUTPUT_FILETYPES = [
 ]
 
 
+def ensure_tcl_tk():
+    """Configures Tcl/Tk library paths if running in a virtual environment on Windows."""
+    try:
+        from src.utils.env import setup_environment
+        setup_environment()
+    except Exception:
+        pass
+
+
 def pick_input_file_sync() -> str | None:
     """Synchronous worker that opens transient Windows Open File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -78,6 +88,7 @@ def pick_input_file_sync() -> str | None:
 
 def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx") -> str | None:
     """Synchronous worker that opens transient Windows Save File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -155,7 +166,8 @@ IMAGE_FILETYPES = [
 
 
 def pick_image_file_sync() -> str | None:
-    """Synchronous worker that opens transient Windows Open Image File Dialog."""
+    """Synchronous worker that opens transient Windows Image File Dialog."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -203,6 +215,7 @@ async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePick
 
 def confirm_overwrite_sync(file_path: str) -> bool:
     """Prompts a native Windows messagebox asking user if they want to overwrite an existing file."""
+    ensure_tcl_tk()
     try:
         import tkinter as tk
         from tkinter import messagebox
@@ -226,6 +239,53 @@ def confirm_overwrite_sync(file_path: str) -> bool:
 async def confirm_overwrite_async(file_path: str) -> bool:
     """Async wrapper for confirm_overwrite_sync."""
     return await asyncio.to_thread(confirm_overwrite_sync, file_path)
+
+
+def pick_directory_sync() -> str | None:
+    """Synchronous worker that opens transient Windows Directory Picker Dialog."""
+    ensure_tcl_tk()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_dir = filedialog.askdirectory(
+            title="Select Project / Workspace Directory"
+        )
+        if selected_dir:
+            return os.path.normpath(selected_dir)
+    except Exception as e:
+        print(f"[DEBUG] Native directory filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+async def pick_directory_async(page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
+    """
+    Async wrapper running directory picker dialog.
+    Uses native Tkinter on Desktop; falls back to Flet FilePicker on Web/Mobile if provided.
+    """
+    if page and (page.web or page.platform in (ft.PagePlatform.ANDROID, ft.PagePlatform.IOS)):
+        if picker:
+            path = await picker.get_directory_path(
+                dialog_title="Select Project / Workspace Directory"
+            )
+            return path
+    return await asyncio.to_thread(pick_directory_sync)
+
 
 
 

@@ -37,6 +37,10 @@ hiddenimports = [
     'src.services.conversion_service',
     'src.services.file_loader',
     'src.services.media_asset_manager',
+    'src.services.youtube_service',
+    'src.services.youtube_player',
+    'src.services.speech_service',
+    'src.ui_flet.components.youtube_dialog',
     'src.core.base_module',
     'src.core.converters',
     'src.core.error_mapper',
@@ -77,7 +81,27 @@ hiddenimports = [
     'numpy',
     'yaml',
     'cryptography',
+    'youtube_transcript_api',
+    'speech_recognition',
+    'yt_dlp',
+    'webview',
+    'webview.platforms.winforms',
+    'webview.platforms.edgechromium',
+    'webview.platforms.win32',
+    'webview.platforms.mshtml',
+    'clr',
+    'pythonnet',
 ]
+
+# Collect binaries & data assets for pywebview & pythonnet (.NET bridge)
+for pkg in ['webview', 'pythonnet']:
+    try:
+        tmp_pkg = collect_all(pkg)
+        datas += tmp_pkg[0]
+        binaries += tmp_pkg[1]
+        hiddenimports += tmp_pkg[2]
+    except Exception:
+        pass
 
 # Collect binaries & data assets for Flet Desktop framework
 tmp_ret = collect_all('flet')
@@ -109,18 +133,46 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # 1. Thư viện Học máy / Data Science nặng (Dự án không dùng: Excel dùng openpyxl, Speech dùng Google HTTP API)
+        # Loại trừ để tránh PyInstaller bị kích hoạt quét hook tự động từ speech_recognition / Pillow
+        'tensorflow',
+        'tensorboard',
+        'torch',
+        'torchaudio',
         'pandas',
         'matplotlib',
         'scipy',
         'onnxruntime',
+
+        # 2. Engine GUI của Linux / macOS / Android (Bản build Windows chỉ dùng WinForms / Edge WebView2)
+        'webview.platforms.gtk',     # Linux (WebKitGTK / GNOME)
+        'gi',                        # Linux GObject Introspection
+        'webview.platforms.cocoa',   # macOS (Apple WebKit Cocoa)
+        'webview.platforms.android', # Android Web Engine
+        'webview.platforms.qt',      # Qt Web Engine (PyQt/PySide)
+        'PyQt5',
+        'PyQt6',
+        'PySide2',
+        'PySide6',
+        'wx',                        # wxPython GUI
+
+        # 3. Loại trừ các bộ test / demo của Tkinter (Giữ lại Tkinter core để phục vụ file picker trong native_dialogs.py)
+        'turtledemo',
+        'tkinter.test',
+
+        # 4. Công cụ phát triển & kiểm thử (Không cần thiết khi chạy ứng dụng cuối)
         'pytest',
-        'flet.cli',
-        'flet.pytest_plugin',
-        'flet.testing',
         'unittest',
+        'doctest',
+        'test',
         'pydoc',
         'IPython',
         'jupyter',
+        'curses',
+        'xmlrpc',
+        'flet.cli',
+        'flet.pytest_plugin',
+        'flet.testing',
     ],
     noarchive=False,
     optimize=1,
@@ -130,24 +182,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='Document Converter',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[
-        'pdfium.dll',
-        'mupdf.dll',
-        'flet.dll',
-        'libmpv-2.dll',
-        'pdfium',
-        'fitz',
-        '_fitz',
-    ],
-    runtime_tmpdir=None,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -156,3 +197,13 @@ exe = EXE(
     entitlements_file=None,
     icon=['assets/icons/app_icon.ico'],
 )
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name='Document Converter',
+)
+

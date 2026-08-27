@@ -63,20 +63,26 @@ class SettingsView(ft.Container):
         # ── Dirty bar (hidden until changes made) ────────────────────────────
         self._dirty_indicator = ft.Text(
             t("settings.dirty_label"),
-            size=12,
+            size=11,
             color=ft.Colors.ORANGE_400,
             italic=True,
         )
         self._btn_apply = ft.FilledButton(
             t("settings.btn_apply"),
             icon=ft.Icons.SAVE_ROUNDED,
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=6, right=12, bottom=6),
+            ),
             on_click=self._on_apply_click,
         )
         self._btn_discard = ft.OutlinedButton(
             t("settings.btn_discard"),
             icon=ft.Icons.UNDO_ROUNDED,
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=6, right=12, bottom=6),
+            ),
             on_click=self._on_discard_click,
         )
         self._dirty_bar = ft.Container(
@@ -92,8 +98,8 @@ class SettingsView(ft.Container):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-            border_radius=8,
-            padding=ft.Padding(left=14, top=8, right=14, bottom=8),
+            border_radius=6,
+            padding=ft.Padding(left=12, top=6, right=12, bottom=6),
             visible=False,
         )
 
@@ -104,14 +110,14 @@ class SettingsView(ft.Container):
             icon = self._category_icon(cat)
             btn = ft.TextButton(
                 content=ft.Row(
-                    [ft.Icon(icon, size=18), ft.Text(t(self._CATEGORIES_KEYS[cat]), size=13)],
-                    spacing=10,
+                    [ft.Icon(icon, size=16), ft.Text(t(self._CATEGORIES_KEYS[cat]), size=12)],
+                    spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 on_click=lambda e, c=cat: self._select_category(c),
                 style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.Padding(left=14, top=10, right=14, bottom=10),
+                    shape=ft.RoundedRectangleBorder(radius=6),
+                    padding=ft.Padding(left=10, top=6, right=10, bottom=6),
                 ),
             )
             self._nav_buttons[cat] = btn
@@ -119,47 +125,47 @@ class SettingsView(ft.Container):
 
         self._left_nav = ft.Container(
             content=ft.Column(nav_items, spacing=4, scroll=ft.ScrollMode.AUTO),
-            width=180,
-            padding=ft.Padding(left=0, top=4, right=12, bottom=0),
+            width=160,
+            padding=ft.Padding(left=0, top=4, right=10, bottom=0),
         )
 
         # ── Right Content Panel ───────────────────────────────────────────────
         self._content_panel = ft.Container(
             content=ft.Container(),  # placeholder before first category select
             expand=True,
-            padding=ft.Padding(left=24, top=4, right=16, bottom=12),
+            padding=ft.Padding(left=20, top=4, right=12, bottom=10),
         )
 
         # ── Close Button ─────────────────────────────────────────────────────
         btn_close = ft.IconButton(
             icon=ft.Icons.CLOSE_ROUNDED,
-            icon_size=20,
+            icon_size=18,
             tooltip=t("settings.tooltip_close"),
             on_click=self._on_close_click,
         )
 
         # ── Page Header ──────────────────────────────────────────────────────
-        self._header_icon = ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.PRIMARY, size=22)
+        self._header_icon = ft.Icon(ft.Icons.SETTINGS_ROUNDED, color=ft.Colors.PRIMARY, size=18)
         header = ft.Row(
             [
                 self._header_icon,
-                ft.Text(t("settings.title"), size=20, weight=ft.FontWeight.BOLD),
+                ft.Text(t("settings.title"), size=16, weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 btn_close,
             ],
-            spacing=10,
+            spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         body = ft.Row(
-            [self._left_nav, ft.VerticalDivider(width=1), self._content_panel],
+            [self._left_nav, ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT), self._content_panel],
             expand=True,
             vertical_alignment=ft.CrossAxisAlignment.START,
         )
 
         self.content = ft.Column(
-            [header, ft.Divider(height=1), self._dirty_bar, body],
-            spacing=12,
+            [header, ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT), self._dirty_bar, body],
+            spacing=10,
             expand=True,
         )
         self._select_category("Appearance", update=False)

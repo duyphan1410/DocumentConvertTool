@@ -18,6 +18,7 @@ class EditorView:
         on_redo: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_clear: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_open_file: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_save_md: Optional[Callable[[ft.ControlEvent], None]] = None,
     ):
         self.search_replace_bar = search_replace_bar
         self.on_editor_changed = on_editor_changed
@@ -26,29 +27,40 @@ class EditorView:
         self.on_redo = on_redo
         self.on_clear = on_clear
         self.on_open_file = on_open_file
+        self.on_save_md = on_save_md
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("editor.tooltip_open"),
+            icon_size=16,
             on_click=self.on_open_file,
+        )
+        self.btn_save_md = ft.IconButton(
+            ft.Icons.FILE_DOWNLOAD_OUTLINED,
+            tooltip=t("editor.tooltip_save_md"),
+            icon_size=16,
+            on_click=self.on_save_md,
         )
         self.btn_undo = ft.IconButton(
             ft.Icons.UNDO,
             tooltip=t("editor.tooltip_undo"),
+            icon_size=16,
             on_click=self.on_undo,
         )
         self.btn_redo = ft.IconButton(
             ft.Icons.REDO,
             tooltip=t("editor.tooltip_redo"),
+            icon_size=16,
             on_click=self.on_redo,
         )
         self.btn_clear_editor = ft.IconButton(
             ft.Icons.DELETE_SWEEP,
             tooltip=t("editor.tooltip_clear"),
+            icon_size=16,
             on_click=self.on_clear,
         )
 
-        self.title_text = ft.Text(t("editor.title"), weight=ft.FontWeight.W_600)
+        self.title_text = ft.Text(t("editor.title"), size=12, weight=ft.FontWeight.W_600)
 
         self.toolbar = ft.Row(
             controls=[
@@ -60,6 +72,7 @@ class EditorView:
                 self.btn_clear_editor,
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            spacing=2,
         )
 
         self.selection_start: Optional[int] = 0
@@ -70,7 +83,7 @@ class EditorView:
             expand=True,
             min_lines=23,
             max_lines=None,
-            border_radius=8,
+            border_radius=6,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
             text_size=13,
             on_change=self.on_editor_changed,
@@ -94,9 +107,10 @@ class EditorView:
                     self.editor_row,
                 ],
                 expand=True,
+                spacing=2,
             ),
             expand=True,
-            padding=10,
+            padding=ft.Padding(left=8, top=4, right=8, bottom=6),
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
@@ -180,9 +194,24 @@ class EditorView:
         except Exception:
             pass
 
+    def insert_text_at_cursor(self, text: str):
+        """Inserts text at the current cursor selection range and updates editor state."""
+        if not text or getattr(self.editor, "read_only", False):
+            return
+        raw_val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else len(raw_val)
+        end = self.selection_end if self.selection_end is not None else start
+        start = max(0, min(start, len(raw_val)))
+        end = max(start, min(end, len(raw_val)))
 
-
-
+        new_val = raw_val[:start] + text + raw_val[end:]
+        self.editor.value = new_val
+        new_cursor = start + len(text)
+        self.selection_start = new_cursor
+        self.selection_end = new_cursor
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+        self.select_range(new_cursor, new_cursor, focus=True)
 
     def get_text(self) -> str:
         return self.editor.value or ""
@@ -440,12 +469,13 @@ class EditorView:
         """Refresh all text to current locale."""
         self.title_text.value = t("editor.title")
         self.btn_open_file.tooltip = t("editor.tooltip_open")
+        self.btn_save_md.tooltip = t("editor.tooltip_save_md")
         self.btn_undo.tooltip = t("editor.tooltip_undo")
         self.btn_redo.tooltip = t("editor.tooltip_redo")
         self.btn_clear_editor.tooltip = t("editor.tooltip_clear")
         self.editor.hint_text = t("editor.hint")
 
-        for ctrl in [self.title_text, self.btn_open_file, self.btn_undo, self.btn_redo, self.btn_clear_editor, self.editor, self.toolbar]:
+        for ctrl in [self.title_text, self.btn_open_file, self.btn_save_md, self.btn_undo, self.btn_redo, self.btn_clear_editor, self.editor, self.toolbar]:
             try:
                 if hasattr(ctrl, "page") and ctrl.page:
                     ctrl.update()

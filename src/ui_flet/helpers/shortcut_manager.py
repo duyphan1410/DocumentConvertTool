@@ -15,6 +15,8 @@ class ShortcutManager:
         on_find_replace: Optional[Callable] = None,
         on_undo: Optional[Callable] = None,
         on_redo: Optional[Callable] = None,
+        on_toggle_sidebar: Optional[Callable] = None,
+        on_quick_open: Optional[Callable] = None,
     ):
         def _on_keyboard_event(e: ft.KeyboardEvent):
             if not e.ctrl:
@@ -24,12 +26,18 @@ class ShortcutManager:
             if key == "O":
                 if on_open_file:
                     on_open_file()
+            elif key == "P":
+                if on_quick_open:
+                    on_quick_open()
             elif key == "S":
                 if on_save_convert:
                     on_save_convert()
             elif key == "F":
                 if on_find_replace:
                     on_find_replace()
+            elif key == "B":
+                if on_toggle_sidebar:
+                    on_toggle_sidebar()
             elif key == "Z":
                 if e.shift:
                     if on_redo:

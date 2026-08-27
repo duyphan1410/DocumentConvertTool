@@ -81,7 +81,7 @@ class EditorView:
         self.editor = ft.TextField(
             multiline=True,
             expand=True,
-            min_lines=23,
+            min_lines=28,
             max_lines=None,
             border_radius=6,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
@@ -91,24 +91,18 @@ class EditorView:
             hint_text=t("editor.hint"),
         )
 
-
-
-        self.editor_row = ft.Row(
-            controls=[self.editor],
+        self.editor_column = ft.Column(
+            controls=[
+                self.toolbar,
+                self.search_replace_bar.results_container,
+                self.editor,
+            ],
             expand=True,
-            scroll=None,
+            spacing=2,
         )
 
         self.container = ft.Container(
-            content=ft.Column(
-                controls=[
-                    self.toolbar,
-                    self.search_replace_bar.results_container,
-                    self.editor_row,
-                ],
-                expand=True,
-                spacing=2,
-            ),
+            content=self.editor_column,
             expand=True,
             padding=ft.Padding(left=8, top=4, right=8, bottom=6),
             border_radius=8,
@@ -120,7 +114,6 @@ class EditorView:
         if getattr(self, "word_wrap_enabled", True):
             self.editor.width = None
             self.editor.expand = True
-            self.editor_row.scroll = None
         else:
             val = self.editor.value or ""
             lines = val.splitlines()
@@ -128,15 +121,11 @@ class EditorView:
             char_w = (self.editor.text_size or 13) * 0.60
             calc_w = int(max_len * char_w) + 40
 
-            # Only enforce explicit scroll width if content length exceeds standard panel bounds
             if calc_w > 650:
                 self.editor.width = calc_w
-                self.editor.expand = False
-                self.editor_row.scroll = ft.ScrollMode.AUTO
             else:
                 self.editor.width = None
-                self.editor.expand = True
-                self.editor_row.scroll = None
+            self.editor.expand = True
 
     def set_word_wrap(self, enabled: bool):
         """Toggles horizontal word wrap for the editor text field dynamically."""
@@ -215,15 +204,6 @@ class EditorView:
 
     def get_text(self) -> str:
         return self.editor.value or ""
-
-    def set_min_lines(self, lines: int):
-        """Dynamically update min_lines based on active UI panels."""
-        self.editor.min_lines = lines
-        try:
-            if self.editor.page:
-                self.editor.update()
-        except Exception:
-            pass
 
     def set_loading(self, filename: str = ""):
         name_str = f"'{filename}'" if filename else t("editor.loading_default")

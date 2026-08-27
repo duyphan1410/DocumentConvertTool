@@ -39,6 +39,12 @@ class AppState:
     show_preview: bool = True
     show_path_bar: bool = True
     show_status_bar: bool = True
+    show_sidebar: bool = True
+    sidebar_width: int = 240
+    sidebar_position: str = "left"
+    editor_ratio: float = 0.5
+    workspace_folder: str = ""
+    active_activity_tab: str = "explorer"
 
     # Window State & Geometry (persisted across sessions, default 100% maximized on first launch)
     window_width: int | None = None

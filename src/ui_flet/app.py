@@ -19,8 +19,11 @@ from src.ui_flet.state import AppState
 from src.ui_flet.theme import apply_theme
 from src.ui_flet.layout.footer_bar import FooterBar
 from src.ui_flet.layout.ribbon_bar import RibbonBar
+from src.ui_flet.layout.activity_bar import ActivityBar
 from src.ui_flet.components.file_path_bar import FilePathBar
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
+from src.ui_flet.components.draggable_splitter import DraggableSplitter
+from src.ui_flet.components.quick_open_dialog import QuickOpenDialog
 from src.ui_flet.views.editor_view import EditorView
 from src.ui_flet.views.preview_view import MarkdownPreview
 from src.ui_flet.views.welcome_view import WelcomeView
@@ -28,6 +31,8 @@ from src.ui_flet.views.loading_view import LoadingView
 from src.ui_flet.views.workspace_view import WorkspaceView
 from src.ui_flet.views.settings_view import SettingsView
 from src.ui_flet.views.help_view import HelpView
+from src.ui_flet.views.explorer_view import ExplorerView
+from src.ui_flet.native_dialogs import pick_directory_async
 from src.ui_flet.helpers.shortcut_manager import ShortcutManager
 from src.utils import settings_store
 from src.utils.window import validate_and_sanitize_window_bounds
@@ -126,12 +131,14 @@ class DocumentConvertApp:
         self.page.on_resized = self.layout_controller.on_page_resized
         self.layout_controller.on_page_resized(None)
 
-        # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+S, Ctrl+F, Ctrl+Z, Ctrl+Y)
+        # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+P, Ctrl+S, Ctrl+F, Ctrl+B, Ctrl+Z, Ctrl+Y)
         ShortcutManager.register(
             self.page,
             on_open_file=self.file_controller.trigger_browse_input,
+            on_quick_open=lambda: self.quick_open_dialog.show(self.page),
             on_save_convert=self.conversion_controller.on_convert_clicked,
             on_find_replace=lambda: self.search_controller.toggle_search(),
+            on_toggle_sidebar=lambda: self.layout_controller.toggle_sidebar(tab_name="explorer"),
             on_undo=self.editor_controller.perform_undo,
             on_redo=self.editor_controller.perform_redo,
         )
@@ -139,9 +146,11 @@ class DocumentConvertApp:
         # Load & sync settings into UI controls (after controls are built)
         self.settings_controller.load_and_apply()
 
-        # Restore Draft asynchronously with loading view or Show Welcome Screen
+        # Restore Draft asynchronously with loading view, or Show Editor if Workspace Folder exists, or Show Welcome Screen
         if self.file_controller.has_draft_on_disk():
             asyncio.create_task(self.file_controller.async_load_draft_if_exists())
+        elif self.state.workspace_folder and os.path.exists(self.state.workspace_folder):
+            self._show_editor_view(auto_select_edit=False)
         else:
             self._show_welcome_view()
 
@@ -168,8 +177,10 @@ class DocumentConvertApp:
 
         self.welcome_view = WelcomeView(
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
+            on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
             on_create_blank=lambda e: self._on_create_blank_note(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
+            on_open_help=lambda e: self._show_help_view(),
         )
 
         self.loading_view = LoadingView()
@@ -184,6 +195,7 @@ class DocumentConvertApp:
             on_default_mode_changed=lambda e: self.settings_controller.on_default_mode_changed(e),
             on_word_wrap_changed=lambda e: self.settings_controller.on_word_wrap_changed(e),
             on_language_changed=lambda e: self.settings_controller.on_language_changed(e),
+            on_sidebar_position_changed=lambda e: self.settings_controller.on_sidebar_position_changed(e),
             on_apply=lambda e: self.settings_controller.apply_all(e),
             on_discard=lambda e: self.settings_controller.discard_all(e),
             on_close=lambda e: self._show_editor_view(auto_select_edit=False),
@@ -218,7 +230,6 @@ class DocumentConvertApp:
             on_toggle_editor=lambda e: self.layout_controller.toggle_editor_panel(e),
             on_toggle_status_bar=lambda e: self.layout_controller.toggle_status_bar(e),
             on_insert_image=lambda e: self.file_controller.trigger_insert_image(e),
-            on_ribbon_toggle=lambda: self.layout_controller.update_editor_dynamic_height(),
             on_show_settings=lambda: self._show_settings_view(),
             on_show_help=lambda: self._show_help_view(),
             on_show_editor=lambda: self._show_editor_view(auto_select_edit=False),
@@ -255,10 +266,57 @@ class DocumentConvertApp:
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
 
+        self.activity_bar = ActivityBar(
+            on_tab_selected=lambda tab: self._on_activity_bar_item_clicked(tab),
+            active_tab=getattr(self.state, "active_activity_tab", "explorer"),
+        )
+
+        self.quick_open_dialog = QuickOpenDialog(
+            get_workspace_path=lambda: getattr(self.state, "workspace_folder", "")
+            or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
+            on_file_selected=lambda path: asyncio.create_task(
+                self.file_controller.open_file_by_path(path)
+            ),
+        )
+
+        self.explorer_view = ExplorerView(
+            on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
+            on_file_click=lambda path: asyncio.create_task(self._on_explorer_file_clicked(path)),
+            workspace_path=getattr(self.state, "workspace_folder", ""),
+            active_file_path=getattr(self.state, "in_path", ""),
+            width=getattr(self.state, "sidebar_width", 240),
+            visible=getattr(self.state, "show_sidebar", True),
+        )
+
+        self.sidebar_splitter = DraggableSplitter(
+            on_drag_update=lambda d: self.layout_controller.on_sidebar_resized(d),
+            on_drag_end=lambda: self.layout_controller.on_sidebar_resize_end(),
+            on_double_tap=lambda: self.layout_controller.on_sidebar_double_tap(),
+            splitter_width=6,
+            is_vertical=True,
+            visible=getattr(self.state, "show_sidebar", True),
+        )
+
+        self.editor_splitter = DraggableSplitter(
+            on_drag_update=lambda d: self.layout_controller.on_editor_resized(d),
+            on_drag_end=lambda: self.layout_controller.on_editor_resize_end(),
+            on_double_tap=lambda: self.layout_controller.on_editor_double_tap(),
+            splitter_width=6,
+            is_vertical=True,
+        )
+
         self.editor_workspace = ft.Row(
-            controls=[self.editor_view.container, self.right_pane],
+            controls=[
+                self.activity_bar,
+                self.explorer_view,
+                self.sidebar_splitter,
+                self.editor_view.container,
+                self.editor_splitter,
+                self.right_pane,
+            ],
             expand=True,
-            spacing=10,
+            vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+            spacing=0,
         )
 
         self.workspace_view = WorkspaceView(
@@ -288,6 +346,11 @@ class DocumentConvertApp:
             "workspace_view": self.workspace_view,
             "settings_view": self.settings_view,
             "help_view": self.help_view,
+            "activity_bar": self.activity_bar,
+            "explorer_view": self.explorer_view,
+            "sidebar_splitter": self.sidebar_splitter,
+            "editor_splitter": self.editor_splitter,
+            "editor_workspace": self.editor_workspace,
             "file_picker_in": self.file_picker_in,
             "file_picker_out": self.file_picker_out,
             "on_show_editor": self._show_editor_view,
@@ -425,6 +488,25 @@ class DocumentConvertApp:
             self.page.update()
         except Exception:
             pass
+
+    def _on_activity_bar_item_clicked(self, tab_name: str):
+        if tab_name == "explorer":
+            self.layout_controller.toggle_sidebar(e=True, tab_name="explorer")
+        elif tab_name == "search":
+            self.quick_open_dialog.show(self.page)
+        elif tab_name == "youtube":
+            self.file_controller.trigger_youtube_import(None)
+
+    async def _on_open_workspace_folder(self, e=None):
+        folder = await pick_directory_async(self.page, self.file_picker_in)
+        if folder:
+            self.state.workspace_folder = folder
+            self.explorer_view.load_workspace(folder, active_file=self.state.in_path)
+            settings_store.save_settings(self.state)
+            self._show_editor_view(auto_select_edit=False)
+
+    async def _on_explorer_file_clicked(self, file_path: str):
+        await self.file_controller.open_file_by_path(file_path)
 
 
 def main(page: ft.Page):

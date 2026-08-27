@@ -212,6 +212,7 @@ class HelpView(ft.Container):
             ("Ctrl + O", t("help.sc_open")),
             ("Ctrl + S", t("help.sc_save")),
             ("Ctrl + F", t("help.sc_find")),
+            ("Ctrl + B", t("help.sc_sidebar")),
             ("Ctrl + Z", t("help.sc_undo")),
             ("Ctrl + Y", t("help.sc_redo")),
             ("Ctrl + A", t("help.sc_select_all")),
@@ -321,7 +322,7 @@ class HelpView(ft.Container):
                 ft.DataColumn(ft.Text(t("help.col_save"), size=12, weight=ft.FontWeight.BOLD)),
             ],
             rows=rows,
-            column_spacing=24,
+            column_spacing=16,
             data_row_max_height=32,
             heading_row_height=34,
         )
@@ -335,8 +336,10 @@ class HelpView(ft.Container):
 
     def _build_pro_tips_card(self) -> ft.Container:
         tips = [
+            (ft.Icons.FOLDER_COPY_OUTLINED, "Studio Workspace: Quản lý cả thư mục dự án với File Explorer, kéo thả co giãn Splitter linh hoạt."),
+            (ft.Icons.SMART_DISPLAY_OUTLINED, "YouTube Companion: Click vào mốc [mm:ss] trong Live Preview để tua video tức thì."),
+            (ft.Icons.AUTO_GRAPH_ROUNDED, "Mermaid Live Preview: Hỗ trợ vẽ sơ đồ Flowchart, Sequence, Class, Gantt hiển thị trực quan."),
             (ft.Icons.RESTORE_ROUNDED, t("help.tip_autosave")),
-            (ft.Icons.PALETTE_OUTLINED, t("help.tip_palette")),
             (ft.Icons.IMAGE_OUTLINED, t("help.tip_images")),
             (ft.Icons.SEARCH_ROUNDED, t("help.tip_search")),
         ]

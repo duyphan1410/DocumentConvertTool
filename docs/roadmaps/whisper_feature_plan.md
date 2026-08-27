@@ -104,16 +104,15 @@ Thêm vào `SettingsView` (tận dụng cấu trúc category có sẵn — thêm
 - Vẫn hiện dropdown cho user tự đổi, kèm mô tả ngắn tốc độ/chất lượng từng option
 ```
 
-### Quyết định kỹ thuật cần thống nhất trước khi triển khai
-- **Phiên bản đầu tiên (MVP)**: Ưu tiên triển khai chế độ **CPU-only** với `int8` quantization để đảm bảo tính gọn nhẹ, ổn định và tương thích tối đa trên mọi cấu hình máy người dùng.
-- **Hỗ trợ GPU (CUDA)**: Đặt làm giai đoạn mở rộng tiếp theo để tránh phụ thuộc vào CUDA runtime phức tạp khi đóng gói bản đầu.
+### Câu hỏi cần thảo luận & thống nhất (Open Decisions)
+- **Phương án hỗ trợ phần cứng**: Nên ưu tiên CPU-only (gọn nhẹ, ổn định, tương thích mọi máy) hay giữ cả tùy chọn GPU (CUDA) ngay từ đầu?
+- **Mức độ tích hợp**: Có cần thêm cảnh báo phần cứng trong dialog hay chỉ cần dropdown chọn model đơn giản?
 
 ---
 
 ## 6. Checklist kỹ thuật & Tiêu chuẩn triển khai (Implementation Checklist)
 
 - [ ] **Thư viện**: Sử dụng `faster-whisper` + `ctranslate2` (quantization `int8`).
-- [ ] **Phạm vi phần cứng**: Triển khai trước CPU-only; cấu hình cơ chế gợi ý model dựa trên tài nguyên hệ thống.
 - [ ] **Cấu trúc module**: Tạo module độc lập `src/services/whisper_service.py`, không làm ảnh hưởng đến `speech_service.py` hiện tại.
 - [ ] **Đường dẫn lưu trữ**: Cấu hình `download_root` chuẩn về `%APPDATA%\DocConvert\models\`.
 - [ ] **Bất đồng bộ & UX**: Bọc toàn bộ quá trình transcribe trong `asyncio.to_thread` / worker thread để không block giao diện Flet Desktop.
@@ -127,34 +126,5 @@ Thêm vào `SettingsView` (tận dụng cấu trúc category có sẵn — thêm
 Chiến lược tải model theo nhu cầu (**On-demand Download**) giúp cô lập hoàn toàn tính năng với quy trình đóng gói:
 - **Kích thước bộ cài**: `Setup.exe` không bị phình to (không bundle file weights ~145MB vào installer).
 - **Cấu hình PyInstaller**: Chỉ cần khai báo `hiddenimports` cho `faster_whisper` và `ctranslate2` khi tích hợp module vào dự án.
-- **Tính độc lập**: Kế hoạch phát triển bộ cài Inno Setup (`plan_setup_exe.md`) và tính năng Whisper AI có thể tiến hành hoàn toàn độc lập mà không bị phụ thuộc chéo.
+- **Tính độc lập**: Kế hoạch phát triển bộ cài đặt Windows Installer (`Setup.exe`) và tính năng Whisper AI có thể tiến hành hoàn toàn độc lập mà không bị phụ thuộc chéo.
 
----
-
-## 8. Chiến lược & Kế hoạch Kiểm thử Toàn diện (Comprehensive Testing Matrix)
-
-Để đảm bảo tính năng hoạt động ổn định trên mọi môi trường và xử lý mượt mà mọi ngoại lệ, quy trình kiểm thử được tổ chức thành **4 tầng kiểm soát**:
-
-### 🔹 Tầng 1: Unit Tests (Tự động & Mock — CI/CD Ready)
-- **Kiểm thử định dạng Markdown (`tests/test_whisper_service.py`)**: Mock generator kết quả của `faster-whisper` để kiểm tra logic render Markdown (tiêu đề H1, bảng metadata, timestamps `[hh:mm:ss]`, format text).
-- **Kiểm thử bắt lỗi**:
-  - File không tồn tại ➔ Bắt đúng lỗi `ERR_FILE_NOT_FOUND`.
-  - File sai định dạng / file hỏng ➔ Bắt đúng lỗi `ERR_INVALID_AUDIO_FORMAT`.
-- **Kiểm thử tích hợp ngắn**: Dùng 1 file âm thanh mẫu siêu ngắn (3–5s) trong `tests/assets/sample_audio.wav` để test thực tế pipeline decode âm thanh không lỗi.
-
-### 🔹 Tầng 2: Integration & UI Tests (Giao diện Flet & Controller)
-- **Consent Dialog**: Kiểm tra hiển thị dialog tải model lần đầu (tên model, dung lượng ~145MB, nút "Tải & Dùng" / "Hủy").
-- **Trải nghiệm bất đồng bộ (Non-blocking)**: Xác nhận giao diện Flet không bị đơ/treo khi tải model hoặc khi đang nhận diện giọng nói (nhờ `asyncio.to_thread`).
-- **Buffer & Live Preview**: Xác nhận sau khi hoàn tất, nội dung Markdown được nạp vào editor buffer, kích hoạt live preview và autosave draft.
-- **Settings View & Dọn dẹp**: Kiểm tra hiển thị dung lượng model trong `%APPDATA%\DocConvert\models\` và chức năng "Xóa model" giải phóng bộ nhớ.
-
-### 🔹 Tầng 3: Kiểm thử Môi trường Đóng gói (Dev Mode ➔ `--onedir` ➔ `Setup.exe`)
-- **Dev Mode (`python run.py`)**: Kiểm tra tải model qua mạng và nhận diện file `.mp3`, `.wav`, `.m4a`, `.mp4`.
-- **Thư mục Portable (`dist/Document Converter/`)**: Kiểm tra `ctranslate2` và `faster-whisper` C-runtimes load thành công, không gặp lỗi thiếu DLL hay `ModuleNotFoundError`.
-- **Máy ảo sạch (Clean VM / Windows Sandbox)**: Cài đặt từ `Setup.exe` trên môi trường Windows sạch (không có Python) để xác nhận trọn vẹn quy trình người dùng cuối.
-
-### 🔹 Tầng 4: Edge Cases & Kiểm soát Rủi ro (Stress Test)
-- **Mất kết nối mạng giữa chừng**: Ngắt mạng khi đang tải model ➔ App báo lỗi rõ ràng, dọn dẹp file tải dở, không bị crash.
-- **Dung lượng đĩa không đủ**: Kiểm tra `shutil.disk_usage()` chặn tải nếu ổ cứng trống < 200MB.
-- **File âm thanh im lặng (Silent Audio)**: Xử lý êm dịu, trả về metadata và ghi chú `[Không phát hiện giọng nói]`.
-- **File Video nặng (> 500MB MP4)**: Bóc tách luồng audio stream an toàn mà không làm tràn bộ nhớ RAM (OOM).

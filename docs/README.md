@@ -76,6 +76,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260828_explorer_context_menu_and_safe_file_operations.md](archive/20260828_explorer_context_menu_and_safe_file_operations.md): Explorer Context Menu & Safe File Operations (v1.8.1a) — Menu chuột phải thông minh, Win32 `SHFileOperationW` Recycle Bin qua ctypes double-null, Smart 2-Tier Quick Convert (1-click to MD, 8-format hover flyout), nút Collapse All Folders, hover highlight và đồng bộ Footer Status.
 - [20260827_activity_bar_and_studio_workspace.md](archive/20260827_activity_bar_and_studio_workspace.md): Studio Workspace & File Explorer Architecture (v1.8.0) — Activity Bar navigation, recursive File Explorer tree with inline filter, Quick Open fuzzy file search modal (`Ctrl+P`), 60fps Draggable Splitters with ratio persistence, and 2x2 Welcome View overhaul.
 - [20260818_youtube_transcript_and_json_yaml_formatting_fixes.md](archive/20260818_youtube_transcript_and_json_yaml_formatting_fixes.md): YouTube Subtitles/Transcript Extractor (Multi-tier Strategy: Subtitles & Server-side Auto-Translate + Lightweight Non-AI Speech Fallback), Direct Markdown Export (`.md`), Win32 Clipboard (`Win + V`) & JSON/YAML multiline formatting fixes.
 - [20260814_json_yaml_conversion_modules.md](archive/20260814_json_yaml_conversion_modules.md): Bi-directional JSON ↔ MD & YAML ↔ MD conversion modules, Lazy Import Rule compliance, and unit tests integration.

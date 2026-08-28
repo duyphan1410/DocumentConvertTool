@@ -86,7 +86,7 @@ def pick_input_file_sync() -> str | None:
     return None
 
 
-def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx") -> str | None:
+def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx", initial_dir: str | None = None) -> str | None:
     """Synchronous worker that opens transient Windows Save File Dialog."""
     ensure_tcl_tk()
     try:
@@ -106,6 +106,7 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
             title="Select Output Destination",
             defaultextension=default_ext,
             initialfile=initial_file,
+            initialdir=initial_dir,
             filetypes=OUTPUT_FILETYPES,
             confirmoverwrite=True,
         )
@@ -140,7 +141,7 @@ async def pick_input_file_async(page: ft.Page | None = None, picker: ft.FilePick
     return await asyncio.to_thread(pick_input_file_sync)
 
 
-async def pick_output_file_async(default_ext: str = ".docx", initial_file: str = "output.docx", page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
+async def pick_output_file_async(default_ext: str = ".docx", initial_file: str = "output.docx", initial_dir: str | None = None, page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
     """
     Async wrapper running output dialog.
     Uses native Tkinter on Desktop; falls back to Flet FilePicker on Web/Mobile if provided.
@@ -153,7 +154,7 @@ async def pick_output_file_async(default_ext: str = ".docx", initial_file: str =
                 allowed_extensions=[default_ext.lstrip(".")],
             )
             return path
-    return await asyncio.to_thread(pick_output_file_sync, default_ext, initial_file)
+    return await asyncio.to_thread(pick_output_file_sync, default_ext, initial_file, initial_dir)
 
 
 IMAGE_FILETYPES = [

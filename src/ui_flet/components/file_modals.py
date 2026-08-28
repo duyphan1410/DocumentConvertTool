@@ -324,3 +324,76 @@ def show_new_entry_dialog(
     page.overlay.append(dlg)
     dlg.open = True
     page.update()
+
+
+def show_unsaved_tab_dialog(
+    page: ft.Page,
+    tab_title: str,
+    on_save: Callable[[], None],
+    on_discard: Callable[[], None],
+    on_cancel: Optional[Callable[[], None]] = None,
+):
+    """
+    Displays confirmation dialog when attempting to close an unsaved or orphaned document tab.
+    Provides Save, Discard, and Cancel actions with clean i18n support.
+    Dismissible by clicking outside (modal=False) or pressing Escape.
+    """
+    page.overlay[:] = [c for c in page.overlay if not isinstance(c, ft.AlertDialog)]
+
+    def close_dialog(e=None):
+        dlg.open = False
+        page.update()
+        if on_cancel:
+            on_cancel()
+
+    def handle_discard(e=None):
+        dlg.open = False
+        page.update()
+        on_discard()
+
+    def handle_save(e=None):
+        dlg.open = False
+        page.update()
+        on_save()
+
+    dlg = ft.AlertDialog(
+        modal=False,
+        on_dismiss=close_dialog,
+        title=ft.Row(
+            [
+                ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=20, color=ft.Colors.AMBER_400),
+                ft.Text(t("dialog.unsaved_tab_title"), size=15, weight=ft.FontWeight.W_600),
+            ],
+            spacing=8,
+        ),
+        content=ft.Container(
+            content=ft.Text(
+                t("dialog.unsaved_tab_message", title=tab_title),
+                size=13,
+                color=ft.Colors.ON_SURFACE,
+            ),
+            width=380,
+        ),
+        actions=[
+            ft.TextButton(
+                t("dialog.btn_cancel"),
+                on_click=close_dialog,
+            ),
+            ft.TextButton(
+                t("dialog.btn_discard"),
+                style=ft.ButtonStyle(color=ft.Colors.RED_400),
+                on_click=handle_discard,
+            ),
+            ft.ElevatedButton(
+                t("dialog.btn_save"),
+                icon=ft.Icons.SAVE_OUTLINED,
+                on_click=handle_save,
+            ),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+
+    page.overlay.append(dlg)
+    dlg.open = True
+    page.update()
+

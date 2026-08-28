@@ -282,6 +282,16 @@ class DocumentConvertApp:
         self.explorer_view = ExplorerView(
             on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
             on_file_click=lambda path: asyncio.create_task(self._on_explorer_file_clicked(path)),
+            on_rename=lambda old_p, new_p: self.file_controller.handle_file_renamed(old_p, new_p),
+            on_delete=lambda del_p: self.file_controller.handle_file_deleted(del_p),
+            on_quick_convert=lambda file_p, target_ext: asyncio.create_task(
+                self.conversion_controller.async_quick_convert_file(file_p, target_ext)
+            ),
+            on_new_file=lambda new_p: asyncio.create_task(self.file_controller.open_file_by_path(new_p)),
+            on_new_folder=lambda new_folder: None,
+            on_status_message=lambda msg, col=None: self.footer_bar.set_status(msg, color=col),
+            get_is_dirty=lambda: getattr(self.state, "is_dirty", False),
+            get_active_file=lambda: getattr(self.state, "in_path", ""),
             workspace_path=getattr(self.state, "workspace_folder", ""),
             active_file_path=getattr(self.state, "in_path", ""),
             width=getattr(self.state, "sidebar_width", 240),

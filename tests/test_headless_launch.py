@@ -27,7 +27,15 @@ class TestHeadlessLaunch(unittest.TestCase):
             err_msg = err.decode("utf-8", errors="ignore")
             self.fail(f"App terminated prematurely with code {poll}. STDERR:\n{err_msg}")
         else:
-            proc.kill()
+            if sys.platform == "win32":
+                subprocess.run(
+                    f"taskkill /F /T /PID {proc.pid}",
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                proc.kill()
             out, err = proc.communicate()
             err_text = err.decode("utf-8", errors="ignore")
             out_text = out.decode("utf-8", errors="ignore")

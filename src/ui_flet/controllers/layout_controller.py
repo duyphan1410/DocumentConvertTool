@@ -126,7 +126,11 @@ class LayoutController:
         is_sidebar_open = getattr(self.state, "show_sidebar", True)
         if explorer_view:
             explorer_view.visible = is_sidebar_open
-            explorer_view.width = getattr(self.state, "sidebar_width", 240)
+            sw = getattr(self.state, "sidebar_width", 240)
+            if hasattr(explorer_view, "update_responsive_width"):
+                explorer_view.update_responsive_width(sw)
+            else:
+                explorer_view.width = sw
         if sidebar_splitter:
             sidebar_splitter.visible = is_sidebar_open
         if activity_bar:
@@ -296,7 +300,10 @@ class LayoutController:
         max_allowed = min(500, int(page_w * 0.45))
         clamped_width = max(150, min(int(round(target_width)), max_allowed))
 
-        explorer_view.width = clamped_width
+        if hasattr(explorer_view, "update_responsive_width"):
+            explorer_view.update_responsive_width(clamped_width)
+        else:
+            explorer_view.width = clamped_width
         self.state.sidebar_width = clamped_width
 
         try:

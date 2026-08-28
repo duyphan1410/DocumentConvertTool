@@ -581,3 +581,65 @@ class FileController:
                     print(f"[LOG][AUTO-SAVE][{timestamp}] Removed draft file: {path}")
                 except Exception as e:
                     print(f"[LOG][AUTO-SAVE][ERROR] Failed to remove draft file {path}: {e}")
+
+    def handle_file_renamed(self, old_path: str, new_path: str):
+        """
+        Synchronizes AppState, FilePathBar, Page Title, and Draft Metadata
+        when an active document is renamed on disk.
+        """
+        if not self.state.in_path:
+            return
+        if os.path.normcase(os.path.normpath(self.state.in_path)) == os.path.normcase(os.path.normpath(old_path)):
+            self.state.in_path = new_path
+            self.file_path_bar.set_in_path(new_path)
+
+            # Auto-calculate and update out_path if it was based on old_path
+            if self.state.out_path:
+                out_dir = os.path.dirname(self.state.out_path)
+                mode_cfg = MODES.get(self.state.current_mode, {})
+                out_ext = mode_cfg.get("out_ext", os.path.splitext(self.state.out_path)[1])
+                new_base = os.path.splitext(os.path.basename(new_path))[0]
+                new_out = os.path.join(out_dir, f"{new_base}{out_ext}")
+                self.state.out_path = new_out
+                self.file_path_bar.set_out_path(new_out)
+
+            # Update Window Title
+            from src.__version__ import __version__
+            self.page.title = f"{os.path.basename(new_path)} — Document Converter v{__version__}"
+
+            # Synchronize Draft Metadata immediately
+            self.perform_autosave()
+            try:
+                self.page.update()
+            except Exception:
+                pass
+
+    def handle_file_deleted(self, deleted_path: str):
+        """
+        Resets Editor to clean Blank Note if the currently active document or its parent directory is deleted.
+        """
+        if not self.state.in_path:
+            return
+        active_norm = os.path.normcase(os.path.normpath(self.state.in_path))
+        deleted_norm = os.path.normcase(os.path.normpath(deleted_path))
+
+        # Check if the active file or its parent directory was deleted
+        is_direct_match = (active_norm == deleted_norm)
+        is_parent_match = active_norm.startswith(deleted_norm + os.sep)
+
+        if is_direct_match or is_parent_match:
+            self.state.in_path = ""
+            self.state.out_path = ""
+            self.state.is_dirty = False
+            self.file_path_bar.set_in_path("")
+            self.file_path_bar.set_out_path("")
+            self.editor_view.set_text("")
+            self.preview.update_preview("", base_dir=None)
+            self.clear_draft_file()
+            from src.__version__ import __version__
+            self.page.title = t("app.title", version=__version__)
+            self.footer_bar.set_status_key("status.ready", color=ft.Colors.PRIMARY)
+            try:
+                self.page.update()
+            except Exception:
+                pass

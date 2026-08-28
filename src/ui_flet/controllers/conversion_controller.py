@@ -378,3 +378,62 @@ class ConversionController:
                         print(f"[DEBUG] os.startfile folder fallback error: {e_start}")
             else:
                 print(f"[DEBUG] Cannot open folder: path does not exist '{folder_path}'")
+
+    async def async_quick_convert_file(self, file_path: str, target_ext: str):
+        """
+        Performs non-blocking conversion from Explorer Context Menu.
+        Reuses existing ModuleRegistry pipelines and overwrite dialog guards.
+        """
+        if not os.path.exists(file_path):
+            return
+
+        out_path = os.path.splitext(file_path)[0] + target_ext
+        out_path = os.path.normpath(out_path)
+
+        if os.path.exists(out_path):
+            self.show_overwrite_confirmation_dialog(
+                out_path,
+                on_confirm_callback=lambda: asyncio.create_task(self._do_quick_convert_process(file_path, out_path, target_ext)),
+            )
+            return
+
+        await self._do_quick_convert_process(file_path, out_path, target_ext)
+
+    async def _do_quick_convert_process(self, file_path: str, out_path: str, target_ext: str):
+        from src.services.file_loader import load_document
+        t0 = time.time()
+        file_name = os.path.basename(file_path)
+        out_name = os.path.basename(out_path)
+
+        self.footer_bar.set_status(
+            f"Đang chuyển đổi: {file_name} ➔ {out_name}...",
+            color=ft.Colors.AMBER_400,
+        )
+        self.page.update()
+
+        try:
+            # 1. Load document content
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in (".md", ".markdown", ".txt"):
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            else:
+                content = await asyncio.to_thread(load_document, file_path)
+
+            # 2. Convert content
+            await asyncio.to_thread(convert_content, content, out_path, target_ext)
+
+            dur_str = f"{time.time() - t0:.2f}"
+            self.state.last_converted_path = out_path
+            self.footer_bar.set_status_key(
+                "status.conversion_success",
+                color=ft.Colors.GREEN_400,
+                duration=dur_str,
+                filename=out_name,
+            )
+            self.footer_bar.set_action_buttons_visible(True)
+            self.page.update()
+        except Exception as ex:
+            print(f"[ConversionController] Quick convert failed: {ex}")
+            self.footer_bar.set_status(f"Lỗi chuyển đổi: {ex}", color=ft.Colors.RED_400, is_error=True)
+            self.page.update()

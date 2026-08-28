@@ -1,7 +1,7 @@
 """
 File Explorer Sidebar View for DocConvert Workspace.
 Provides a folder tree view with on-demand lazy loading, async directory scanning,
-and contextual file extension icons.
+contextual file extension icons, and smart IDE-style right-click context menu.
 """
 from __future__ import annotations
 
@@ -9,7 +9,16 @@ import os
 import asyncio
 from typing import Callable, Optional
 import flet as ft
+
 from src.i18n import t
+from src.utils.file_ops import safe_delete_to_recycle_bin, reveal_in_windows_explorer
+from src.utils.clipboard import set_clipboard_text
+from src.ui_flet.components.context_menu import ExplorerContextMenu
+from src.ui_flet.components.file_modals import (
+    show_rename_dialog,
+    show_safe_delete_dialog,
+    show_new_entry_dialog,
+)
 
 # Ignored directory names to maintain high performance
 IGNORED_DIRS = {
@@ -32,6 +41,8 @@ EXT_CONFIG = {
     ".pdf": (ft.Icons.PICTURE_AS_PDF_ROUNDED, ft.Colors.RED_400),
     ".docx": (ft.Icons.EDIT_DOCUMENT, ft.Colors.LIGHT_BLUE_400),
     ".doc": (ft.Icons.EDIT_DOCUMENT, ft.Colors.LIGHT_BLUE_400),
+    ".pptx": (ft.Icons.SLIDESHOW_ROUNDED, ft.Colors.DEEP_ORANGE_400),
+    ".ppt": (ft.Icons.SLIDESHOW_ROUNDED, ft.Colors.DEEP_ORANGE_400),
     ".xlsx": (ft.Icons.TABLE_CHART_ROUNDED, ft.Colors.GREEN_400),
     ".xls": (ft.Icons.TABLE_CHART_ROUNDED, ft.Colors.GREEN_400),
     ".csv": (ft.Icons.TABLE_CHART_ROUNDED, ft.Colors.TEAL_400),
@@ -47,6 +58,26 @@ EXT_CONFIG = {
 }
 
 
+def _extract_tap_position(e: ft.TapEvent) -> tuple[float, float]:
+    """Safely extracts global (x, y) coordinates from Flet TapEvent across all versions."""
+    try:
+        if hasattr(e, "global_position") and e.global_position:
+            return float(e.global_position.x), float(e.global_position.y)
+        if hasattr(e, "local_position") and e.local_position:
+            return float(e.local_position.x), float(e.local_position.y)
+        if hasattr(e, "global_x") and hasattr(e, "global_y"):
+            return float(e.global_x), float(e.global_y)
+        if hasattr(e, "data") and e.data:
+            import json
+            d = json.loads(e.data)
+            gx = d.get("gx", d.get("g", {}).get("x", d.get("lx", 150)))
+            gy = d.get("gy", d.get("g", {}).get("y", d.get("ly", 150)))
+            return float(gx), float(gy)
+    except Exception:
+        pass
+    return 150.0, 150.0
+
+
 class FileTreeItem(ft.Container):
     """An individual file entry in the Explorer tree."""
 
@@ -56,6 +87,7 @@ class FileTreeItem(ft.Container):
         name: str,
         depth: int,
         on_click: Optional[Callable[[str], None]] = None,
+        on_secondary_tap_down: Optional[Callable[[str, float, float], None]] = None,
         is_active: bool = False,
         **kwargs,
     ):
@@ -63,6 +95,7 @@ class FileTreeItem(ft.Container):
         self.file_name = name
         self.depth = depth
         self._on_click_callback = on_click
+        self._on_secondary_callback = on_secondary_tap_down
         self.is_active = is_active
 
         ext = os.path.splitext(name)[1].lower()
@@ -78,22 +111,47 @@ class FileTreeItem(ft.Container):
             expand=True,
         )
 
+        row_content = ft.Row(
+            [
+                ft.Icon(icon, size=15, color=color),
+                self.label,
+            ],
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
         super().__init__(
-            content=ft.Row(
-                [
-                    ft.Icon(icon, size=15, color=color),
-                    self.label,
-                ],
-                spacing=6,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            content=ft.GestureDetector(
+                content=row_content,
+                on_tap=self._handle_click,
+                on_enter=self._handle_enter,
+                on_exit=self._handle_exit,
+                on_secondary_tap_down=self._handle_secondary_tap,
             ),
             padding=ft.Padding(left=12 + (depth * 14), top=3, right=6, bottom=3),
             border_radius=4,
             bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY) if is_active else ft.Colors.TRANSPARENT,
             ink=True,
-            on_click=self._handle_click,
             **kwargs,
         )
+
+    def _handle_enter(self, e=None):
+        if not self.is_active:
+            self.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+            try:
+                if self.page:
+                    self.update()
+            except Exception:
+                pass
+
+    def _handle_exit(self, e=None):
+        if not self.is_active:
+            self.bgcolor = ft.Colors.TRANSPARENT
+            try:
+                if self.page:
+                    self.update()
+            except Exception:
+                pass
 
     def set_active(self, is_active: bool):
         self.is_active = is_active
@@ -110,9 +168,14 @@ class FileTreeItem(ft.Container):
         except Exception:
             pass
 
-    def _handle_click(self, e):
+    def _handle_click(self, e=None):
         if self._on_click_callback:
             self._on_click_callback(self.file_path)
+
+    def _handle_secondary_tap(self, e: ft.TapEvent):
+        if self._on_secondary_callback:
+            gx, gy = _extract_tap_position(e)
+            self._on_secondary_callback(self.file_path, gx, gy)
 
 
 class DirectoryTreeItem(ft.Column):
@@ -124,6 +187,8 @@ class DirectoryTreeItem(ft.Column):
         name: str,
         depth: int,
         on_file_click: Optional[Callable[[str], None]] = None,
+        on_file_secondary: Optional[Callable[[str, float, float], None]] = None,
+        on_folder_secondary: Optional[Callable[[str, float, float], None]] = None,
         active_path: str = "",
         **kwargs,
     ):
@@ -131,6 +196,8 @@ class DirectoryTreeItem(ft.Column):
         self.dir_name = name
         self.depth = depth
         self.on_file_click = on_file_click
+        self.on_file_secondary = on_file_secondary
+        self.on_folder_secondary = on_folder_secondary
         self.active_path = active_path
         self.is_expanded = False
         self._is_loaded = False
@@ -154,20 +221,27 @@ class DirectoryTreeItem(ft.Column):
             expand=True,
         )
 
+        header_row = ft.Row(
+            [
+                self.icon_arrow,
+                self.icon_folder,
+                self.label,
+            ],
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
         self.header = ft.Container(
-            content=ft.Row(
-                [
-                    self.icon_arrow,
-                    self.icon_folder,
-                    self.label,
-                ],
-                spacing=4,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            content=ft.GestureDetector(
+                content=header_row,
+                on_tap=self._toggle_expand,
+                on_enter=self._handle_header_enter,
+                on_exit=self._handle_header_exit,
+                on_secondary_tap_down=self._handle_folder_secondary_tap,
             ),
             padding=ft.Padding(left=4 + (depth * 14), top=3, right=6, bottom=3),
             border_radius=4,
             ink=True,
-            on_click=self._toggle_expand,
         )
 
         self.children_column = ft.Column(spacing=1, visible=False)
@@ -178,7 +252,28 @@ class DirectoryTreeItem(ft.Column):
             **kwargs,
         )
 
-    def _toggle_expand(self, e):
+    def _handle_header_enter(self, e=None):
+        self.header.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+        try:
+            if self.page:
+                self.header.update()
+        except Exception:
+            pass
+
+    def _handle_header_exit(self, e=None):
+        self.header.bgcolor = ft.Colors.TRANSPARENT
+        try:
+            if self.page:
+                self.header.update()
+        except Exception:
+            pass
+
+    def _handle_folder_secondary_tap(self, e: ft.TapEvent):
+        if self.on_folder_secondary:
+            gx, gy = _extract_tap_position(e)
+            self.on_folder_secondary(self.dir_path, gx, gy)
+
+    def _toggle_expand(self, e=None):
         self.is_expanded = not self.is_expanded
         self.icon_arrow.name = (
             ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
@@ -221,6 +316,8 @@ class DirectoryTreeItem(ft.Column):
                             name=entry.name,
                             depth=self.depth + 1,
                             on_file_click=self.on_file_click,
+                            on_file_secondary=self.on_file_secondary,
+                            on_folder_secondary=self.on_folder_secondary,
                             active_path=self.active_path,
                         )
                     )
@@ -236,22 +333,47 @@ class DirectoryTreeItem(ft.Column):
                             name=entry.name,
                             depth=self.depth + 1,
                             on_click=self.on_file_click,
+                            on_secondary_tap_down=self.on_file_secondary,
                             is_active=is_act,
                         )
                     )
         except Exception as ex:
             print(f"[ExplorerView] Failed to scan {self.dir_path}: {ex}")
 
+    def collapse_all(self):
+        """Recursively collapses this directory and any expanded child directories."""
+        self.is_expanded = False
+        self.icon_arrow.name = ft.Icons.KEYBOARD_ARROW_RIGHT_ROUNDED
+        self.icon_folder.name = ft.Icons.FOLDER_ROUNDED
+        self.children_column.visible = False
+        for ctrl in self.children_column.controls:
+            if isinstance(ctrl, DirectoryTreeItem):
+                ctrl.collapse_all()
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
+
 
 class ExplorerView(ft.Container):
     """
     Explorer Sidebar panel displaying the current Workspace directory tree.
+    Supports on-demand lazy loading, search filter, and floating context menu operations.
     """
 
     def __init__(
         self,
         on_open_folder: Optional[Callable] = None,
         on_file_click: Optional[Callable[[str], None]] = None,
+        on_rename: Optional[Callable[[str, str], None]] = None,
+        on_delete: Optional[Callable[[str], None]] = None,
+        on_quick_convert: Optional[Callable[[str, str], None]] = None,
+        on_new_file: Optional[Callable[[str], None]] = None,
+        on_new_folder: Optional[Callable[[str], None]] = None,
+        on_status_message: Optional[Callable[[str, Optional[str]], None]] = None,
+        get_is_dirty: Optional[Callable[[], bool]] = None,
+        get_active_file: Optional[Callable[[], str]] = None,
         workspace_path: str = "",
         active_file_path: str = "",
         width: int = 240,
@@ -259,9 +381,19 @@ class ExplorerView(ft.Container):
     ):
         self._on_open_folder = on_open_folder
         self._on_file_click = on_file_click
+        self._on_rename = on_rename
+        self._on_delete = on_delete
+        self._on_quick_convert = on_quick_convert
+        self._on_new_file = on_new_file
+        self._on_new_folder = on_new_folder
+        self._on_status_message = on_status_message
+        self._get_is_dirty = get_is_dirty
+        self._get_active_file = get_active_file
+
         self.workspace_path = workspace_path
         self.active_file_path = active_file_path
         self._is_scanning = False
+        self.context_menu: Optional[ExplorerContextMenu] = None
 
         # Header controls
         self.title_text = ft.Text(
@@ -278,25 +410,55 @@ class ExplorerView(ft.Container):
             overflow=ft.TextOverflow.ELLIPSIS,
             expand=True,
         )
+        is_compact = width < 210
+
+        self.btn_collapse_all = ft.IconButton(
+            icon=ft.Icons.UNFOLD_LESS_ROUNDED,
+            icon_size=15,
+            tooltip=t("explorer.collapse_all"),
+            on_click=lambda _: self.collapse_all(),
+            visible=bool(workspace_path),
+        )
         self.btn_open_folder = ft.IconButton(
             icon=ft.Icons.FOLDER_OPEN_ROUNDED,
-            icon_size=16,
+            icon_size=15,
             tooltip=t("explorer.open_folder"),
             on_click=lambda e: self._on_open_folder(e) if self._on_open_folder else None,
         )
         self.btn_refresh = ft.IconButton(
             icon=ft.Icons.REFRESH_ROUNDED,
-            icon_size=16,
+            icon_size=15,
             tooltip=t("explorer.refresh"),
             on_click=lambda _: self.refresh_tree(),
+            visible=bool(workspace_path),
+        )
+
+        self.btn_actions_row = ft.Row(
+            [
+                self.btn_collapse_all,
+                self.btn_open_folder,
+                self.btn_refresh,
+            ],
+            spacing=0,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            visible=not is_compact,
+        )
+
+        self.btn_more = ft.IconButton(
+            icon=ft.Icons.MORE_HORIZ_ROUNDED,
+            icon_size=15,
+            tooltip=t("explorer.more_actions"),
+            on_click=self._handle_more_clicked,
+            visible=is_compact,
         )
 
         self.header_row = ft.Row(
             [
                 self.title_text,
                 ft.Container(expand=True),
-                self.btn_open_folder,
-                self.btn_refresh,
+                self.btn_actions_row,
+                self.btn_more,
             ],
             spacing=2,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -382,12 +544,162 @@ class ExplorerView(ft.Container):
         if workspace_path:
             self.load_workspace(workspace_path, active_file_path)
 
+    def _ensure_context_menu(self):
+        if not self.context_menu and self.page:
+            self.context_menu = ExplorerContextMenu(self.page)
+
+    def _handle_more_clicked(self, e: ft.ControlEvent):
+        self._ensure_context_menu()
+        if self.context_menu:
+            # Anchor dropdown menu right below header row
+            gx = float(getattr(self, "width", 180) or 180) + 30
+            gy = 60.0
+            if hasattr(e, "global_position") and e.global_position:
+                gx = float(e.global_position.x)
+                gy = float(e.global_position.y)
+            self.context_menu.show_header_menu(
+                x=gx,
+                y=gy,
+                on_open_folder=lambda: self._on_open_folder(None) if self._on_open_folder else None,
+                on_collapse_all=self.collapse_all,
+                on_refresh=self.refresh_tree,
+            )
+
+    def _show_file_context_menu(self, file_path: str, x: float, y: float):
+        self._ensure_context_menu()
+        if not self.context_menu:
+            return
+
+        is_active = (
+            os.path.normpath(file_path) == os.path.normpath(self.active_file_path)
+            if self.active_file_path
+            else False
+        )
+        is_dirty = self._get_is_dirty() if self._get_is_dirty else False
+
+        self.context_menu.show_file_menu(
+            x=x,
+            y=y,
+            file_path=file_path,
+            on_quick_convert=self._handle_quick_convert_action,
+            on_reveal=reveal_in_windows_explorer,
+            on_copy_path=self._handle_copy_path,
+            on_rename=lambda p: show_rename_dialog(self.page, p, self._handle_rename_confirmed),
+            on_delete=lambda p: show_safe_delete_dialog(
+                self.page, p, is_active, is_dirty, self._handle_delete_confirmed
+            ),
+        )
+
+    def _show_folder_context_menu(self, folder_path: str, x: float, y: float):
+        self._ensure_context_menu()
+        if not self.context_menu:
+            return
+
+        self.context_menu.show_folder_menu(
+            x=x,
+            y=y,
+            folder_path=folder_path,
+            on_new_file=lambda p: show_new_entry_dialog(
+                self.page, p, is_folder=False, on_confirmed=self._handle_new_entry_confirmed
+            ),
+            on_new_folder=lambda p: show_new_entry_dialog(
+                self.page, p, is_folder=True, on_confirmed=self._handle_new_entry_confirmed
+            ),
+            on_reveal=reveal_in_windows_explorer,
+            on_copy_path=self._handle_copy_path,
+        )
+
+    def _handle_copy_path(self, path: str):
+        set_clipboard_text(path, self.page)
+        if self._on_status_message:
+            self._on_status_message(t("explorer.copied_status", name=os.path.basename(path)), ft.Colors.BLUE_400)
+
+    def _handle_quick_convert_action(self, file_path: str, target_ext: str):
+        if self._on_quick_convert:
+            self._on_quick_convert(file_path, target_ext)
+
+    def _handle_rename_confirmed(self, old_path: str, new_name: str):
+        target_dir = os.path.dirname(old_path)
+        new_full_path = os.path.join(target_dir, new_name)
+        try:
+            os.rename(old_path, new_full_path)
+            if self._on_rename:
+                self._on_rename(old_path, new_full_path)
+            if self._on_status_message:
+                self._on_status_message(
+                    t("explorer.renamed_status", old=os.path.basename(old_path), new=new_name),
+                    ft.Colors.GREEN_400,
+                )
+            self.refresh_tree()
+        except Exception as ex:
+            print(f"[ExplorerView] Rename error: {ex}")
+
+    def _handle_delete_confirmed(self, target_path: str):
+        try:
+            safe_delete_to_recycle_bin(target_path)
+            if self._on_delete:
+                self._on_delete(target_path)
+            if self._on_status_message:
+                self._on_status_message(
+                    t("explorer.deleted_status", name=os.path.basename(target_path)),
+                    ft.Colors.AMBER_400,
+                )
+            self.refresh_tree()
+        except Exception as ex:
+            print(f"[ExplorerView] Delete error: {ex}")
+
+    def _handle_new_entry_confirmed(self, target_dir: str, name: str, is_folder: bool):
+        new_full_path = os.path.join(target_dir, name)
+        try:
+            if is_folder:
+                os.makedirs(new_full_path, exist_ok=True)
+                if self._on_new_folder:
+                    self._on_new_folder(new_full_path)
+            else:
+                with open(new_full_path, "w", encoding="utf-8") as f:
+                    f.write("")
+                if self._on_new_file:
+                    self._on_new_file(new_full_path)
+            if self._on_status_message:
+                self._on_status_message(
+                    t("explorer.created_status", name=name),
+                    ft.Colors.GREEN_400,
+                )
+            self.refresh_tree()
+        except Exception as ex:
+            print(f"[ExplorerView] Create entry error: {ex}")
+
+    def update_responsive_width(self, new_width: int):
+        """Switches between inline 3-button row and 3-dots dropdown menu based on sidebar width."""
+        is_compact = new_width < 210
+        self.btn_actions_row.visible = not is_compact
+        self.btn_more.visible = is_compact
+        self.width = new_width
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
+
+    def collapse_all(self, e=None):
+        """Recursively collapses all expanded directories across the entire tree."""
+        for item in self.tree_list.controls:
+            if isinstance(item, DirectoryTreeItem):
+                item.collapse_all()
+        try:
+            if self.page:
+                self.tree_list.update()
+        except Exception:
+            pass
+
     def load_workspace(self, folder_path: str, active_file: str = ""):
         """Sets the root workspace directory and asynchronously scans files."""
         self.workspace_path = folder_path
         self.active_file_path = active_file
         self.folder_name_text.value = os.path.basename(folder_path) or folder_path
         self.folder_title_row.visible = bool(folder_path)
+        self.btn_collapse_all.visible = bool(folder_path)
+        self.btn_refresh.visible = bool(folder_path)
         self.filter_input.visible = bool(folder_path)
         self.filter_input.value = ""
         self.empty_state.visible = not bool(folder_path)
@@ -435,6 +747,7 @@ class ExplorerView(ft.Container):
                     name=display_name,
                     depth=0,
                     on_click=self._handle_file_click,
+                    on_secondary_tap_down=self._show_file_context_menu,
                     is_active=is_act,
                 )
             )
@@ -485,6 +798,8 @@ class ExplorerView(ft.Container):
                             name=name,
                             depth=0,
                             on_file_click=self._handle_file_click,
+                            on_file_secondary=self._show_file_context_menu,
+                            on_folder_secondary=self._show_folder_context_menu,
                             active_path=self.active_file_path,
                         )
                     )
@@ -500,6 +815,7 @@ class ExplorerView(ft.Container):
                             name=name,
                             depth=0,
                             on_click=self._handle_file_click,
+                            on_secondary_tap_down=self._show_file_context_menu,
                             is_active=is_act,
                         )
                     )

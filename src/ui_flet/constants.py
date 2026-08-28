@@ -9,6 +9,8 @@ if not appdata_dir:
 
 DRAFT_PATH = os.path.join(appdata_dir, "DocConvert", "draft_autosave.md")
 DRAFT_META_PATH = os.path.join(appdata_dir, "DocConvert", "draft_autosave_meta.json")
+DRAFTS_DIR = os.path.join(appdata_dir, "DocConvert", "drafts")
+TAB_SESSION_PATH = os.path.join(appdata_dir, "DocConvert", "tab_session.json")
 EDITOR_DISPLAY_LIMIT = 500_000
 
 

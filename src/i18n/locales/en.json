@@ -419,5 +419,17 @@
   "dialog.cancel": "Cancel",
   "dialog.save": "Save",
   "dialog.create": "Create",
-  "dialog.btn_create": "Create"
+  "dialog.btn_create": "Create",
+  "tab.new_tab": "New Tab",
+  "tab.close": "Close Tab",
+  "tab.close_others": "Close Other Tabs",
+  "tab.close_all": "Close All Tabs",
+  "tab.close_saved": "Close Saved Tabs",
+  "tab.copy_path": "Copy File Path",
+  "tab.untitled": "Untitled",
+  "tab.orphaned_tooltip": "Source file was deleted from disk. Content is preserved in memory.",
+  "dialog.unsaved_tab_title": "Save changes before closing?",
+  "dialog.unsaved_tab_message": "File '{title}' has unsaved changes. Do you want to save before closing?",
+  "status.file_deleted_warning": "⚠️ Source file '{filename}' was deleted from disk. Content is preserved as a draft.",
+  "status.tab_restored_count": "Restored {count} workspace tabs from previous session"
 }

@@ -24,6 +24,7 @@ hiddenimports = [
     'src.ui_flet.components.file_modals',
     'src.ui_flet.components.draggable_splitter',
     'src.ui_flet.components.quick_open_dialog',
+    'src.ui_flet.components.workspace_tab_bar',
     'src.ui_flet.views.editor_view',
     'src.ui_flet.views.explorer_view',
     'src.ui_flet.views.help_view',

@@ -42,9 +42,16 @@ class EditorController:
                 self._undo_timer = threading.Timer(0.3, self._push_undo_state)
                 self._undo_timer.start()
 
+        was_dirty = getattr(self.state, "is_dirty", False)
         self.state.is_dirty = True
         current_text = self.editor_view.get_text()
         self.state.full_content = current_text
+
+        # Update WorkspaceTabBar dirty dot if status changed
+        if not was_dirty:
+            tab_bar = self.app_controls.get("workspace_tab_bar")
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
         words = len(current_text.split())
         chars = len(current_text)
@@ -168,13 +175,13 @@ class EditorController:
         self.state.redo_stack.clear()
         self.state.undo_stack.append("")
 
-        self.preview.doc_info_text.value = t("editor.doc_info", words="0", chars="0")
-        if self.preview.doc_info_text.page:
+        if self.preview:
+            self.preview.doc_info_text.value = t("editor.doc_info", words="0", chars="0")
             try:
                 self.preview.doc_info_text.update()
             except Exception:
                 pass
-        self.preview.update_preview("", base_dir=None)
+            self.preview.update_preview("", base_dir=None)
 
         file_path_bar = self.app_controls.get("file_path_bar")
         if file_path_bar:

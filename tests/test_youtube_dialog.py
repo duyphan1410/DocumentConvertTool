@@ -47,6 +47,7 @@ class TestYouTubeDialog(unittest.TestCase):
             "file_picker_in": MagicMock(),
             "file_picker_out": MagicMock(),
         }
+        app_controls["editor_view"].get_text.return_value = ""
         app_controls["ribbon_bar"].mode_dropdown = MagicMock()
         app_controls["ribbon_bar"].mode_dropdown.value = "MD -> Markdown"
 

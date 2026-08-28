@@ -162,6 +162,9 @@ class EditorController:
 
         self.editor_view.set_text("")
         self.state.full_content = ""
+        self.state.in_path = ""
+        self.state.out_path = ""
+        self.state.is_dirty = False
         self.state.redo_stack.clear()
         self.state.undo_stack.append("")
 
@@ -171,9 +174,16 @@ class EditorController:
                 self.preview.doc_info_text.update()
             except Exception:
                 pass
-        self.preview.update_preview(
-            "", base_dir=os.path.dirname(self.state.in_path) if self.state.in_path else None
-        )
+        self.preview.update_preview("", base_dir=None)
+
+        file_path_bar = self.app_controls.get("file_path_bar")
+        if file_path_bar:
+            file_path_bar.set_in_path("")
+            file_path_bar.set_out_path("")
+
+        explorer_view = self.app_controls.get("explorer_view")
+        if explorer_view:
+            explorer_view.set_active_file("")
 
         file_controller = self.app_controls.get("file_controller")
         if file_controller:

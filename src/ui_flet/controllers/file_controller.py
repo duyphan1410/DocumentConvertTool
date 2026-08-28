@@ -14,9 +14,12 @@ from src.core.errors import DocumentError
 from src.core.error_mapper import ErrorMapper
 from src.core.validator import validate_file_pipeline
 from src.services.file_loader import load_document
+from src.services.media_asset_manager import MediaAssetManager
 from src.ui_flet.constants import (
     DRAFT_PATH,
     DRAFT_META_PATH,
+    DRAFTS_DIR,
+    TAB_SESSION_PATH,
     EDITOR_DISPLAY_LIMIT,
     MODES,
     get_default_output_dir,
@@ -27,7 +30,7 @@ from src.ui_flet.native_dialogs import (
     pick_output_file_async,
     pick_image_file_async,
 )
-from src.ui_flet.state import AppState
+from src.ui_flet.state import AppState, DocumentTabState
 
 
 from src.ui_flet.views.preview_view import process_markdown_media, process_markdown_media_async
@@ -59,8 +62,16 @@ class FileController:
     async def open_file_by_path(self, file_path: str):
         """
         Loads document from file_path into the editor workspace.
-        Handles errors gracefully using production MessageDialog.
+        Handles multi-tab deduplication, creates new tabs or switches to existing ones.
         """
+        # 1. Multi-Tab Deduplication Guard: If file is already open, switch to that tab
+        existing_tab = self.state.find_tab_by_path(file_path)
+        if existing_tab:
+            layout_controller = self.app_controls.get("layout_controller")
+            if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
+                layout_controller.handle_doc_tab_selected(existing_tab.tab_id)
+                return
+
         if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
             self.app_controls["on_show_editor"]()
         try:
@@ -97,7 +108,7 @@ class FileController:
             )
             self.footer_bar.set_processing(False)
 
-            # Restore editor and preview from previous state or clean blank state
+            # Restore editor and preview from current active tab state or blank
             prev_content = getattr(self.state, "full_content", "") or ""
             if prev_content:
                 self.editor_view.set_text(prev_content)
@@ -117,36 +128,65 @@ class FileController:
 
         content = res.content
         actual_path = res.path or file_path
-        self.state.in_path = actual_path
-        self.file_path_bar.set_in_path(actual_path)
-
         ext = os.path.splitext(actual_path)[1].lower()
+
+        # Determine target mode and out_path
         preferred_mode = getattr(self.state, "default_mode", "")
         self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
-        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
-
-        out_ext = MODES[self.state.current_mode]["out_ext"]
+        mode = self.ribbon_bar.mode_dropdown.value
+        out_ext = MODES.get(mode, {}).get("out_ext", ".md")
         base, _ = os.path.splitext(actual_path)
-        self.state.out_path = f"{base}{out_ext}"
-        self.file_path_bar.set_out_path(self.state.out_path)
+        out_path = f"{base}{out_ext}"
 
-        self.state.full_content = content
-        self.state.undo_stack.clear()
-        self.state.redo_stack.clear()
+        # Reuse single blank untitled tab if present, otherwise create new tab
+        active_tab = self.state.active_tab
+        if (
+            len(self.state.tabs) == 1
+            and active_tab
+            and not active_tab.in_path
+            and not active_tab.full_content.strip()
+            and not active_tab.is_dirty
+            and not active_tab.is_orphaned
+        ):
+            target_tab = active_tab
+            target_tab.in_path = actual_path
+            target_tab.out_path = out_path
+            target_tab.title = filename
+            target_tab.current_mode = mode
+            target_tab.full_content = content
+        else:
+            target_tab = self.state.create_tab(
+                in_path=actual_path,
+                out_path=out_path,
+                title=filename,
+                content=content,
+                mode=mode,
+                activate=True,
+            )
+
+        self.state.active_tab_id = target_tab.tab_id
+        MediaAssetManager().set_active_session(target_tab.media_session_id)
+
+        self.file_path_bar.set_in_path(actual_path)
+        self.file_path_bar.set_out_path(out_path)
+
+        target_tab.undo_stack.clear()
+        target_tab.redo_stack.clear()
 
         if len(content) > EDITOR_DISPLAY_LIMIT:
             self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
         else:
             self.editor_view.set_text(content)
 
-        self.state.undo_stack.append(self.editor_view.get_text())
-        self.state.is_dirty = False
+        target_tab.undo_stack.append(self.editor_view.get_text())
+        target_tab.is_dirty = False
+        target_tab.is_orphaned = False
 
         words = len(content.split())
         chars = len(content)
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
-        base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+        base_dir = os.path.dirname(actual_path)
         self.preview.update_preview(content, base_dir=base_dir)
 
         t_total = time.time() - t0
@@ -168,12 +208,21 @@ class FileController:
             )
 
         self.footer_bar.set_processing(False)
-        self.perform_autosave()
+
+        # Synchronize WorkspaceTabBar
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        if tab_bar and hasattr(tab_bar, "render_tabs"):
+            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+        self.perform_autosave(target_tab.tab_id)
+        self.save_tab_session()
 
         explorer_view = self.app_controls.get("explorer_view")
         if explorer_view and hasattr(explorer_view, "set_active_file"):
             explorer_view.set_active_file(actual_path)
 
+        from src.__version__ import __version__
+        self.page.title = f"{filename} — Document Converter v{__version__}"
         self.page.update()
 
     def trigger_browse_output(self, e=None):
@@ -291,6 +340,48 @@ class FileController:
         """Asynchronously triggers Save As dialog for Markdown content."""
         asyncio.create_task(self.async_save_markdown())
 
+    def handle_save_shortcut(self, e=None):
+        """
+        Smart Save handler triggered by Ctrl+S:
+        - If active tab is linked to an existing file on disk: Direct Fast Save (overwrites in_path, clears dirty dot).
+        - If active tab is Untitled (in_path == ""): Prompts Save As dialog suggesting workspace_folder.
+        """
+        active_tab = self.state.active_tab
+        if not active_tab:
+            return
+
+        content = self.editor_view.get_text() if self.editor_view else ""
+        active_tab.full_content = content
+
+        if active_tab.in_path and os.path.exists(os.path.dirname(active_tab.in_path)):
+            # Direct Fast Save
+            try:
+                with open(active_tab.in_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                active_tab.is_dirty = False
+                active_tab.is_orphaned = False
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                self.save_tab_session()
+                self.footer_bar.set_status(
+                    t("status.draft_autosaved") if "status.draft_autosaved" in t("status.draft_autosaved") else f"Đã lưu -> {os.path.basename(active_tab.in_path)}",
+                    color=ft.Colors.GREEN_400,
+                )
+                try:
+                    self.page.update()
+                except Exception:
+                    pass
+            except Exception as ex:
+                self.footer_bar.set_status(f"Save error: {ex}", ft.Colors.RED_400)
+                try:
+                    self.page.update()
+                except Exception:
+                    pass
+        else:
+            # Untitled: Prompt Save File As Dialog
+            asyncio.create_task(self.async_save_markdown())
+
     async def async_save_markdown(self):
         """Directly prompts to save the current editor Markdown content to a .md file."""
         content = self.editor_view.get_text() if self.editor_view else ""
@@ -299,17 +390,21 @@ class FileController:
             self.page.update()
             return
 
+        active_tab = self.state.active_tab
         init_file = "document.md"
-        if self.state.out_path:
-            base = os.path.splitext(os.path.basename(self.state.out_path))[0]
+        if active_tab and active_tab.title and active_tab.title != "Untitled":
+            base = os.path.splitext(active_tab.title)[0]
             init_file = f"{base}.md"
         elif self.state.in_path:
             base = os.path.splitext(os.path.basename(self.state.in_path))[0]
             init_file = f"{base}.md"
 
+        init_dir = getattr(self.state, "workspace_folder", "") or None
+
         file_path = await pick_output_file_async(
             default_ext=".md",
             initial_file=init_file,
+            initial_dir=init_dir,
             page=self.page,
             picker=self.file_picker_out,
         )
@@ -317,30 +412,85 @@ class FileController:
             try:
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(content)
-                self.state.out_path = file_path
-                self.state.last_converted_path = file_path
-                self.state.is_dirty = False
+
+                if active_tab:
+                    active_tab.in_path = file_path
+                    active_tab.title = os.path.basename(file_path)
+                    active_tab.is_dirty = False
+                    active_tab.is_orphaned = False
+
+                self.file_path_bar.set_in_path(file_path)
                 self.file_path_bar.set_out_path(file_path)
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+                from src.__version__ import __version__
+                self.page.title = f"{os.path.basename(file_path)} — Document Converter v{__version__}"
+
+                self.save_tab_session()
                 self.footer_bar.set_result_buttons_visible(True)
-                self.footer_bar.set_status_key(
-                    "status.conversion_success",
+                self.footer_bar.set_status(
+                    f"Đã lưu Markdown -> {os.path.basename(file_path)}",
                     color=ft.Colors.GREEN_400,
-                    message=f"Lưu Markdown thành công -> {os.path.basename(file_path)}",
-                    duration="0.01",
                 )
                 self.page.update()
+                return True
             except Exception as ex:
                 self.footer_bar.set_status(f"Save error: {ex}", ft.Colors.RED_400)
                 self.page.update()
+                return False
+        return False
+
+    def get_tab_draft_paths(self, tab_id: str) -> tuple[str, str]:
+        """Returns (md_path, meta_path) for the given tab_id."""
+        os.makedirs(DRAFTS_DIR, exist_ok=True)
+        return (
+            os.path.join(DRAFTS_DIR, f"{tab_id}.md"),
+            os.path.join(DRAFTS_DIR, f"{tab_id}_meta.json"),
+        )
+
+    def save_tab_session(self):
+        """Persists the full workspace tab session manifest to tab_session.json."""
+        try:
+            os.makedirs(os.path.dirname(TAB_SESSION_PATH), exist_ok=True)
+            session_data = {
+                "active_tab_id": self.state.active_tab_id,
+                "tabs": [
+                    {
+                        "tab_id": tab.tab_id,
+                        "in_path": tab.in_path,
+                        "out_path": tab.out_path,
+                        "title": tab.title,
+                        "mode": tab.current_mode,
+                        "is_dirty": tab.is_dirty,
+                        "is_orphaned": tab.is_orphaned,
+                        "media_session_id": tab.media_session_id,
+                    }
+                    for tab in self.state.tabs
+                ],
+            }
+            with open(TAB_SESSION_PATH, "w", encoding="utf-8") as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[LOG][TAB_SESSION][ERROR] Failed to save tab session: {e}")
 
     def has_draft_on_disk(self) -> bool:
-        """Returns True if auto draft file exists on disk and is non-empty."""
+        """Returns True if auto draft files or tab session exist on disk and are non-empty."""
+        if os.path.exists(TAB_SESSION_PATH) and os.path.getsize(TAB_SESSION_PATH) > 0:
+            return True
+        if os.path.exists(DRAFTS_DIR):
+            try:
+                if any(f.endswith(".md") for f in os.listdir(DRAFTS_DIR)):
+                    return True
+            except Exception:
+                pass
         return os.path.exists(DRAFT_PATH) and os.path.getsize(DRAFT_PATH) > 0
 
     async def async_load_draft_if_exists(self) -> bool:
         """
-        Asynchronously restores auto-saved draft content & metadata.
-        Shows hardware-accelerated LoadingView animation and handles edge-cases (missing files/dirs).
+        Asynchronously restores multi-tab workspace sessions or legacy draft content.
+        Shows hardware-accelerated LoadingView animation and handles edge-cases.
         """
         if not self.has_draft_on_disk():
             return False
@@ -356,143 +506,95 @@ class FileController:
             pass
 
         t0 = time.time()
-        res = await asyncio.to_thread(self._sync_load_draft_data)
-        if not res:
+        res = await asyncio.to_thread(self._sync_load_all_draft_data)
+        if not res or not res.get("tabs"):
             return False
 
-        draft_content, meta = res
+        restored_tabs = res["tabs"]
+        active_id = res.get("active_tab_id")
 
-        # 1. Restore Source File & Verify Existence
-        in_path = meta.get("in_path", "")
-        out_path = meta.get("out_path", "")
-        saved_mode = meta.get("mode", "")
-        timestamp = meta.get("timestamp", time.strftime("%H:%M:%S"))
+        self.state.tabs = restored_tabs
+        if active_id and any(t.tab_id == active_id for t in restored_tabs):
+            self.state.active_tab_id = active_id
+        else:
+            self.state.active_tab_id = restored_tabs[0].tab_id
 
-        missing_in_file = False
-        missing_filename = ""
-        if in_path:
-            if os.path.exists(in_path):
-                self.state.in_path = in_path
-                self.file_path_bar.set_in_path(in_path)
-            else:
-                missing_in_file = True
-                missing_filename = os.path.basename(in_path)
-                self.state.in_path = ""
-                self.file_path_bar.set_in_path("")
+        active_tab = self.state.active_tab
+        if not active_tab:
+            return False
 
-        # 2. Restore & Filter Conversion Mode by File Extension (matching OpenFile logic)
-        ext = os.path.splitext(self.state.in_path)[1].lower() if self.state.in_path else ""
+        MediaAssetManager().set_active_session(active_tab.media_session_id)
+
+        # 1. Restore Active Tab File Paths & Mode
+        if active_tab.in_path and os.path.exists(active_tab.in_path):
+            self.file_path_bar.set_in_path(active_tab.in_path)
+        else:
+            self.file_path_bar.set_in_path("")
+
+        ext = os.path.splitext(active_tab.in_path)[1].lower() if active_tab.in_path else ""
         def_mode = getattr(self.state, "default_mode", "")
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=def_mode or active_tab.current_mode)
+        active_tab.current_mode = self.ribbon_bar.mode_dropdown.value
 
-        if def_mode and def_mode in MODES and (not ext or MODES[def_mode]["in_ext"] == ext):
-            preferred_mode = def_mode
-        elif saved_mode and saved_mode in MODES and (not ext or MODES[saved_mode]["in_ext"] == ext):
-            preferred_mode = saved_mode
+        if active_tab.out_path:
+            self.file_path_bar.set_out_path(active_tab.out_path)
+
+        # 2. Populate Editor View Text
+        content = active_tab.full_content
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
         else:
-            preferred_mode = def_mode or saved_mode
+            self.editor_view.set_text(content)
 
-        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
-        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
-        if self.state.current_mode in MODES:
-            mode_cfg = MODES[self.state.current_mode]
-            self.file_path_bar.set_in_label(mode_cfg["in_label"])
-            self.file_path_bar.set_out_label(mode_cfg["out_label"])
+        active_tab.undo_stack.append(self.editor_view.get_text())
 
-        # 3. Restore Output Path with Resilient Fallback (ensuring extension matches current mode)
-        expected_out_ext = MODES.get(self.state.current_mode, {}).get("out_ext", "")
-        if out_path and os.path.exists(os.path.dirname(out_path)):
-            if expected_out_ext and not out_path.lower().endswith(expected_out_ext.lower()):
-                base, _ = os.path.splitext(out_path)
-                self.state.out_path = f"{base}{expected_out_ext}"
-            else:
-                self.state.out_path = out_path
-        elif self.state.in_path:
-            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
-            base, _ = os.path.splitext(self.state.in_path)
-            self.state.out_path = f"{base}{out_ext}"
-        else:
-            out_ext = expected_out_ext or MODES.get(self.state.current_mode, MODES["MD -> Word"])["out_ext"]
-            def_dir = get_default_output_dir()
-            self.state.out_path = os.path.join(def_dir, f"output{out_ext}")
-
-        self.file_path_bar.set_out_path(self.state.out_path)
-
-        # 4. Populate Editor View Text
-        self.state.full_content = draft_content
-        if len(draft_content) > EDITOR_DISPLAY_LIMIT:
-            self.editor_view.set_text(draft_content[:EDITOR_DISPLAY_LIMIT])
-        else:
-            self.editor_view.set_text(draft_content)
-
-        self.state.undo_stack.append(self.editor_view.get_text())
-        self.state.is_dirty = False
-
-        words = len(draft_content.split())
-        chars = len(draft_content)
+        words = len(content.split())
+        chars = len(content)
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
-        # 5. Ensure minimum smooth loading animation display time while LoadingView is active
-        min_display_time = 0.40
-        elapsed_so_far = time.time() - t0
-        if elapsed_so_far < min_display_time:
-            await asyncio.sleep(min_display_time - elapsed_so_far)
-
-        # 6. Seamless Workspace Transition to Editor View FIRST (LoadingView finishes cleanly with zero freezing!)
+        # 3. Seamless Workspace Transition to Editor View
         if workspace_view and hasattr(workspace_view, "show_editor"):
             workspace_view.show_editor(ribbon_bar=self.ribbon_bar)
         elif "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
             self.app_controls["on_show_editor"]()
 
-        # 7. Asynchronously Process & Update Markdown Preview AFTER workspace switch
-        base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+        # 4. Render WorkspaceTabBar
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        if tab_bar and hasattr(tab_bar, "render_tabs"):
+            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
-        if hasattr(self.preview, "show_loading"):
-            self.preview.show_loading()
-
+        # 5. Process Markdown Preview
+        base_dir = os.path.dirname(active_tab.in_path) if active_tab.in_path else None
         is_dark = getattr(self.preview, "_is_dark", False)
-        palette_name = getattr(self.preview, "_palette_name", "Violet Cyberpunk")
-        processed_md = await process_markdown_media_async(draft_content, base_dir=base_dir, is_dark=is_dark, palette_name=palette_name)
+        palette_name = getattr(self.preview, "_palette_name", "Deep Ocean")
+        processed_md = await process_markdown_media_async(
+            content, base_dir=base_dir, is_dark=is_dark, palette_name=palette_name
+        )
 
-        # Assign processed markdown content and restore doc info stats
-        self.preview._last_raw_text = draft_content
+        self.preview._last_raw_text = content
         self.preview._cached_processed_text = processed_md
         self.preview.markdown.value = processed_md
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
         if hasattr(self.preview, "detect_youtube_video"):
-            self.preview.detect_youtube_video(draft_content)
-        try:
-            if self.preview.page:
-                self.preview.update()
-        except Exception:
-            pass
+            self.preview.detect_youtube_video(content)
 
         t_total = time.time() - t0
         dur_str = f"{t_total:.2f}"
-        print(f"[LOG][DRAFT][{timestamp}] Draft restored ({len(draft_content)} chars) in {dur_str}s")
+        tab_count = len(self.state.tabs)
+        print(f"[LOG][DRAFT] Restored {tab_count} tabs in {dur_str}s")
 
-        # 7. Set Detailed Footer Status with Duration Benchmark
-        if missing_in_file:
-            self.footer_bar.set_status_key(
-                "status.draft_restored_missing",
-                color=ft.Colors.ORANGE_400,
-                filename=missing_filename,
-                duration=dur_str,
-            )
-        elif self.state.in_path:
-            filename = os.path.basename(self.state.in_path)
-            self.footer_bar.set_status_key(
-                "status.draft_restored_file",
-                color=ft.Colors.GREEN_400,
-                filename=filename,
-                duration=dur_str,
-            )
-        else:
-            self.footer_bar.set_status_key(
-                "status.draft_restored_untitled",
-                color=ft.Colors.GREEN_400,
-                timestamp=timestamp,
-                duration=dur_str,
-            )
+        self.footer_bar.set_status(
+            t("status.tab_restored_count", count=tab_count) if tab_count > 1
+            else (
+                t("status.draft_restored_file", filename=active_tab.title, duration=dur_str)
+                if active_tab.in_path
+                else t("status.draft_restored_untitled", timestamp=time.strftime("%H:%M:%S"), duration=dur_str)
+            ),
+            color=ft.Colors.GREEN_400,
+        )
+
+        from src.__version__ import __version__
+        self.page.title = f"{active_tab.title} — Document Converter v{__version__}"
 
         try:
             self.page.update()
@@ -500,23 +602,84 @@ class FileController:
             pass
         return True
 
-    def _sync_load_draft_data(self):
-        try:
-            with open(DRAFT_PATH, "r", encoding="utf-8") as f:
-                draft = f.read()
-            if not draft.strip():
-                return None
-            meta = {}
-            if os.path.exists(DRAFT_META_PATH):
-                try:
-                    with open(DRAFT_META_PATH, "r", encoding="utf-8") as mf:
-                        meta = json.load(mf)
-                except Exception:
-                    pass
-            return draft, meta
-        except Exception as e:
-            print(f"[LOG][DRAFT][ERROR] Failed to load draft: {e}")
-            return None
+    def _sync_load_all_draft_data(self):
+        """Loads tabs from tab_session.json and drafts folder, or migrates legacy draft."""
+        tabs: list[DocumentTabState] = []
+        active_tab_id = None
+
+        # Try multi-tab session format first
+        if os.path.exists(TAB_SESSION_PATH):
+            try:
+                with open(TAB_SESSION_PATH, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                active_tab_id = manifest.get("active_tab_id")
+                for item in manifest.get("tabs", []):
+                    tid = item.get("tab_id")
+                    if not tid:
+                        continue
+                    md_path, _ = self.get_tab_draft_paths(tid)
+                    if os.path.exists(md_path):
+                        try:
+                            with open(md_path, "r", encoding="utf-8") as mf:
+                                raw_c = mf.read()
+                                if not raw_c.startswith("<MagicMock"):
+                                    content = raw_c
+                        except Exception:
+                            pass
+                    elif item.get("in_path") and os.path.exists(item.get("in_path")):
+                        try:
+                            res = load_document(item["in_path"])
+                            if res.success and not res.content.startswith("<MagicMock"):
+                                content = res.content
+                        except Exception:
+                            pass
+
+                    tab = DocumentTabState(
+                        tab_id=tid,
+                        in_path=item.get("in_path", ""),
+                        out_path=item.get("out_path", ""),
+                        title=item.get("title", "Untitled"),
+                        current_mode=item.get("mode", "MD -> Excel"),
+                        full_content=content,
+                        is_dirty=item.get("is_dirty", False),
+                        is_orphaned=item.get("is_orphaned", False),
+                        media_session_id=item.get("media_session_id", f"session_{tid}"),
+                    )
+                    tabs.append(tab)
+            except Exception as e:
+                print(f"[LOG][DRAFT][ERROR] Failed reading tab_session.json: {e}")
+
+        # Fallback to legacy single draft file ONLY on first-time migration when tab_session.json does not exist
+        if not os.path.exists(TAB_SESSION_PATH) and not tabs and os.path.exists(DRAFT_PATH):
+            try:
+                with open(DRAFT_PATH, "r", encoding="utf-8") as f:
+                    legacy_content = f.read()
+                if legacy_content.strip() and not legacy_content.startswith("<MagicMock"):
+                    meta = {}
+                    if os.path.exists(DRAFT_META_PATH):
+                        try:
+                            with open(DRAFT_META_PATH, "r", encoding="utf-8") as mf:
+                                meta = json.load(mf)
+                        except Exception:
+                            pass
+                    in_p = meta.get("in_path", "")
+                    out_p = meta.get("out_path", "")
+                    mode_val = meta.get("mode", "MD -> Excel")
+                    legacy_title = os.path.basename(in_p) if in_p else "Untitled"
+                    tab = DocumentTabState(
+                        in_path=in_p,
+                        out_path=out_p,
+                        title=legacy_title,
+                        current_mode=mode_val,
+                        full_content=legacy_content,
+                        is_dirty=False,
+                    )
+                    tabs.append(tab)
+                    active_tab_id = tab.tab_id
+            except Exception as e:
+                print(f"[LOG][DRAFT][ERROR] Failed reading legacy draft: {e}")
+
+        return {"tabs": tabs, "active_tab_id": active_tab_id}
 
     def load_draft_if_exists(self) -> bool:
         """Synchronous wrapper for legacy invocations."""
@@ -524,37 +687,60 @@ class FileController:
             return False
         return asyncio.run(self.async_load_draft_if_exists())
 
-    def perform_autosave(self):
+    def perform_autosave(self, tab_id: str | None = None):
         """
-        Auto-saves current non-empty editor content and metadata (in_path, out_path, mode).
-        NEVER deletes or clears draft files when text is empty.
+        Auto-saves current active tab (or specific tab) content to its dedicated draft file in drafts/{tab_id}.md.
+        Never deletes or clears draft files when text is empty.
         """
         if not getattr(self.state, "autosave_enabled", True):
             return
+
+        target_tab = self.state.find_tab_by_id(tab_id) if tab_id else self.state.active_tab
+        if not target_tab:
+            return
+
         try:
-            text = self.editor_view.get_text() if self.editor_view else ""
-            if not text or not text.strip():
-                # Safety Guard: Do not modify or clear draft file when editor text is empty
+            # If target tab is the currently active tab, sync latest text from editor
+            if target_tab.tab_id == self.state.active_tab_id and self.editor_view:
+                text = self.editor_view.get_text()
+                if isinstance(text, str) and not text.startswith("<MagicMock"):
+                    target_tab.full_content = text
+
+            content_to_save = target_tab.full_content
+            if not isinstance(content_to_save, str) or content_to_save.startswith("<MagicMock"):
                 return
 
-            os.makedirs(os.path.dirname(DRAFT_PATH), exist_ok=True)
-            with open(DRAFT_PATH, "w", encoding="utf-8") as f:
-                f.write(text)
+            if not content_to_save or not content_to_save.strip():
+                return
+
+            md_path, meta_path = self.get_tab_draft_paths(target_tab.tab_id)
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(content_to_save)
 
             timestamp = time.strftime("%H:%M:%S")
-
             meta_data = {
-                "in_path": self.state.in_path or "",
-                "out_path": self.state.out_path or "",
-                "mode": self.state.current_mode or "",
+                "tab_id": target_tab.tab_id,
+                "in_path": target_tab.in_path or "",
+                "out_path": target_tab.out_path or "",
+                "title": target_tab.title,
+                "mode": target_tab.current_mode or "",
                 "timestamp": timestamp,
-                "is_untitled": not bool(self.state.in_path),
+                "is_dirty": target_tab.is_dirty,
+                "is_orphaned": target_tab.is_orphaned,
             }
-            os.makedirs(os.path.dirname(DRAFT_META_PATH), exist_ok=True)
-            with open(DRAFT_META_PATH, "w", encoding="utf-8") as meta_f:
+            with open(meta_path, "w", encoding="utf-8") as meta_f:
                 json.dump(meta_data, meta_f, indent=2, ensure_ascii=False)
 
-            print(f"[LOG][AUTO-SAVE][{timestamp}] Draft auto-saved ({len(text)} chars) -> {DRAFT_PATH}")
+            self.save_tab_session()
+
+            # Also maintain legacy DRAFT_PATH for backward compatibility
+            try:
+                with open(DRAFT_PATH, "w", encoding="utf-8") as f:
+                    f.write(content_to_save)
+                with open(DRAFT_META_PATH, "w", encoding="utf-8") as meta_f:
+                    json.dump(meta_data, meta_f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
 
             if hasattr(self, "footer_bar") and self.footer_bar:
                 self.footer_bar.set_status_key(
@@ -566,49 +752,90 @@ class FileController:
                 except Exception:
                     pass
         except Exception as e:
-            print(f"[LOG][AUTO-SAVE][ERROR] Autosave error: {e}")
+            print(f"[LOG][AUTO-SAVE][ERROR] Autosave error for tab {target_tab.tab_id}: {e}")
+
+    def clear_tab_draft(self, tab_id: str):
+        """Removes the draft and metadata files for the specified tab_id and clears media cache."""
+        md_path, meta_path = self.get_tab_draft_paths(tab_id)
+        for path in [md_path, meta_path]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    print(f"[LOG][AUTO-SAVE] Removed tab draft: {path}")
+                except Exception as e:
+                    print(f"[LOG][AUTO-SAVE][ERROR] Failed to remove {path}: {e}")
+        MediaAssetManager().clear_session(f"session_{tab_id}")
+        self.save_tab_session()
+        if len(self.state.tabs) == 0:
+            for path in [DRAFT_PATH, DRAFT_META_PATH]:
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
 
     def clear_draft_file(self):
-        """
-        Single Responsibility: Explicitly removes the draft_autosave.md and metadata files from disk.
-        Only invoked when user explicitly executes 'Clear Content' action.
-        """
+        """Clears draft files for the currently active tab and legacy files."""
+        if self.state.active_tab_id:
+            self.clear_tab_draft(self.state.active_tab_id)
         for path in [DRAFT_PATH, DRAFT_META_PATH]:
             if os.path.exists(path):
                 try:
                     os.remove(path)
-                    timestamp = time.strftime("%H:%M:%S")
-                    print(f"[LOG][AUTO-SAVE][{timestamp}] Removed draft file: {path}")
-                except Exception as e:
-                    print(f"[LOG][AUTO-SAVE][ERROR] Failed to remove draft file {path}: {e}")
+                except Exception:
+                    pass
 
     def handle_file_renamed(self, old_path: str, new_path: str):
         """
-        Synchronizes AppState, FilePathBar, Page Title, and Draft Metadata
-        when an active document is renamed on disk.
+        Synchronizes all matching tabs in state.tabs when a file or directory is renamed on disk.
+        Updates tab titles, paths, FilePathBar, Page Title, and TabBar visual items.
         """
-        if not self.state.in_path:
+        if not old_path or not self.state.tabs:
             return
-        if os.path.normcase(os.path.normpath(self.state.in_path)) == os.path.normcase(os.path.normpath(old_path)):
-            self.state.in_path = new_path
-            self.file_path_bar.set_in_path(new_path)
 
-            # Auto-calculate and update out_path if it was based on old_path
-            if self.state.out_path:
-                out_dir = os.path.dirname(self.state.out_path)
-                mode_cfg = MODES.get(self.state.current_mode, {})
-                out_ext = mode_cfg.get("out_ext", os.path.splitext(self.state.out_path)[1])
-                new_base = os.path.splitext(os.path.basename(new_path))[0]
-                new_out = os.path.join(out_dir, f"{new_base}{out_ext}")
-                self.state.out_path = new_out
-                self.file_path_bar.set_out_path(new_out)
+        old_norm = os.path.normcase(os.path.normpath(old_path))
+        any_matched = False
 
-            # Update Window Title
-            from src.__version__ import __version__
-            self.page.title = f"{os.path.basename(new_path)} — Document Converter v{__version__}"
+        for tab in self.state.tabs:
+            if not tab.in_path:
+                continue
+            tab_norm = os.path.normcase(os.path.normpath(tab.in_path))
+            is_direct = (tab_norm == old_norm)
+            is_parent = tab_norm.startswith(old_norm + os.sep)
 
-            # Synchronize Draft Metadata immediately
+            if not (is_direct or is_parent):
+                continue
+
+            any_matched = True
+
+            if is_direct:
+                tab.in_path = new_path
+                tab.title = os.path.basename(new_path)
+            elif is_parent:
+                rel = os.path.relpath(tab.in_path, old_path)
+                tab.in_path = os.path.join(new_path, rel)
+                tab.title = os.path.basename(tab.in_path)
+
+            # Only update FilePathBar & Window Title if THIS tab is currently active
+            if tab.tab_id == self.state.active_tab_id:
+                self.file_path_bar.set_in_path(tab.in_path)
+                if tab.out_path:
+                    out_dir = os.path.dirname(tab.out_path)
+                    mode_cfg = MODES.get(tab.current_mode, {})
+                    out_ext = mode_cfg.get("out_ext", os.path.splitext(tab.out_path)[1])
+                    new_base = os.path.splitext(os.path.basename(tab.in_path))[0]
+                    tab.out_path = os.path.join(out_dir, f"{new_base}{out_ext}")
+                    self.file_path_bar.set_out_path(tab.out_path)
+
+                from src.__version__ import __version__
+                self.page.title = f"{tab.title} — Document Converter v{__version__}"
+
+        if any_matched:
+            tab_bar = self.app_controls.get("workspace_tab_bar")
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
             self.perform_autosave()
+            self.save_tab_session()
             try:
                 self.page.update()
             except Exception:
@@ -616,30 +843,82 @@ class FileController:
 
     def handle_file_deleted(self, deleted_path: str):
         """
-        Resets Editor to clean Blank Note if the currently active document or its parent directory is deleted.
+        Handles file/folder deletion on disk across all open tabs:
+        - If tab has unsaved changes (is_dirty): marks as is_orphaned=True, in_path="", keeps title, preserves RAM data.
+        - If tab has no unsaved changes (not is_dirty): closes the tab safely and removes draft.
         """
-        if not self.state.in_path:
+        if not deleted_path or not self.state.tabs:
             return
-        active_norm = os.path.normcase(os.path.normpath(self.state.in_path))
+
         deleted_norm = os.path.normcase(os.path.normpath(deleted_path))
+        tabs_to_close = []
+        state_changed = False
 
-        # Check if the active file or its parent directory was deleted
-        is_direct_match = (active_norm == deleted_norm)
-        is_parent_match = active_norm.startswith(deleted_norm + os.sep)
+        for tab in list(self.state.tabs):
+            if not tab.in_path:
+                continue
+            tab_norm = os.path.normcase(os.path.normpath(tab.in_path))
+            is_direct = (tab_norm == deleted_norm)
+            is_parent = tab_norm.startswith(deleted_norm + os.sep)
 
-        if is_direct_match or is_parent_match:
-            self.state.in_path = ""
-            self.state.out_path = ""
-            self.state.is_dirty = False
-            self.file_path_bar.set_in_path("")
-            self.file_path_bar.set_out_path("")
-            self.editor_view.set_text("")
-            self.preview.update_preview("", base_dir=None)
-            self.clear_draft_file()
-            from src.__version__ import __version__
-            self.page.title = t("app.title", version=__version__)
-            self.footer_bar.set_status_key("status.ready", color=ft.Colors.PRIMARY)
-            try:
-                self.page.update()
-            except Exception:
-                pass
+            if is_direct or is_parent:
+                state_changed = True
+                if tab.is_dirty:
+                    # Preserve user content in RAM / drafts, flag as orphaned
+                    tab.is_orphaned = True
+                    tab.in_path = ""
+                    if tab.tab_id == self.state.active_tab_id:
+                        self.file_path_bar.set_in_path("")
+                        self.footer_bar.set_status(
+                            t("status.file_deleted_warning", filename=tab.title),
+                            ft.Colors.AMBER_400,
+                        )
+                else:
+                    # Clean tab with zero unsaved changes: close immediately
+                    tabs_to_close.append(tab.tab_id)
+
+        for tid in tabs_to_close:
+            self.state.close_tab(tid)
+            self.clear_tab_draft(tid)
+
+        if not state_changed:
+            return
+
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        layout_controller = self.app_controls.get("layout_controller")
+
+        if len(self.state.tabs) == 0:
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs([], None)
+            if self.editor_view:
+                self.editor_view.set_text("")
+            if self.preview:
+                self.preview.update_preview("")
+            if self.file_path_bar:
+                self.file_path_bar.set_in_path("")
+                self.file_path_bar.set_out_path("")
+
+            has_workspace = bool(getattr(self.state, "workspace_folder", "") and os.path.exists(self.state.workspace_folder))
+            if not has_workspace:
+                # 1. No workspace folder open: Return cleanly to WelcomeView
+                workspace_view = self.app_controls.get("workspace_view")
+                if workspace_view and hasattr(workspace_view, "show_welcome"):
+                    workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+                from src.__version__ import __version__
+                self.page.title = t("app.title", version=__version__)
+            else:
+                # 2. Workspace folder active: Keep Editor Workspace (Sidebar/Explorer visible), show empty editor
+                folder_name = os.path.basename(self.state.workspace_folder) or self.state.workspace_folder
+                from src.__version__ import __version__
+                self.page.title = f"{folder_name} — Document Converter v{__version__}"
+        else:
+            if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
+                layout_controller.handle_doc_tab_selected(self.state.active_tab_id)
+            elif tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+        self.save_tab_session()
+        try:
+            self.page.update()
+        except Exception:
+            pass

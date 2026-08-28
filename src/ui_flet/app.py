@@ -24,6 +24,7 @@ from src.ui_flet.components.file_path_bar import FilePathBar
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.components.draggable_splitter import DraggableSplitter
 from src.ui_flet.components.quick_open_dialog import QuickOpenDialog
+from src.ui_flet.components.workspace_tab_bar import WorkspaceTabBar
 from src.ui_flet.views.editor_view import EditorView
 from src.ui_flet.views.preview_view import MarkdownPreview
 from src.ui_flet.views.welcome_view import WelcomeView
@@ -131,16 +132,20 @@ class DocumentConvertApp:
         self.page.on_resized = self.layout_controller.on_page_resized
         self.layout_controller.on_page_resized(None)
 
-        # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+P, Ctrl+S, Ctrl+F, Ctrl+B, Ctrl+Z, Ctrl+Y)
+        # Register Global Keyboard Shortcuts (Ctrl+O, Ctrl+P, Ctrl+S, Ctrl+F, Ctrl+B, Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+Z, Ctrl+Y)
         ShortcutManager.register(
             self.page,
             on_open_file=self.file_controller.trigger_browse_input,
             on_quick_open=lambda: self.quick_open_dialog.show(self.page),
-            on_save_convert=self.conversion_controller.on_convert_clicked,
+            on_save_convert=self.file_controller.handle_save_shortcut,
             on_find_replace=lambda: self.search_controller.toggle_search(),
             on_toggle_sidebar=lambda: self.layout_controller.toggle_sidebar(tab_name="explorer"),
             on_undo=self.editor_controller.perform_undo,
             on_redo=self.editor_controller.perform_redo,
+            on_new_tab=self.layout_controller.handle_new_doc_tab,
+            on_close_tab=lambda: self.layout_controller.handle_doc_tab_closed(self.state.active_tab_id) if self.state.active_tab_id else None,
+            on_next_tab=self.layout_controller.handle_next_doc_tab,
+            on_prev_tab=self.layout_controller.handle_prev_doc_tab,
         )
 
         # Load & sync settings into UI controls (after controls are built)
@@ -315,14 +320,39 @@ class DocumentConvertApp:
             is_vertical=True,
         )
 
+        self.workspace_tab_bar = WorkspaceTabBar(
+            on_tab_select=lambda tid: self.layout_controller.handle_doc_tab_selected(tid),
+            on_tab_close=lambda tid: self.layout_controller.handle_doc_tab_closed(tid),
+            on_tab_reorder=lambda sid, tid: self.layout_controller.handle_doc_tab_reordered(sid, tid),
+            on_new_tab=lambda: self.layout_controller.handle_new_doc_tab(),
+        )
+
+        self.editor_split_row = ft.Row(
+            controls=[
+                self.editor_view.container,
+                self.editor_splitter,
+                self.right_pane,
+            ],
+            expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+            spacing=0,
+        )
+
+        self.editor_main_column = ft.Column(
+            controls=[
+                self.workspace_tab_bar,
+                self.editor_split_row,
+            ],
+            expand=True,
+            spacing=0,
+        )
+
         self.editor_workspace = ft.Row(
             controls=[
                 self.activity_bar,
                 self.explorer_view,
                 self.sidebar_splitter,
-                self.editor_view.container,
-                self.editor_splitter,
-                self.right_pane,
+                self.editor_main_column,
             ],
             expand=True,
             vertical_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -360,6 +390,9 @@ class DocumentConvertApp:
             "explorer_view": self.explorer_view,
             "sidebar_splitter": self.sidebar_splitter,
             "editor_splitter": self.editor_splitter,
+            "editor_split_row": self.editor_split_row,
+            "editor_main_column": self.editor_main_column,
+            "workspace_tab_bar": self.workspace_tab_bar,
             "editor_workspace": self.editor_workspace,
             "file_picker_in": self.file_picker_in,
             "file_picker_out": self.file_picker_out,
@@ -477,8 +510,7 @@ class DocumentConvertApp:
         )
 
     def _on_create_blank_note(self, e=None):
-        self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar)
-        self.editor_controller.clear_editor()
+        self.layout_controller.handle_new_doc_tab()
 
     def _on_mode_changed(self, e=None):
         self.state.current_mode = self.ribbon_bar.mode_dropdown.value

@@ -2,9 +2,14 @@
 Layout Controller for Flet UI.
 Manages panel visibility toggles (Preview pane, File path bar, Editor panel, Status bar) and editor dynamic height math.
 """
+import os
+import asyncio
 import flet as ft
+from src.i18n import t
 from src.ui_flet.state import AppState
 from src.utils.settings_store import save_settings
+from src.services.media_asset_manager import MediaAssetManager
+from src.ui_flet.components.file_modals import show_unsaved_tab_dialog
 
 
 class LayoutController:
@@ -163,11 +168,15 @@ class LayoutController:
         is_left = getattr(self.state, "sidebar_position", "left") == "left"
         activity_bar.update_border_side(is_left)
 
-        editor_ctrl = editor_view.container if hasattr(editor_view, "container") else editor_view
+        main_editor_area = self.app_controls.get("editor_main_column")
+        if not main_editor_area:
+            editor_ctrl = editor_view.container if hasattr(editor_view, "container") else editor_view
+            main_editor_area = editor_ctrl
+
         controls_to_add = (
-            [activity_bar, explorer_view, sidebar_splitter, editor_ctrl, editor_splitter, right_pane]
+            [activity_bar, explorer_view, sidebar_splitter, main_editor_area]
             if is_left
-            else [editor_ctrl, editor_splitter, right_pane, sidebar_splitter, explorer_view, activity_bar]
+            else [main_editor_area, sidebar_splitter, explorer_view, activity_bar]
         )
 
         editor_workspace.controls = [c for c in controls_to_add if c is not None]
@@ -385,4 +394,234 @@ class LayoutController:
                 self.page.update()
             except Exception:
                 pass
+
+    # ── Workspace Tab Lifecycle Handlers ───────────────────────────────
+
+    def handle_doc_tab_selected(self, tab_id: str):
+        """
+        Switches active document tab.
+        Eagerly flushes outgoing tab content from EditorView into DocumentTabState,
+        then hydrates EditorView and Preview with incoming tab state in 0ms (RAM cache).
+        """
+        editor_view = self.app_controls.get("editor_view")
+        file_path_bar = self.app_controls.get("file_path_bar")
+        preview = self.app_controls.get("preview")
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        file_controller = self.app_controls.get("file_controller")
+        explorer_view = self.app_controls.get("explorer_view")
+
+        # 1. Eagerly flush outgoing tab
+        outgoing_tab = self.state.active_tab
+        if outgoing_tab and editor_view:
+            current_text = editor_view.get_text()
+            if current_text is not None:
+                outgoing_tab.full_content = current_text
+            if outgoing_tab.is_dirty and file_controller:
+                file_controller.perform_autosave(outgoing_tab.tab_id)
+
+        # 2. Activate incoming tab
+        incoming_tab = self.state.activate_tab(tab_id)
+        if not incoming_tab:
+            return
+
+        MediaAssetManager().set_active_session(incoming_tab.media_session_id)
+
+        # 3. Hydrate EditorView
+        if editor_view:
+            editor_view.set_text(incoming_tab.full_content)
+
+        # 4. Hydrate FilePathBar
+        if file_path_bar:
+            file_path_bar.set_in_path(incoming_tab.in_path)
+            file_path_bar.set_out_path(incoming_tab.out_path)
+
+        # 5. Hydrate RibbonBar Mode
+        if ribbon_bar:
+            ext = os.path.splitext(incoming_tab.in_path)[1].lower() if incoming_tab.in_path else ""
+            def_mode = getattr(self.state, "default_mode", "")
+            ribbon_bar.update_mode_options(ext, preferred_mode=def_mode or incoming_tab.current_mode)
+
+        # 6. Hydrate Preview
+        if preview:
+            base_dir = os.path.dirname(incoming_tab.in_path) if incoming_tab.in_path else None
+            is_heavy = len(incoming_tab.full_content) > 10000 or "```mermaid" in incoming_tab.full_content
+
+            words = len(incoming_tab.full_content.split())
+            chars = len(incoming_tab.full_content)
+            preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+
+            if is_heavy:
+                incoming_tab.is_loading = True
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+                async def _async_hydrate():
+                    try:
+                        preview.update_preview(incoming_tab.full_content, base_dir=base_dir)
+                    except Exception as e:
+                        print(f"[DEBUG] Preview hydration error: {e}")
+                    finally:
+                        incoming_tab.is_loading = False
+                        if tab_bar and hasattr(tab_bar, "render_tabs"):
+                            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                        try:
+                            self.page.update()
+                        except Exception:
+                            pass
+
+                asyncio.create_task(_async_hydrate())
+            else:
+                preview.update_preview(incoming_tab.full_content, base_dir=base_dir)
+
+        # 7. Update Window Title
+        from src.__version__ import __version__
+        self.page.title = f"{incoming_tab.title} — Document Converter v{__version__}"
+
+        # 8. Re-render TabBar Visuals
+        if tab_bar and hasattr(tab_bar, "render_tabs"):
+            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+        # 9. Sync Explorer Selection
+        if explorer_view and hasattr(explorer_view, "set_active_file") and incoming_tab.in_path:
+            explorer_view.set_active_file(incoming_tab.in_path)
+
+        # 10. Persist Tab Session Manifest
+        if file_controller:
+            file_controller.save_tab_session()
+
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def handle_doc_tab_closed(self, tab_id: str):
+        """Handles user clicking close button or pressing Ctrl+W on a document tab."""
+        tab = self.state.find_tab_by_id(tab_id)
+        if not tab:
+            return
+
+        # Check if tab has unsaved changes or orphaned status
+        if tab.is_dirty or tab.is_orphaned:
+            file_controller = self.app_controls.get("file_controller")
+
+            def on_save_confirm():
+                async def _save_and_close():
+                    if file_controller:
+                        if tab.in_path and os.path.exists(os.path.dirname(tab.in_path)):
+                            file_controller.handle_save_shortcut()
+                            self._force_close_tab(tab_id)
+                        elif hasattr(file_controller, "async_save_markdown"):
+                            saved = await file_controller.async_save_markdown()
+                            if saved:
+                                self._force_close_tab(tab_id)
+                asyncio.create_task(_save_and_close())
+
+            def on_discard_confirm():
+                self._force_close_tab(tab_id)
+
+            show_unsaved_tab_dialog(
+                page=self.page,
+                tab_title=tab.title,
+                on_save=on_save_confirm,
+                on_discard=on_discard_confirm,
+            )
+        else:
+            self._force_close_tab(tab_id)
+
+    def _force_close_tab(self, tab_id: str):
+        """Removes tab from state, cleans up draft cache, and manages last-tab transition."""
+        file_controller = self.app_controls.get("file_controller")
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        workspace_view = self.app_controls.get("workspace_view")
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        editor_view = self.app_controls.get("editor_view")
+        preview = self.app_controls.get("preview")
+        file_path_bar = self.app_controls.get("file_path_bar")
+
+        self.state.close_tab(tab_id)
+
+        if file_controller:
+            file_controller.clear_tab_draft(tab_id)
+            file_controller.save_tab_session()
+
+        if len(self.state.tabs) == 0:
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs([], None)
+            if editor_view:
+                editor_view.set_text("")
+            if preview:
+                preview.update_preview("")
+            if file_path_bar:
+                file_path_bar.set_in_path("")
+                file_path_bar.set_out_path("")
+
+            has_workspace = bool(getattr(self.state, "workspace_folder", "") and os.path.exists(self.state.workspace_folder))
+            if not has_workspace:
+                # 1. No workspace folder open: Return cleanly to WelcomeView
+                if workspace_view and hasattr(workspace_view, "show_welcome"):
+                    workspace_view.show_welcome(ribbon_bar=ribbon_bar)
+                from src.__version__ import __version__
+                self.page.title = t("app.title", version=__version__)
+            else:
+                # 2. Workspace folder active: Keep Editor Workspace (Sidebar/Explorer visible), show empty editor
+                folder_name = os.path.basename(self.state.workspace_folder) or self.state.workspace_folder
+                from src.__version__ import __version__
+                self.page.title = f"{folder_name} — Document Converter v{__version__}"
+        else:
+            # Switch to newly active tab
+            self.handle_doc_tab_selected(self.state.active_tab_id)
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def handle_new_doc_tab(self):
+        """Creates a fresh Untitled document tab and switches workspace into edit mode."""
+        workspace_view = self.app_controls.get("workspace_view")
+        ribbon_bar = self.app_controls.get("ribbon_bar")
+        file_controller = self.app_controls.get("file_controller")
+
+        new_tab = self.state.create_tab(
+            title=t("tab.untitled"),
+            mode=self.state.default_mode,
+            activate=True,
+        )
+
+        if workspace_view and hasattr(workspace_view, "show_editor"):
+            workspace_view.show_editor(ribbon_bar=ribbon_bar)
+
+        self.handle_doc_tab_selected(new_tab.tab_id)
+        if file_controller:
+            file_controller.save_tab_session()
+
+    def handle_doc_tab_reordered(self, source_id: str, target_id: str):
+        """Reorders tabs in AppState.tabs and refreshes TabBar."""
+        self.state.reorder_tabs(source_id, target_id)
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+        if tab_bar and hasattr(tab_bar, "render_tabs"):
+            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+        file_controller = self.app_controls.get("file_controller")
+        if file_controller:
+            file_controller.save_tab_session()
+
+    def handle_next_doc_tab(self):
+        """Switches to the next document tab (Ctrl+Tab / Ctrl+PageDown)."""
+        if not self.state.tabs or len(self.state.tabs) <= 1:
+            return
+        idx = self.state.get_tab_index(self.state.active_tab_id)
+        next_idx = (idx + 1) % len(self.state.tabs)
+        self.handle_doc_tab_selected(self.state.tabs[next_idx].tab_id)
+
+    def handle_prev_doc_tab(self):
+        """Switches to the previous document tab (Ctrl+Shift+Tab / Ctrl+PageUp)."""
+        if not self.state.tabs or len(self.state.tabs) <= 1:
+            return
+        idx = self.state.get_tab_index(self.state.active_tab_id)
+        prev_idx = (idx - 1) % len(self.state.tabs)
+        self.handle_doc_tab_selected(self.state.tabs[prev_idx].tab_id)
+
 

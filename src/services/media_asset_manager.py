@@ -20,7 +20,32 @@ class MediaAssetManager:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.current_session_id = None
         self.current_session_dir = None
-        self._session_hashes: dict[str, str] = {}
+        self._session_hashes: dict[str, dict[str, str]] = {}  # session_id -> {hash: path}
+
+    def set_active_session(self, session_id: str):
+        """Sets the active session ID and creates its cache folder."""
+        if not session_id:
+            return
+        self.current_session_id = session_id
+        self.current_session_dir = os.path.join(self.cache_dir, session_id)
+        os.makedirs(self.current_session_dir, exist_ok=True)
+        if session_id not in self._session_hashes:
+            self._session_hashes[session_id] = {}
+
+    def clear_session(self, session_id: str):
+        """Removes the cache folder for the specified session_id."""
+        if not session_id:
+            return
+        session_dir = os.path.join(self.cache_dir, session_id)
+        if os.path.exists(session_dir):
+            try:
+                shutil.rmtree(session_dir)
+            except Exception as e:
+                print(f"[DEBUG] MediaAssetManager: Failed to remove session dir {session_dir}: {e}")
+        self._session_hashes.pop(session_id, None)
+        if self.current_session_id == session_id:
+            self.current_session_id = None
+            self.current_session_dir = None
 
     def start_session(self, file_path: str) -> str:
         """
@@ -36,24 +61,28 @@ class MediaAssetManager:
             size = 0
 
         key_str = f"{file_path}_{mtime}_{size}"
-        self.current_session_id = hashlib.md5(key_str.encode('utf-8')).hexdigest()[:12]
-        self.current_session_dir = os.path.join(self.cache_dir, self.current_session_id)
-        os.makedirs(self.current_session_dir, exist_ok=True)
-        self._session_hashes.clear()
-        return self.current_session_id
+        session_id = hashlib.md5(key_str.encode('utf-8')).hexdigest()[:12]
+        self.set_active_session(session_id)
+        return session_id
 
     def open_session(self, file_path: str) -> str:
         """Opens/starts a session directory for the given file_path."""
         return self.start_session(file_path)
 
-    def get_session_dir(self) -> str:
-        """Returns the absolute path of the current session's cache folder."""
+    def get_session_dir(self, session_id: str | None = None) -> str:
+        """Returns the absolute path of the session's cache folder."""
+        target_id = session_id or self.current_session_id
+        if target_id:
+            sdir = os.path.join(self.cache_dir, target_id)
+            os.makedirs(sdir, exist_ok=True)
+            return sdir
+
         if not self.current_session_dir:
             self.current_session_dir = os.path.join(self.cache_dir, "default")
             os.makedirs(self.current_session_dir, exist_ok=True)
         return self.current_session_dir
 
-    def register_image(self, image_bytes: bytes, filename: str, dedup: bool = True) -> str:
+    def register_image(self, image_bytes: bytes, filename: str, dedup: bool = True, session_id: str | None = None) -> str:
         """
         Saves the image bytes to the session cache folder in AppData and returns an absolute file path.
         Automatically deduplicates identical images via MD5 content hash.
@@ -61,26 +90,30 @@ class MediaAssetManager:
         if not image_bytes:
             return ""
 
+        target_sid = session_id or self.current_session_id or "default"
+        if target_sid not in self._session_hashes:
+            self._session_hashes[target_sid] = {}
+
         img_hash = None
         if dedup:
             img_hash = hashlib.md5(image_bytes).hexdigest()
-            if img_hash in self._session_hashes:
-                cached_path = self._session_hashes[img_hash]
+            if img_hash in self._session_hashes[target_sid]:
+                cached_path = self._session_hashes[target_sid][img_hash]
                 if os.path.exists(cached_path):
                     return cached_path.replace("\\", "/")
 
-        session_dir = self.get_session_dir()
+        session_dir = self.get_session_dir(session_id=session_id)
         dest_path = os.path.join(session_dir, filename)
         try:
             with open(dest_path, "wb") as f:
                 f.write(image_bytes)
             if dedup and img_hash:
-                self._session_hashes[img_hash] = dest_path
+                self._session_hashes[target_sid][img_hash] = dest_path
         except Exception as e:
             print(f"[DEBUG] MediaAssetManager: Failed to write image {filename}: {e}")
         return dest_path.replace("\\", "/")
 
-    def resolve_uri(self, uri: str, base_dir: str = None) -> str:
+    def resolve_uri(self, uri: str, base_dir: str = None, session_id: str | None = None) -> str:
         """
         Resolves a virtual URI (like @media/image_rId8.png) or relative path to its absolute cached disk path.
         Searches the current session directory first, then base_dir (if provided), then all cached session folders in AppData.
@@ -90,18 +123,7 @@ class MediaAssetManager:
 
         if uri.startswith("@media/"):
             filename = uri[7:]
-            primary_path = os.path.normpath(os.path.join(self.get_session_dir(), filename))
-            if os.path.exists(primary_path) and os.path.isfile(primary_path):
-                return primary_path
-
-            # Search across all session directories in AppData cache
-            if os.path.exists(self.cache_dir):
-                for root, _, files in os.walk(self.cache_dir):
-                    if filename in files:
-                        found_path = os.path.normpath(os.path.join(root, filename))
-                        if os.path.isfile(found_path):
-                            return found_path
-
+            primary_path = os.path.normpath(os.path.join(self.get_session_dir(session_id=session_id), filename))
             return primary_path
 
         # If not @media/, check if it's already an existing file path or relative to base_dir or in cache_dir
@@ -137,17 +159,15 @@ class MediaAssetManager:
                     except Exception:
                         pass
 
+            # Check target session cache directory strictly without cross-session bleed
             base_name = os.path.basename(uri)
-            if os.path.exists(self.cache_dir):
-                for root, _, files in os.walk(self.cache_dir):
-                    if base_name in files:
-                        found_path = os.path.normpath(os.path.join(root, base_name))
-                        if os.path.isfile(found_path):
-                            return found_path
+            session_cand = os.path.normpath(os.path.join(self.get_session_dir(session_id=session_id), base_name))
+            if os.path.exists(session_cand) and os.path.isfile(session_cand):
+                return session_cand
 
         return uri
 
-    def import_local_images(self, markdown_content: str, base_dir: str) -> str:
+    def import_local_images(self, markdown_content: str, base_dir: str, session_id: str | None = None) -> str:
         """
         Finds local image file links or @media/ links in Markdown, registers/resolves them in AppData session cache,
         and rewrites them to absolute AppData file paths so images remain accessible from any Markdown viewer.
@@ -164,7 +184,7 @@ class MediaAssetManager:
             if src.startswith(("http://", "https://", "data:")):
                 return match.group(0)
 
-            resolved = self.resolve_uri(src)
+            resolved = self.resolve_uri(src, session_id=session_id)
             if os.path.exists(resolved) and os.path.isfile(resolved):
                 abs_path = os.path.abspath(resolved).replace("\\", "/")
                 return f"![{alt}]({abs_path})"
@@ -175,7 +195,7 @@ class MediaAssetManager:
                     with open(local_path, "rb") as f:
                         img_bytes = f.read()
                     filename = os.path.basename(local_path)
-                    registered_path = self.register_image(img_bytes, filename)
+                    registered_path = self.register_image(img_bytes, filename, session_id=session_id)
                     return f"![{alt}]({registered_path})"
                 except Exception as e:
                     print(f"[DEBUG] MediaAssetManager: Failed to import local image {local_path}: {e}")
@@ -183,7 +203,7 @@ class MediaAssetManager:
 
         return re.sub(image_pattern, replacer, markdown_content)
 
-    def export_assets(self, markdown_content: str, target_markdown_path: str) -> str:
+    def export_assets(self, markdown_content: str, target_markdown_path: str, session_id: str | None = None) -> str:
         """
         Ensures all images referenced in Markdown content are copied into a relative
         `<doc_name>_assets` directory next to the target markdown file, rewriting image
@@ -222,7 +242,7 @@ class MediaAssetManager:
             if src.startswith(("http://", "https://", "data:")):
                 return match.group(0)
 
-            resolved = self.resolve_uri(src)
+            resolved = self.resolve_uri(src, session_id=session_id)
             if not os.path.exists(resolved) and target_dir:
                 candidate = os.path.join(target_dir, src)
                 if os.path.exists(candidate):

@@ -124,6 +124,7 @@ class FileController:
             self.preview.doc_info_text.value = "Loading..."
             self.footer_bar.set_status_key("status.file_loading", color=ft.Colors.AMBER_400, filename=filename)
             self.footer_bar.set_processing(True)
+            self.footer_bar.set_result_buttons_visible(False)
 
         self.page.update()
 
@@ -200,6 +201,7 @@ class FileController:
             target_tab.title = filename
             target_tab.current_mode = mode
             target_tab.full_content = content
+            target_tab.saved_content = content
             target_tab.is_dirty = False
             target_tab.is_orphaned = False
             target_tab.undo_stack.clear()
@@ -260,6 +262,12 @@ class FileController:
                         duration=f"{t_total:.2f}",
                     )
 
+                has_valid_converted = bool(
+                    target_tab.last_converted_path
+                    and os.path.exists(target_tab.last_converted_path)
+                )
+                self.footer_bar.set_result_buttons_visible(has_valid_converted)
+
                 explorer_view = self.app_controls.get("explorer_view")
                 if explorer_view and hasattr(explorer_view, "set_active_file"):
                     explorer_view.set_active_file(actual_path)
@@ -310,26 +318,42 @@ class FileController:
         asyncio.create_task(self.async_replace_image())
 
     async def async_replace_image(self):
-        active_tok = getattr(self.editor_view, "active_image_token", None)
+        active_tok = getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
         if not active_tok:
             return
         img_path = await pick_image_file_async(
             page=self.page, picker=self.file_picker_in
         )
         if img_path:
-            normalized_path = img_path.replace("\\", "/")
+            clean_path = img_path.replace("\\", "/")
+            base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+            ws_path = getattr(self.state, "workspace_folder", None)
+            if base_dir:
+                try:
+                    clean_path = os.path.relpath(img_path, base_dir).replace("\\", "/")
+                except Exception:
+                    clean_path = img_path.replace("\\", "/")
+            elif ws_path:
+                try:
+                    clean_path = os.path.relpath(img_path, ws_path).replace("\\", "/")
+                except Exception:
+                    clean_path = img_path.replace("\\", "/")
+
             img_name = os.path.basename(img_path)
             alt_text = os.path.splitext(img_name)[0]
-            editor_ctrl = self.app_controls.get("editor_controller")
-            if editor_ctrl:
-                editor_ctrl.apply_image_size(
-                    active_tok,
-                    width=active_tok.width,
-                    height=active_tok.height,
-                    align=active_tok.align,
-                    alt=alt_text,
-                    src=normalized_path,
-                )
+            self.editor_view.apply_image_size(
+                active_tok,
+                width=active_tok.width,
+                height=active_tok.height,
+                align=active_tok.align,
+                alt=alt_text,
+                src=clean_path,
+            )
+            try:
+                if self.page:
+                    self.page.update()
+            except Exception:
+                pass
 
     def trigger_youtube_import(self, e=None):
         """Opens modal dialog to import subtitles from a YouTube URL."""
@@ -429,6 +453,7 @@ class FileController:
             try:
                 with open(active_tab.in_path, "w", encoding="utf-8") as f:
                     f.write(content)
+                active_tab.saved_content = content
                 active_tab.is_dirty = False
                 active_tab.is_orphaned = False
                 tab_bar = self.app_controls.get("workspace_tab_bar")
@@ -496,6 +521,7 @@ class FileController:
                 if active_tab:
                     active_tab.in_path = file_path
                     active_tab.title = os.path.basename(file_path)
+                    active_tab.saved_content = content
                     active_tab.is_dirty = False
                     active_tab.is_orphaned = False
 

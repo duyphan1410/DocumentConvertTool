@@ -20,6 +20,7 @@ class DocumentTabState:
     last_converted_path: str = ""
     current_mode: str = "MD -> Excel"
     full_content: str = ""
+    saved_content: str = ""
     is_dirty: bool = False
     is_orphaned: bool = False  # True when source file on disk was deleted but tab is kept in RAM
     is_loading: bool = False   # True when tab content/preview is undergoing heavy async rendering
@@ -288,6 +289,16 @@ class AppState:
     def full_content(self, val: str):
         tab = self._ensure_active_tab()
         tab.full_content = val
+
+    @property
+    def saved_content(self) -> str:
+        tab = self.active_tab
+        return tab.saved_content if tab else ""
+
+    @saved_content.setter
+    def saved_content(self, val: str):
+        tab = self._ensure_active_tab()
+        tab.saved_content = val
 
     @property
     def is_dirty(self) -> bool:

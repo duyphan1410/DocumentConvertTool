@@ -117,12 +117,16 @@ class TestSimplifiedRibbon(unittest.TestCase):
         self.assertFalse(fmt.btn_more.visible)
 
         # Compact mode
-    def test_picture_format_context_toggle(self):
-        """Verify picture_format_container toggles visibility when image context changes."""
+    def test_ribbon_clean_single_row_layout(self):
+        """Verify RibbonBar maintains streamlined single-row controls without picture format clutter."""
+        ribbon = RibbonBar()
+        self.assertFalse(hasattr(ribbon, "picture_format_container"))
+        self.assertTrue(len(ribbon.ribbon_row.controls) >= 10)
+
+    def test_image_context_stub_backward_compat(self):
+        """Verify set_image_context works safely as a backward-compatibility stub."""
         from src.ui_flet.helpers.image_token_helper import ImageTokenInfo
         ribbon = RibbonBar()
-        self.assertFalse(ribbon.picture_format_container.visible)
-
         sample_tok = ImageTokenInfo(
             raw_token="![Sample](img.png)",
             start=0,
@@ -133,34 +137,10 @@ class TestSimplifiedRibbon(unittest.TestCase):
             align="center",
         )
         ribbon.set_image_context(sample_tok)
-        self.assertTrue(ribbon.picture_format_container.visible)
         self.assertEqual(ribbon.active_image_token, sample_tok)
 
-        # Clear image context
         ribbon.set_image_context(None)
-        self.assertFalse(ribbon.picture_format_container.visible)
         self.assertIsNone(ribbon.active_image_token)
-
-    def test_picture_format_callbacks(self):
-        """Verify picture format preset, align, and dialog callbacks fire properly."""
-        fired_presets = []
-        fired_aligns = []
-        dialog_opened = []
-
-        ribbon = RibbonBar(
-            on_image_size_preset=lambda p: fired_presets.append(p),
-            on_image_align_preset=lambda a: fired_aligns.append(a),
-            on_open_image_size_dialog=lambda: dialog_opened.append(True),
-        )
-
-        ribbon._on_img_preset_click("50%")
-        self.assertIn("50%", fired_presets)
-
-        ribbon._on_img_align_click("center")
-        self.assertIn("center", fired_aligns)
-
-        ribbon._on_img_custom_click(None)
-        self.assertIn(True, dialog_opened)
 
 
 if __name__ == "__main__":

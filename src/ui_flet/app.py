@@ -270,12 +270,21 @@ class DocumentConvertApp:
             on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
             on_image_context_changed=lambda tok: self.ribbon_bar.set_image_context(tok),
         )
+        self.editor_view.set_image_action_handlers(
+            on_preset=lambda preset: self._on_image_size_preset(preset),
+            on_align=lambda align: self._on_image_align_preset(align),
+            on_custom=lambda: self._open_image_size_dialog(),
+            on_replace=lambda: self.file_controller.trigger_replace_image(),
+            on_reset=lambda: self._on_image_size_preset("100%"),
+            on_open_menu=lambda x, y: self._show_image_context_menu_at(x, y),
+        )
 
         self.preview = MarkdownPreview(
             on_open_file=lambda path: asyncio.create_task(
                 self.file_controller.open_file_by_path(path)
             ),
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
+            on_image_link_clicked=lambda url: self._handle_preview_image_clicked(url),
         )
 
         self.right_pane = ft.Container(
@@ -592,34 +601,75 @@ class DocumentConvertApp:
         )
         dlg.show()
 
-    def _on_image_size_preset(self, preset: str):
-        tok = getattr(self.editor_view, "active_image_token", None)
+    def _on_image_size_preset(self, preset: str, image_token=None):
+        tok = image_token or getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
         if tok:
             w_val = "" if preset in ("100%", "100") else preset
-            self.editor_controller.apply_image_size(tok, width=w_val, height="", align=tok.align)
+            self.editor_view.apply_image_size(tok, width=w_val, height="", align=tok.align)
 
-    def _on_image_align_preset(self, align: str):
-        tok = getattr(self.editor_view, "active_image_token", None)
+    def _on_image_align_preset(self, align: str, image_token=None):
+        tok = image_token or getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
         if tok:
-            self.editor_controller.apply_image_size(tok, width=tok.width, height=tok.height, align=align)
+            self.editor_view.apply_image_size(tok, width=tok.width, height=tok.height, align=align)
 
-    def _open_image_size_dialog(self):
-        tok = getattr(self.editor_view, "active_image_token", None)
+    def _open_image_size_dialog(self, image_token=None):
+        tok = image_token or getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
         if not tok:
             return
         from src.ui_flet.components.image_size_dialog import show_image_size_dialog
         base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else getattr(self.state, "workspace_folder", None)
+        is_dark = (self.state.current_theme_mode != "Light")
         show_image_size_dialog(
             page=self.page,
             image_info=tok,
             on_apply=self._handle_image_dialog_apply,
             base_dir=base_dir,
             current_palette=self.state.current_palette,
-            is_dark=(self.state.current_theme_mode != "Light"),
+            is_dark=is_dark,
         )
 
     def _handle_image_dialog_apply(self, tok, width, height, align, alt, src):
-        self.editor_controller.apply_image_size(tok, width=width, height=height, align=align, alt=alt, src=src)
+        self.editor_view.apply_image_size(tok, width=width, height=height, align=align, alt=alt, src=src)
+
+    def _show_image_context_menu_at(self, x: float, y: float):
+        """Displays the Explorer-style floating context menu for the currently selected image."""
+        tok = getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
+        if not tok:
+            return
+        if not hasattr(self, "_image_context_menu") or not self._image_context_menu:
+            from src.ui_flet.components.context_menu import ExplorerContextMenu
+            self._image_context_menu = ExplorerContextMenu(self.page)
+        self._image_context_menu.on_dismiss = self._on_image_menu_dismissed
+        self._image_context_menu.show_image_menu(
+            x=x,
+            y=y,
+            image_info=tok,
+            on_size_preset=lambda p: self._on_image_size_preset(p, image_token=tok),
+            on_align_preset=lambda a: self._on_image_align_preset(a, image_token=tok),
+            on_custom_size=lambda: self._open_image_size_dialog(image_token=tok),
+            on_replace_image=lambda: self.file_controller.trigger_replace_image(),
+            on_reset_image=lambda: self._on_image_size_preset("100%", image_token=tok),
+        )
+
+    def _on_image_menu_dismissed(self):
+        if hasattr(self, "editor_view"):
+            self.editor_view._dismissed_token_raw = None
+
+    def _handle_preview_image_clicked(self, url: str):
+        """Handles user clicking directly on an image in Live Document Preview."""
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        start_list = params.get("start", [])
+        if start_list:
+            try:
+                start_offset = int(start_list[0])
+                self.editor_view.focus_and_select_image_at_offset(start_offset)
+                # Show the Explorer-style context menu right next to the preview
+                win_w = getattr(self.page.window, "width", 1000) or 1000
+                self._show_image_context_menu_at(win_w / 2 + 30, 160)
+            except Exception as ex:
+                print(f"[DEBUG] _handle_preview_image_clicked error: {ex}")
 
 
 def main(page: ft.Page):

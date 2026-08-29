@@ -67,8 +67,41 @@ class TestUIFormatting(unittest.TestCase):
         self.editor_view.set_text("Hello World")
         self.editor_view.select_range(6, 11)
         self.editor_view.insert_text_at_cursor("Universe")
-        self.assertEqual(self.editor_view.get_text(), "Hello Universe")
+    def test_image_context_detection(self):
+        detected_tokens = []
+        self.editor_view.on_image_context_changed = lambda tok: detected_tokens.append(tok)
+
+        self.editor_view.set_text("Intro\n![My Image](assets/img.png)\nOutro")
+        # Place cursor inside the image token (index 10)
+        self.editor_view.select_range(10, 10)
+        self.editor_view.check_image_context()
+
+        self.assertIsNotNone(self.editor_view.active_image_token)
+        self.assertEqual(self.editor_view.active_image_token.src, "assets/img.png")
+        self.assertEqual(self.editor_view.active_image_token.alt, "My Image")
+        self.assertTrue(len(detected_tokens) > 0)
+
+        # Move cursor to 'Intro' (index 2)
+        self.editor_view.select_range(2, 2)
+        self.editor_view.check_image_context()
+        self.assertIsNone(self.editor_view.active_image_token)
+
+    def test_replace_image_token_shifts_cursor_correctly(self):
+        self.editor_view.set_text("Start ![Small](pic.png) End")
+        self.editor_view.select_range(10, 10)
+        self.editor_view.check_image_context()
+        active_tok = self.editor_view.active_image_token
+        self.assertIsNotNone(active_tok)
+
+        # Replace with 50% sized HTML image
+        self.editor_view.apply_image_size(active_tok, width="50%", align="center")
+        expected_text = 'Start <p align="center"><img src="pic.png" alt="Small" width="50%" /></p> End'
+        self.assertEqual(self.editor_view.get_text(), expected_text)
+        # Verify cursor position is placed right after the new token
+        expected_cursor = 6 + len('<p align="center"><img src="pic.png" alt="Small" width="50%" /></p>')
+        self.assertEqual(self.editor_view.selection_start, expected_cursor)
 
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -8,6 +8,13 @@ from src.ui_flet.theme import STYLE, resolve_color, make_border
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 
 
+from src.ui_flet.helpers.image_token_helper import (
+    ImageTokenInfo,
+    find_image_token_at_offset,
+    generate_image_token,
+)
+
+
 class EditorView:
     def __init__(
         self,
@@ -19,6 +26,7 @@ class EditorView:
         on_clear: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_open_file: Optional[Callable[[ft.ControlEvent], None]] = None,
         on_save_md: Optional[Callable[[ft.ControlEvent], None]] = None,
+        on_image_context_changed: Optional[Callable[[Optional[ImageTokenInfo]], None]] = None,
     ):
         self.search_replace_bar = search_replace_bar
         self.on_editor_changed = on_editor_changed
@@ -28,6 +36,8 @@ class EditorView:
         self.on_clear = on_clear
         self.on_open_file = on_open_file
         self.on_save_md = on_save_md
+        self.on_image_context_changed = on_image_context_changed
+        self.active_image_token: Optional[ImageTokenInfo] = None
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
@@ -81,7 +91,7 @@ class EditorView:
         self.editor = ft.TextField(
             multiline=True,
             expand=True,
-            min_lines=28,
+            min_lines=23,
             max_lines=None,
             border_radius=6,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
@@ -91,26 +101,32 @@ class EditorView:
             hint_text=t("editor.hint"),
         )
 
-        self.editor_drag_target = ft.DragTarget(
-            group="doc_explorer",
-            content=self.editor,
-            on_accept=self._handle_drag_accept,
-            on_will_accept=self._handle_drag_will_accept,
-            on_leave=self._handle_drag_leave,
+        self.editor_row = ft.Row(
+            controls=[self.editor],
+            expand=True,
+            scroll=None,
         )
 
         self.editor_column = ft.Column(
             controls=[
                 self.toolbar,
                 self.search_replace_bar.results_container,
-                self.editor_drag_target,
+                self.editor_row,
             ],
             expand=True,
             spacing=2,
         )
 
-        self.container = ft.Container(
+        self.editor_drag_target = ft.DragTarget(
+            group="doc_explorer",
             content=self.editor_column,
+            on_accept=self._handle_drag_accept,
+            on_will_accept=self._handle_drag_will_accept,
+            on_leave=self._handle_drag_leave,
+        )
+
+        self.container = ft.Container(
+            content=self.editor_drag_target,
             expand=True,
             padding=ft.Padding(left=8, top=4, right=8, bottom=6),
             border_radius=8,
@@ -207,6 +223,8 @@ class EditorView:
         if getattr(self, "word_wrap_enabled", True):
             self.editor.width = None
             self.editor.expand = True
+            if hasattr(self, "editor_row"):
+                self.editor_row.scroll = None
         else:
             val = self.editor.value or ""
             lines = val.splitlines()
@@ -216,9 +234,14 @@ class EditorView:
 
             if calc_w > 650:
                 self.editor.width = calc_w
+                self.editor.expand = False
+                if hasattr(self, "editor_row"):
+                    self.editor_row.scroll = ft.ScrollMode.AUTO
             else:
                 self.editor.width = None
-            self.editor.expand = True
+                self.editor.expand = True
+                if hasattr(self, "editor_row"):
+                    self.editor_row.scroll = None
 
     def set_word_wrap(self, enabled: bool):
         """Toggles horizontal word wrap for the editor text field dynamically."""
@@ -231,11 +254,72 @@ class EditorView:
             pass
 
     def _on_selection_change(self, e: ft.TextSelectionChangeEvent):
-        """Track current selection/cursor range from Flet TextField events."""
+        """Track current selection/cursor range from Flet TextField events and detect image context."""
         sel = e.selection
         if sel:
             self.selection_start = min(sel.base_offset, sel.extent_offset)
             self.selection_end = max(sel.base_offset, sel.extent_offset)
+            self.check_image_context()
+
+    def check_image_context(self):
+        """Checks if current cursor or selection range is inside/on an image token and fires on_image_context_changed."""
+        raw_val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else 0
+        end = self.selection_end if self.selection_end is not None else start
+        token = find_image_token_at_offset(raw_val, start, end)
+        self.active_image_token = token
+        if self.on_image_context_changed:
+            try:
+                self.on_image_context_changed(token)
+            except Exception as ex:
+                print(f"[DEBUG] on_image_context_changed error: {ex}")
+
+    def replace_image_token(self, image_info: ImageTokenInfo, new_token: str):
+        """Replaces an image token accurately, shifts cursor offset, and triggers change events."""
+        if not image_info or not new_token or getattr(self.editor, "read_only", False):
+            return
+        raw_val = self.editor.value or ""
+        start, end = image_info.start, image_info.end
+        if start < 0 or end > len(raw_val) or start > end:
+            return
+
+        new_val = raw_val[:start] + new_token + raw_val[end:]
+        new_pos = start + len(new_token)
+        self.editor.value = new_val
+        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
+        self.selection_start, self.selection_end = new_pos, new_pos
+
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+
+        self.check_image_context()
+
+    def apply_image_size(
+        self,
+        image_info: ImageTokenInfo,
+        width: str = "",
+        height: str = "",
+        align: str = "",
+        alt: Optional[str] = None,
+        src: Optional[str] = None,
+    ):
+        """Generates and applies formatted token for the given active image."""
+        target_src = src if src is not None else image_info.src
+        target_alt = alt if alt is not None else image_info.alt
+        new_token = generate_image_token(
+            src=target_src,
+            alt=target_alt,
+            width=width,
+            height=height,
+            align=align,
+        )
+        self.replace_image_token(image_info, new_token)
 
     def select_range(self, start: int, end: int, focus: bool = False):
         """Highlights text range and sets cursor in editor. Converts LF char index to raw TextField UTF-16 code unit index."""

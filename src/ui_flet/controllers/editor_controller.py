@@ -29,6 +29,10 @@ class EditorController:
         self._push_undo_state()
         self.editor_view.apply_heading(level)
 
+    def apply_image_size(self, image_info, width: str = "", height: str = "", align: str = "", alt: str | None = None, src: str | None = None):
+        self._push_undo_state()
+        self.editor_view.apply_image_size(image_info, width=width, height=height, align=align, alt=alt, src=src)
+
     def on_editor_changed(self, e=None, file_controller=None):
         if not self.state.is_undo_redo_op:
             self.state.redo_stack.clear()
@@ -62,10 +66,19 @@ class EditorController:
             except Exception:
                 pass
 
+        active_tab = self.state.active_tab
+        if active_tab:
+            active_tab.full_content = current_text
+            session_id = active_tab.media_session_id
+        else:
+            session_id = None
+
         base_dir = (
             os.path.dirname(self.state.in_path) if self.state.in_path else None
         )
-        self.preview.update_preview(current_text, base_dir=base_dir)
+        self.preview.update_preview(current_text, base_dir=base_dir, session_id=session_id)
+        if active_tab:
+            active_tab.cached_preview_md = getattr(self.preview, "_cached_processed_text", "")
 
         fc = file_controller or self.app_controls.get("file_controller")
         if fc and getattr(self.state, "autosave_enabled", True):

@@ -67,6 +67,26 @@ class WordModule(BaseDocumentModule):
                             
                             filename = f"image_{rId}.{ext}"
                             virtual_uri = asset_mgr.register_image(image_bytes, filename)
+
+                            # Extract extent width if available in Word Drawing XML
+                            cx_match = re.search(r'(?:wp:extent|a:ext)\s+[^>]*?cx=["\'](\d+)["\']', xml)
+                            if cx_match:
+                                try:
+                                    cx_emus = int(cx_match.group(1))
+                                    # Standard printable width on A4 is 6.0 inches (5,486,400 EMUs)
+                                    width_inches = cx_emus / 914400.0
+                                    width_pct = int(round((width_inches / 6.0) * 100))
+                                    if 10 <= width_pct <= 92:
+                                        # Snap to nearest 5% or 25% preset if close
+                                        if abs(width_pct - 25) <= 3:
+                                            width_pct = 25
+                                        elif abs(width_pct - 50) <= 3:
+                                            width_pct = 50
+                                        elif abs(width_pct - 75) <= 3:
+                                            width_pct = 75
+                                        return f'<img src="{virtual_uri}" alt="image" width="{width_pct}%" />'
+                                except Exception:
+                                    pass
                             return f"![image]({virtual_uri})"
                     except Exception as e:
                         print(f"[DEBUG] Failed to extract run image with rId {rId}: {e}")
@@ -309,27 +329,27 @@ class WordModule(BaseDocumentModule):
         while i < len(lines):
             line = lines[i].rstrip("\r\n")
 
-            # Image check (Fast string pre-check before running regex)
+            # Image check (Fast string pre-check before running token parser)
             if "!" in line or "<img" in line:
-                img_match_md = re.search(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', line, re.IGNORECASE)
-                img_match_html = re.search(r'<img\s+[^>]*?src=["\']([^"\']+)', line)
-                match = img_match_md or img_match_html
-                if match:
-                    text_before = line[:match.start()].strip()
-                    text_after = line[match.end():].strip()
-                    src_url = match.group(2) if match == img_match_md else match.group(1)
+                from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
+                img_tokens = find_all_image_tokens(line)
+                if img_tokens:
+                    tok = img_tokens[0]
+                    text_before = line[:tok.start].strip()
+                    text_after = line[tok.end:].strip()
 
                     if text_before or text_after:
                         # Split inline image from surrounding text so no heading/paragraph text is lost
-                        lines[i] = text_before if text_before else f"![image]({src_url})"
+                        lines[i] = text_before if text_before else tok.raw_token
                         insert_offset = 1
                         if text_before:
-                            lines.insert(i + insert_offset, f"![image]({src_url})")
+                            lines.insert(i + insert_offset, tok.raw_token)
                             insert_offset += 1
                         if text_after:
                             lines.insert(i + insert_offset, text_after)
                         continue
 
+                    src_url = tok.src
                     if src_url:
                         out_dir = os.path.dirname(out_path) if out_path else None
                         img_path = asset_mgr.resolve_uri(src_url, base_dir=out_dir)
@@ -352,12 +372,35 @@ class WordModule(BaseDocumentModule):
                         if os.path.exists(img_path) and os.path.isfile(img_path):
                             try:
                                 p = doc.add_paragraph()
-                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                # Apply alignment from token
+                                if tok.align == "left":
+                                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                                elif tok.align == "right":
+                                    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                                else:
+                                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
                                 run = p.add_run()
                                 
                                 from PIL import Image as PILImage
                                 with PILImage.open(img_path) as pil_img:
                                     w_px, h_px = pil_img.size
+
+                                # Check for custom width (% or px)
+                                if tok.width:
+                                    if tok.width.endswith("%"):
+                                        try:
+                                            pct = float(tok.width.rstrip("%"))
+                                            w_inches = min(6.0, max(0.5, 6.0 * (pct / 100.0)))
+                                        except Exception:
+                                            w_inches = min(5.8, max(1.5, w_px / 150.0))
+                                    else:
+                                        try:
+                                            px_val = float(tok.width.rstrip("px"))
+                                            w_inches = min(6.0, max(0.5, px_val / 96.0))
+                                        except Exception:
+                                            w_inches = min(5.8, max(1.5, w_px / 150.0))
+                                else:
                                     w_inches = min(5.8, max(1.5, w_px / 150.0))
                                     
                                 run.add_picture(img_path, width=Inches(w_inches))

@@ -194,14 +194,17 @@ def process_markdown_mermaid(content: str, is_dark: bool = False, palette_name: 
 
 
 
-def image_to_base64_uri(file_path: str, max_width: int = 650, quality: int = 70) -> str:
+def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_width: int = 650, quality: int = 70) -> str:
     """
     Converts a local image file path into an ultra-lightweight base64 data URI.
-    Uses PIL to downscale to 650px and compress to optimized JPEG/PNG (averaging ~35KB per image),
+    Uses PIL to downscale according to target_width/max_width and compress to optimized JPEG/PNG,
     reducing multi-megabyte payloads by 96% so Flutter renders immediately without freezing.
     """
-    if file_path in _BASE64_CACHE:
-        return _BASE64_CACHE[file_path]
+    limit_w = target_width if target_width is not None else max_width
+    limit_w = max(50, min(1200, limit_w))
+    cache_key = f"{file_path}_{limit_w}"
+    if cache_key in _BASE64_CACHE:
+        return _BASE64_CACHE[cache_key]
     try:
         from PIL import Image
         import io
@@ -210,9 +213,9 @@ def image_to_base64_uri(file_path: str, max_width: int = 650, quality: int = 70)
             try:
                 with Image.open(file_path) as img:
                     orig_w, orig_h = img.size
-                    if orig_w > max_width:
-                        new_h = max(1, int(orig_h * (max_width / orig_w)))
-                        img = img.resize((max_width, new_h), Image.Resampling.LANCZOS)
+                    if orig_w > limit_w or (target_width is not None and orig_w != limit_w):
+                        new_h = max(1, int(orig_h * (limit_w / orig_w)))
+                        img = img.resize((limit_w, new_h), Image.Resampling.LANCZOS)
 
                     buf = io.BytesIO()
                     has_alpha = False
@@ -234,7 +237,7 @@ def image_to_base64_uri(file_path: str, max_width: int = 650, quality: int = 70)
                     raw_bytes = buf.getvalue()
                     encoded_data = base64.b64encode(raw_bytes).decode("ascii")
                     uri = f"data:{mime_type};base64,{encoded_data}"
-                    _BASE64_CACHE[file_path] = uri
+                    _BASE64_CACHE[cache_key] = uri
                     return uri
             except (PermissionError, OSError):
                 time.sleep(0.05)
@@ -245,7 +248,7 @@ def image_to_base64_uri(file_path: str, max_width: int = 650, quality: int = 70)
         with open(file_path, "rb") as f:
             encoded_data = base64.b64encode(f.read()).decode("ascii")
         uri = f"data:{mime_type};base64,{encoded_data}"
-        _BASE64_CACHE[file_path] = uri
+        _BASE64_CACHE[cache_key] = uri
         return uri
     except Exception as e:
         print(f"[DEBUG] Failed to convert image '{file_path}' to base64: {e}")
@@ -316,11 +319,22 @@ def process_markdown_timestamps(content: str) -> str:
     return content
 
 
+def format_preview_image_token(alt_text: str, uri: str, align: str = "") -> str:
+    """Formats markdown image with optional alignment HTML block for rich preview rendering."""
+    md_img = f"![{alt_text}]({uri})"
+    align_norm = (align or "").lower().strip()
+    if align_norm == "center":
+        return f'<div align="center">\n\n{md_img}\n\n</div>'
+    elif align_norm == "right":
+        return f'<div align="right">\n\n{md_img}\n\n</div>'
+    return md_img
+
+
 def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud_mermaid: bool = True, session_id: str | None = None) -> str:
     """
     Parses Markdown content, intercepts Mermaid diagram blocks, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
-    Also links interactive YouTube timestamps.
+    Also links interactive YouTube timestamps and converts custom-sized <img> tags to scaled Markdown images.
     """
     if not content:
         return ""
@@ -330,16 +344,37 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
-    img_count = 0
+    from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
 
-    def replace_image_match(match):
-        nonlocal img_count
+    tokens = find_all_image_tokens(content)
+    img_count = 0
+    result = content
+
+    for tok in tokens:
         img_count += 1
-        alt_text = match.group(1)
-        uri = match.group(2)
+        uri = tok.src
+        alt_text = tok.alt or "image"
+
+        target_w = 650
+        if tok.width:
+            if tok.width.endswith("%"):
+                try:
+                    pct = float(tok.width.rstrip("%"))
+                    target_w = int(650 * (pct / 100.0))
+                except Exception:
+                    target_w = 650
+            else:
+                try:
+                    target_w = int(float(tok.width.rstrip("px")))
+                except Exception:
+                    target_w = 650
+        target_w = max(50, min(1200, target_w))
 
         if uri.startswith(("http://", "https://", "data:")):
-            return f"![{alt_text}]({uri})"
+            if tok.raw_token.strip().startswith(("<img", "<p")):
+                img_rendered = format_preview_image_token(alt_text, uri, tok.align)
+                result = result.replace(tok.raw_token, img_rendered, 1)
+            continue
 
         resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir, session_id=session_id)
         if not os.path.exists(resolved_path) and base_dir:
@@ -348,12 +383,13 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
                 resolved_path = candidate
 
         if os.path.exists(resolved_path):
-            base64_uri = image_to_base64_uri(resolved_path)
-            return f"![{alt_text}]({base64_uri})"
-        return f"![{alt_text}]({uri})"
+            base64_uri = image_to_base64_uri(resolved_path, target_width=target_w)
+            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align)
+            result = result.replace(tok.raw_token, img_rendered, 1)
+        elif tok.raw_token.strip().startswith(("<img", "<p")):
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align)
+            result = result.replace(tok.raw_token, img_rendered, 1)
 
-    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
-    result = re.sub(image_pattern, replace_image_match, content)
     t_elapsed = time.time() - t0
     print(f"[BENCHMARK] Processed {img_count} preview image links to Base64 in {t_elapsed:.3f}s")
     return result
@@ -373,19 +409,37 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
     import asyncio
     t0 = time.time()
     asset_mgr = MediaAssetManager()
-    image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
-    matches = list(re.finditer(image_pattern, content))
-    if not matches:
+    from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
+
+    tokens = find_all_image_tokens(content)
+    total_imgs = len(tokens)
+    if total_imgs == 0:
         return content
 
-    total_imgs = len(matches)
     replacements = {}
 
-    for idx, match in enumerate(matches, 1):
-        alt_text = match.group(1)
-        uri = match.group(2)
+    for idx, tok in enumerate(tokens, 1):
+        uri = tok.src
+        alt_text = tok.alt or "image"
+
+        target_w = 650
+        if tok.width:
+            if tok.width.endswith("%"):
+                try:
+                    pct = float(tok.width.rstrip("%"))
+                    target_w = int(650 * (pct / 100.0))
+                except Exception:
+                    target_w = 650
+            else:
+                try:
+                    target_w = int(float(tok.width.rstrip("px")))
+                except Exception:
+                    target_w = 650
+        target_w = max(50, min(1200, target_w))
 
         if uri.startswith(("http://", "https://", "data:")):
+            if tok.raw_token.strip().startswith(("<img", "<p")):
+                replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align)
             continue
 
         resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir, session_id=session_id)
@@ -395,14 +449,16 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
                 resolved_path = candidate
 
         if os.path.exists(resolved_path):
-            base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path)
-            replacements[match.group(0)] = f"![{alt_text}]({base64_uri})"
+            base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path, target_w)
+            replacements[tok.raw_token] = format_preview_image_token(alt_text, base64_uri, tok.align)
             if progress_callback:
                 try:
                     progress_callback(idx, total_imgs)
                 except Exception:
                     pass
             await asyncio.sleep(0.005)
+        elif tok.raw_token.strip().startswith(("<img", "<p")):
+            replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align)
 
     result = content
     for old_token, new_token in replacements.items():

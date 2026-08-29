@@ -109,10 +109,13 @@ class DocumentConvertApp:
         # Maximize window on fresh first launch or if previously saved as maximized
         self.page.window.maximized = bool(self.state.window_maximized)
 
-        print(
-            f"[DEBUG][WINDOW] 🚀 Khởi động: width={safe_w}, height={safe_h}, "
-            f"top={safe_top}, left={safe_left}, maximized={self.state.window_maximized}"
-        )
+        try:
+            print(
+                f"[DEBUG][WINDOW] Khoi dong: width={safe_w}, height={safe_h}, "
+                f"top={safe_top}, left={safe_left}, maximized={self.state.window_maximized}"
+            )
+        except Exception:
+            pass
 
         # File Pickers
         self.file_picker_in = ft.FilePicker()
@@ -235,6 +238,11 @@ class DocumentConvertApp:
             on_toggle_editor=lambda e: self.layout_controller.toggle_editor_panel(e),
             on_toggle_status_bar=lambda e: self.layout_controller.toggle_status_bar(e),
             on_insert_image=lambda e: self.file_controller.trigger_insert_image(e),
+            on_image_size_preset=lambda preset: self._on_image_size_preset(preset),
+            on_image_align_preset=lambda align: self._on_image_align_preset(align),
+            on_open_image_size_dialog=lambda: self._open_image_size_dialog(),
+            on_replace_image=lambda: self.file_controller.trigger_replace_image(),
+            on_reset_image_size=lambda: self._on_image_size_preset("100%"),
             on_show_settings=lambda: self._show_settings_view(),
             on_show_help=lambda: self._show_help_view(),
             on_show_editor=lambda: self._show_editor_view(auto_select_edit=False),
@@ -260,6 +268,7 @@ class DocumentConvertApp:
             on_clear=lambda e: self.editor_controller.clear_editor(e),
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
             on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
+            on_image_context_changed=lambda tok: self.ribbon_bar.set_image_context(tok),
         )
 
         self.preview = MarkdownPreview(
@@ -582,6 +591,35 @@ class DocumentConvertApp:
             on_completed=lambda res: self.explorer_view.refresh_tree(),
         )
         dlg.show()
+
+    def _on_image_size_preset(self, preset: str):
+        tok = getattr(self.editor_view, "active_image_token", None)
+        if tok:
+            w_val = "" if preset in ("100%", "100") else preset
+            self.editor_controller.apply_image_size(tok, width=w_val, height="", align=tok.align)
+
+    def _on_image_align_preset(self, align: str):
+        tok = getattr(self.editor_view, "active_image_token", None)
+        if tok:
+            self.editor_controller.apply_image_size(tok, width=tok.width, height=tok.height, align=align)
+
+    def _open_image_size_dialog(self):
+        tok = getattr(self.editor_view, "active_image_token", None)
+        if not tok:
+            return
+        from src.ui_flet.components.image_size_dialog import show_image_size_dialog
+        base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else getattr(self.state, "workspace_folder", None)
+        show_image_size_dialog(
+            page=self.page,
+            image_info=tok,
+            on_apply=self._handle_image_dialog_apply,
+            base_dir=base_dir,
+            current_palette=self.state.current_palette,
+            is_dark=(self.state.current_theme_mode != "Light"),
+        )
+
+    def _handle_image_dialog_apply(self, tok, width, height, align, alt, src):
+        self.editor_controller.apply_image_size(tok, width=width, height=height, align=align, alt=alt, src=src)
 
 
 def main(page: ft.Page):

@@ -1,130 +1,181 @@
-# Audio/Video Transcriber (Whisper AI) — Tổng kết thảo luận & Đề xuất thiết kế
+# 🎙️ Audio/Video Transcriber (Whisper AI) & Model Hub Marketplace — Kế Hoạch Kiến Trúc & Phân Công Kỹ Thuật
 
-> Ghi chú: Đây là feature **mới**, tách biệt với `speech_service.py` hiện có (Non-AI, dùng Google Web Speech API). Cần đặt tên module riêng (VD: `whisper_service.py`), không sửa đè lên code cũ.
+**Mã định danh**: `FEAT-WHISPER-001`  
+**Phiên bản phát hành mục tiêu**: `v1.9.0 (AI-Powered Transcriber & Model Marketplace Release)`  
+**Ngày cập nhật**: 29/08/2026  
+**Trạng thái**: 🟢 Planning & Architecture Specification  
 
 ---
 
-## 1. Lựa chọn thư viện & Model
+## 1. Tầm nhìn Kiến trúc & Định vị Sản phẩm (Executive Summary & Vision)
 
-| Thành phần | Quyết định | Lý do |
+Tính năng **Offline Audio/Video Transcriber** không đơn thuần là một nút bấm chuyển đổi tệp, mà là bước chuyển mình quan trọng đưa **Document Converter Tool** tiến vào kỷ nguyên **Local AI / Edge Computing**.
+
+Ứng dụng được thiết kế theo mô hình **AI Model Hub / Model Marketplace**:
+1. **Quyền tự chủ của người dùng (User Autonomy)**: Người dùng toàn quyền quyết định tải, trải nghiệm, chuyển đổi hoặc xóa các mô hình AI (`tiny`, `base`, `small`, `PhoWhisper`...) tùy theo nhu cầu độ chính xác và cấu hình phần cứng của máy tính.
+2. **Ứng dụng làm Bộ điều phối trung gian (Smart AI Orchestrator)**:
+   - Tự động thẩm định phần cứng máy tính (RAM, số nhân CPU, GPU CUDA) để đưa ra khuyến nghị model phù hợp nhất.
+   - Quản lý tải xuống, lưu trữ và giải phóng bộ nhớ model cục bộ tại `%APPDATA%\DocConvert\models\`.
+   - Phân luồng tác vụ giải mã âm thanh và nhận diện giọng nói chạy nền (Background Worker), tự động xuất ra tài liệu Markdown có cấu trúc kèm mốc thời gian `[mm:ss]` đưa thẳng vào Studio Workspace.
+3. **Bộ cài đặt siêu nhẹ (`Setup.exe`)**: Áp dụng chiến lược **Tải Model Theo Nhu Cầu (On-demand Download)**, không bundle file weights nặng hàng trăm MB vào bộ cài đặt ban đầu, giữ file cài đặt luôn gọn nhẹ (< 80MB).
+
+---
+
+## 2. Ma trận Phân công Trách nhiệm Kỹ thuật (2-Person Responsibility Matrix)
+
+Dự án được chia tách thành 2 mảng chuyên môn độc lập để tối đa hóa hiệu suất và chất lượng sản phẩm:
+
+```mermaid
+flowchart TD
+    subgraph LeadFrontend ["👤 Kỹ sư 1: Lead Frontend, Hub Orchestrator & QA (Duy Phan)"]
+        UI1[Thiết kế Giao diện Model Hub / Marketplace Card Grid]
+        UI2[Bộ Quét & Thẩm định Phần cứng - Auto Hardware Detection]
+        UI3[Quản lý Vòng đời Tải / Xóa / Dọn dẹp Model tại %APPDATA%]
+        UI4[Điều phối Controller, SettingsView & Async Progress Flow]
+        UI5[Kiểm soát Chất lượng QA, Zero-Freeze GUI & Error Handling]
+    end
+
+    subgraph SpecialistAI ["👤 Kỹ sư 2: AI Engine & Audio/Document Processing Specialist"]
+        AI1[Xây dựng Core Service: src/services/whisper_service.py]
+        AI2[Bộ Giải mã Âm thanh Đa định dạng .mp4, .mp3, .wav, .m4a...]
+        AI3[Đánh giá Độ chính xác Benchmark Tiếng Việt, Tiếng Anh, Tạp âm]
+        AI4[Thuật toán Phân đoạn Timestamp mm:ss & Format Markdown Chuẩn]
+        AI5[Tối ưu Hóa Hiệu năng CTranslate2 int8, Memory & Edge Cases]
+    end
+
+    LeadFrontend <-->|Tương tác qua API Service Interface| SpecialistAI
+```
+
+### Chi tiết Phân công Nhiệm vụ:
+
+| Hạng mục | 👤 Kỹ sư 1: Lead Frontend & Orchestrator (Duy Phan) | 👤 Kỹ sư 2: AI & Processing Specialist |
 | :--- | :--- | :--- |
-| Thư viện | `faster-whisper` (không dùng `openai-whisper` gốc) | Không phụ thuộc PyTorch (~2-3GB), dùng CTranslate2 nhẹ hơn, nhanh hơn ~4x trên CPU, dễ đóng gói PyInstaller hơn |
-| Model mặc định | `base` | Cân bằng tốc độ/chất lượng; `tiny` nhanh hơn nhưng độ chính xác thấp (đặc biệt tiếng Việt) |
-| Quantization | `int8` | Tăng tốc thêm ~2x trên CPU so với float32, không cần GPU |
-
-### Bảng tham khảo tốc độ (CPU tầm trung, không GPU)
-
-| Model | Audio 1 tiếng ước tính | Ghi chú |
-| :--- | :--- | :--- |
-| `tiny` (faster-whisper) | ~4–8 phút | Nhanh nhất, độ chính xác thấp |
-| `base` (faster-whisper) | ~8–15 phút | **Đề xuất mặc định** |
-| `small`+ | Vài chục phút | Chỉ nên cho phép nếu máy có GPU |
-
-**Công thức ước lượng nhanh** (dùng cho progress bar): `Thời gian xử lý ≈ độ dài audio (phút) × 0.15–0.2`
-→ Audio 10 phút ≈ 1.5–2 phút xử lý (baseline UX hợp lý).
-
-### Kết luận về giới hạn tốc độ
-Không có cách nào transcribe 1 tiếng audio trong ~1 phút nếu chạy **local/offline/CPU** (đúng tinh thần "Non-AI/lightweight" ban đầu của app). Muốn đạt mốc đó bắt buộc phải đánh đổi:
-- Dùng **GPU (CUDA)** — không đảm bảo máy user có, hoặc
-- Dùng **Cloud API** (OpenAI Whisper API, Google STT) — mất tính offline, phát sinh phí, gửi data ra ngoài
-
-→ **Quyết định**: chấp nhận vài phút chờ cho audio dài, tập trung làm tốt UX chờ đợi (progress bar, chạy background, không block UI).
+| **Giao diện & Trải nghiệm (UI/UX)** | • Thiết kế Marketplace Card Grid (Thẻ model, badge sao ⭐, tốc độ 🚀, RAM).<br>• Thanh trạng thái dung lượng ổ cứng & Modal tải model.<br>• Tích hợp vào `SettingsView` và phím tắt trên `ActivityBar`. | • Tham vấn các thông số kỹ thuật cần hiển thị cho từng model.<br>• Phối hợp thiết kế hiển thị log nhận diện giọng nói thời gian thực. |
+| **Động cơ AI & Xử lý Âm thanh** | • Điều phối gọi hàm `whisper_service.transcribe_async()`.<br>• Bắt các sự kiện `on_progress` và cập nhật thanh tiến trình. | • Xây dựng module `src/services/whisper_service.py` (`faster-whisper` + CTranslate2 `int8`).<br>• Giải mã audio từ video `.mp4`, `.mkv` và audio `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`. |
+| **Quản lý Tài nguyên & Phần cứng** | • Viết hàm quét phần cứng (RAM, CPU Cores, GPU CUDA detection).<br>• Gắn nhãn *"Khuyên dùng cho cấu hình của bạn"* trên UI.<br>• Kiểm tra dung lượng đĩa trống trước khi tải (`shutil.disk_usage`). | • Xác định ngưỡng phần cứng tối thiểu và tối ưu cho từng model.<br>• Tối ưu hóa số luồng xử lý CPU (`cpu_threads`) chống tràn CPU/RAM. |
+| **Định dạng Đầu ra & Tài liệu** | • Nhận kết quả từ Engine và nạp thành Tab mới trong Studio Workspace (`handle_new_doc_tab`).<br>• Tích hợp nút xem trước video/audio đồng bộ với timestamp. | • Thiết kế bộ lọc Voice Activity Detection (VAD) băm câu tự nhiên.<br>• Định dạng Markdown có cấu trúc: Tiêu đề, Tóm tắt nội dung, Bảng phân đoạn `[mm:ss]` và người nói (nếu có). |
+| **Kiểm thử & Đảm bảo Chất lượng (QA)** | • Kiểm thử Zero GUI Freeze khi tải/xử lý file nặng.<br>• Xử lý mất mạng giữa chừng, hết ổ cứng, bấm Hủy (`Cancel`).<br>• Viết Unit Test cho Controller, Dialog và State. | • Benchmark độ chính xác (Word Error Rate - WER) trên tập dữ liệu tiếng Việt đa vùng miền và tiếng Anh.<br>• Xử lý tệp âm thanh có tạp âm lớn, file dài > 2 tiếng. |
 
 ---
 
-## 2. Kích thước file input (tham khảo)
+## 3. Danh mục AI Model Marketplace & Tiêu chuẩn Phần cứng
 
-| Định dạng | 1 tiếng audio |
-| :--- | :--- |
-| MP3 128kbps | ~55–60MB |
-| MP3 320kbps | ~140MB |
-| MP4 (kèm video) | 500MB – 2GB+ (Whisper chỉ decode audio track, không quan tâm phần video) |
+Hệ thống cung cấp danh mục Model linh hoạt để người dùng tự do lựa chọn theo sức mạnh phần cứng:
 
-Không đặt giới hạn cứng theo dung lượng, chỉ cần cảnh báo mềm theo **thời lượng** (xem mục 4).
+| Model ID | Tên hiển thị | Kích thước | Độ chính xác | Tốc độ xử lý (CPU) | RAM Khuyến nghị | Trường hợp sử dụng tối ưu |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| `whisper-tiny` | **Whisper Tiny** | ~75 MB | ⭐⭐⭐ | 🚀🚀🚀🚀🚀 *(~0.08x)* | $\ge$ 4 GB | Máy cấu hình yếu, ghi chú nhanh, tiếng Anh rõ ràng. |
+| `whisper-base` | **Whisper Base (Mặc định)** | ~145 MB | ⭐⭐⭐⭐ | 🚀🚀🚀🚀 *(~0.15x)* | $\ge$ 8 GB | **Lựa chọn cân bằng nhất** cho công việc văn phòng hàng ngày. |
+| `whisper-small` | **Whisper Small** | ~480 MB | ⭐⭐⭐⭐⭐ | 🚀🚀 *(~0.40x)* | $\ge$ 16 GB (hoặc có GPU) | Hội thảo chuyên sâu, nhiều thuật ngữ, độ chính xác cao. |
+| `phowhisper-base`| **PhoWhisper Base (Việt hóa)** | ~290 MB | ⭐⭐⭐⭐⭐ | 🚀🚀🚀 *(~0.20x)* | $\ge$ 8 GB | Chuyên biệt giọng nói tiếng Việt đa vùng miền, podcast, bài giảng. |
+
+> *Ghi chú tốc độ: `0.15x` nghĩa là file audio 10 phút sẽ được xử lý trong khoảng ~1.5 phút trên CPU tầm trung.*
 
 ---
 
-## 3. Chiến lược tải Model — "Tải lần đầu, cache lại"
+## 4. Thiết Kế Giao Diện AI Model Hub & Marketplace (UI/UX Specification)
 
-### Vì sao không bundle model vào installer
-- Model `base` ~145MB — bundle vào `Setup.exe` sẽ phình dung lượng cài đặt không cần thiết cho user không dùng tính năng này
-- Tách biệt hoàn toàn khỏi pipeline packaging hiện tại (`.spec`, `installer.iss`) — chỉ cần thêm `hiddenimports` cho `faster-whisper`/`ctranslate2` (vài chục MB thư viện), không đụng gì khác
+### 4.1. Bản vẽ Wireframe Giao diện
 
-### Luồng hoạt động
-| Bước | Hành vi |
-| :--- | :--- |
-| Cài đặt app | Chỉ có thư viện, chưa có model |
-| User bấm tính năng lần đầu | Hiện dialog: tên model, dung lượng (~145MB), thời gian tải ước tính → nút **Tải & Dùng** / **Hủy** |
-| Đồng ý tải | Progress bar tải, chạy `asyncio.to_thread` (không block UI, tái dùng pattern đã có trong `speech_service.py`) |
-| Tải xong | Cache lại — các lần sau dùng ngay, không hỏi lại, chạy offline hoàn toàn |
-| Không có mạng lần đầu | Cần fallback thông báo lỗi rõ ràng |
-
-### Vị trí cache
-Đổi `download_root` của `faster-whisper` từ mặc định (`~/.cache/huggingface`) sang:
 ```
-%APPDATA%\DocConvert\models\
-```
-→ Nhất quán với pattern cache đang dùng ở `MediaAssetManager`.
-
----
-
-## 4. Quản lý bộ nhớ Model (Storage Management)
-
-Thêm vào `SettingsView` (tận dụng cấu trúc category có sẵn — thêm category mới hoặc gộp vào "Editor"):
-
-| Chức năng | Mô tả |
-| :--- | :--- |
-| Xem model đã tải + dung lượng | Liệt kê model, size |
-| Nút "Xóa model" | Giải phóng dung lượng, không cần gỡ cài lại app |
-| Check dung lượng đĩa trống trước khi tải | `shutil.disk_usage()`, cảnh báo nếu không đủ chỗ |
-
-### Cảnh báo mềm theo thời lượng audio
-| Điều kiện | Hành vi |
-| :--- | :--- |
-| Audio > 30 phút | Dialog: "Quá trình này có thể mất ~X phút, tiếp tục?" (tính theo công thức mục 1) |
-| Audio > 2–3 tiếng hoặc file > 500MB (tuỳ chọn) | Có thể chặn cứng hoặc cảnh báo mạnh hơn |
-| Luôn có progress indicator | Không để user nhìn màn hình đứng im — tái dùng ý tưởng `chunk_seconds=20` đang có ở `speech_service.py` |
-
----
-
-## 5. Chọn Model theo phần cứng — 3 hướng & Đề xuất
-
-| Hướng | Ưu điểm | Nhược điểm |
-| :--- | :--- | :--- |
-| A. Tự động detect (CPU/GPU/RAM) | UX mượt, user không cần hiểu kỹ thuật | Phức tạp hơn, có thể detect sai trên máy lạ |
-| B. Cho user chọn tay hoàn toàn | Đơn giản code, minh bạch | User không rành dễ chọn sai (VD chọn `small` trên máy yếu → treo máy) |
-| **C. Kết hợp (đề xuất)** | Auto-detect gợi ý mặc định, vẫn cho đổi tay | Cần thêm chút code detect, nhưng cân bằng tốt nhất |
-
-### Logic gợi ý đề xuất (Hướng C)
-```
-- Detect RAM (dùng thư viện psutil — cần thêm dependency mới, khai báo vào .spec)
-- RAM < 8GB hoặc không có GPU  → mặc định gợi ý "tiny"
-- RAM >= 8GB                   → mặc định gợi ý "base"
-- Có GPU CUDA khả dụng         → cho phép chọn thêm "small"/"medium", chạy trên GPU
-- Vẫn hiện dropdown cho user tự đổi, kèm mô tả ngắn tốc độ/chất lượng từng option
++----------------------------------------------------------------------------------------------------+
+|  🧩 AI Model Hub & Marketplace — Offline Speech Transcriber                              _  [ ]  X |
++----------------------------------------------------------------------------------------------------+
+|  💻 Cấu hình máy phát hiện: Intel Core i7 (8 Cores) | 16GB RAM | GPU: Intel Iris Xe                |
+|  💡 Gợi ý hệ thống: Cấu hình của bạn hoạt động mượt mà nhất với model [Whisper Base] hoặc [PhoWhisper] |
++----------------------------------------------------------------------------------------------------+
+|                                                                                                    |
+|  [⚡ Whisper Tiny]               [🎯 Whisper Base]               [🇻🇳 PhoWhisper Base]               |
+|  Dung lượng: ~75 MB              Dung lượng: ~145 MB             Dung lượng: ~290 MB               |
+|  Tốc độ: Siêu nhanh              Tốc độ: Nhanh                   Tốc độ: Cân bằng                  |
+|  Chính xác: Cơ bản               Chính xác: Tốt                  Chính xác: Rất cao (Tiếng Việt)   |
+|  [ 🟢 ĐÃ CÀI ĐẶT ] [ 🗑️ Xóa ]    [ ⬇️ TẢI VỀ (~145MB) ]          [ ⬇️ TẢI VỀ (~290MB) ]            |
+|                                                                                                    |
+|  [🧠 Whisper Small]              [⚙️ Tùy chọn nâng cao]                                            |
+|  Dung lượng: ~480 MB             • Chế độ xử lý: [ CPU (int8) ▼ ]                                  |
+|  Tốc độ: Trung bình              • Ngôn ngữ mặc định: [ Tự động nhận diện ▼ ]                      |
+|  Chính xác: Xuất sắc             • Thư mục lưu trữ: %APPDATA%\DocConvert\models\                   |
+|  [ ⬇️ TẢI VỀ (~480MB) ]          [ 🧹 Xóa sạch tất cả Model để giải phóng ổ cứng ]                  |
+|                                                                                                    |
++----------------------------------------------------------------------------------------------------+
+|  📁 Dung lượng Model đã dùng: 75 MB | Ổ đĩa C: còn trống 128.4 GB               [ Đóng ] [ Bắt đầu ]|
++----------------------------------------------------------------------------------------------------+
 ```
 
-### Câu hỏi cần thảo luận & thống nhất (Open Decisions)
-- **Phương án hỗ trợ phần cứng**: Nên ưu tiên CPU-only (gọn nhẹ, ổn định, tương thích mọi máy) hay giữ cả tùy chọn GPU (CUDA) ngay từ đầu?
-- **Mức độ tích hợp**: Có cần thêm cảnh báo phần cứng trong dialog hay chỉ cần dropdown chọn model đơn giản?
+### 4.2. Các Thành phần Trải nghiệm Người dùng (UX Features)
+1. **Thẻ Model (Model Card Widget)**:
+   - Đánh giá trực quan qua biểu tượng sao (⭐) và tên lửa tốc độ (🚀).
+   - Nút hành động rõ ràng: **Tải về (`Download`)**, **Đã cài đặt (`Ready`)**, **Xóa model (`Delete`)**.
+2. **Thanh giám sát ổ cứng (Disk Storage Bar)**:
+   - Hiển thị tổng dung lượng model đang chiếm dụng và dung lượng còn trống của ổ đĩa `C:`.
+   - Nút 1-click **Dọn dẹp tất cả model** giúp giải phóng bộ nhớ ngay lập tức khi không dùng nữa.
+3. **Hộp thoại xác nhận tải lần đầu (First-time Consent Dialog)**:
+   - Khi người dùng nhấn nút chuyển đổi audio lần đầu mà chưa có model, hệ thống hiển thị modal giải thích rõ ràng dung lượng tải và chỉ tải khi người dùng bấm đồng ý.
+4. **Tiến trình tải thời gian thực (Real-time Download Progress)**:
+   - Hiển thị thanh `ft.ProgressBar` kèm tốc độ tải (MB/s) và phần trăm hoàn thành, không làm đơ giao diện.
 
 ---
 
-## 6. Checklist kỹ thuật & Tiêu chuẩn triển khai (Implementation Checklist)
+## 5. Kiến Trúc Pipeline Xử Lý Âm Thanh Đa Tầng
 
-- [ ] **Thư viện**: Sử dụng `faster-whisper` + `ctranslate2` (quantization `int8`).
-- [ ] **Cấu trúc module**: Tạo module độc lập `src/services/whisper_service.py`, không làm ảnh hưởng đến `speech_service.py` hiện tại.
-- [ ] **Đường dẫn lưu trữ**: Cấu hình `download_root` chuẩn về `%APPDATA%\DocConvert\models\`.
-- [ ] **Bất đồng bộ & UX**: Bọc toàn bộ quá trình transcribe trong `asyncio.to_thread` / worker thread để không block giao diện Flet Desktop.
-- [ ] **Quản lý tài nguyên**: Tích hợp kiểm tra dung lượng đĩa trống (`shutil.disk_usage()`) trước khi tải model.
-- [ ] **Giao diện người dùng**: Xây dựng hộp thoại xác nhận tải model lần đầu (Consent Dialog), thanh tiến trình tải và tiến trình chuyển đổi (Progress Bar).
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Người dùng
+    participant UI as Model Hub & Dialog
+    participant Orch as Controller & AppState
+    participant Engine as WhisperService (int8)
+    participant Dec as Audio Decoder (FFmpeg/SoundFile)
+    participant WS as Workspace Editor
+
+    User->>UI: Chọn tệp Audio/Video (.mp4, .mp3, .wav) & Bấm Transcribe
+    UI->>Orch: Kiểm tra Model đã có tại %APPDATA%\DocConvert\models\?
+    alt Chưa có Model
+        Orch->>UI: Hiển thị Consent Dialog (Dung lượng, Tốc độ)
+        User->>UI: Bấm Đồng ý Tải
+        UI->>Orch: Tải Model bất đồng bộ (async download with progress)
+    end
+
+    Orch->>Dec: Trích xuất Stream Audio 16kHz Mono từ tệp nguồn
+    Dec-->>Engine: Đệm âm thanh chuẩn (PCM Float32)
+    
+    Orch->>Engine: Kích hoạt faster-whisper (CTranslate2 int8 Worker)
+    loop Xử lý từng đoạn Voice Chunk
+        Engine->>Orch: Báo cáo tiến độ (current_second / total_duration)
+        Orch->>UI: Cập nhật ProgressBar & Log Live
+    end
+
+    Engine-->>Orch: Trả về danh sách Segments (start, end, text)
+    Orch->>Orch: Định dạng Markdown có cấu trúc kèm mốc [mm:ss]
+    Orch->>WS: Mở Tab mới trong Workspace hiển thị Markdown kết quả
+    Orch->>UI: Thông báo hoàn tất & Nút mở file
+```
 
 ---
 
-## 7. Tác động tới quy trình Đóng gói & Installer (Packaging & Delivery Impact)
+## 6. Tiêu Chuẩn Kỹ Thuật & Đóng Gói (Technical Standards & Delivery)
 
-Chiến lược tải model theo nhu cầu (**On-demand Download**) giúp cô lập hoàn toàn tính năng với quy trình đóng gói:
-- **Kích thước bộ cài**: `Setup.exe` không bị phình to (không bundle file weights ~145MB vào installer).
-- **Cấu hình PyInstaller**: Chỉ cần khai báo `hiddenimports` cho `faster_whisper` và `ctranslate2` khi tích hợp module vào dự án.
-- **Tính độc lập**: Kế hoạch phát triển bộ cài đặt Windows Installer (`Setup.exe`) và tính năng Whisper AI có thể tiến hành hoàn toàn độc lập mà không bị phụ thuộc chéo.
+1. **Thư viện Engine Cốt lõi**:
+   - `faster-whisper` (sử dụng runtime `ctranslate2` với quantization `int8`).
+   - Không cài đặt PyTorch đầy đủ (~2-3GB), tiết kiệm tối đa dung lượng bộ nhớ.
+2. **Quản lý Thư mục Cục bộ**:
+   - Model weights được cô lập hoàn toàn tại: `%APPDATA%\DocConvert\models\<model_name>\`.
+   - Dọn dẹp an toàn qua `shutil.rmtree` khi người dùng bấm nút xóa.
+3. **Cấu hình Đóng gói PyInstaller (`Document Converter.spec`)**:
+   - Bổ sung `hiddenimports`: `faster_whisper`, `ctranslate2`.
+   - Không đóng gói model vào file cài đặt `Setup.exe` (giữ nguyên dung lượng siêu nhẹ).
+4. **Bảo toàn Kiến trúc MVC & Thread-Safety**:
+   - Tách biệt hoàn toàn `whisper_service.py` (AI Engine) và `speech_service.py` (Non-AI Google API cũ).
+   - Mọi tác vụ decode và inference chạy trong `ThreadPoolExecutor` hoặc `asyncio.to_thread`.
 
+---
+
+## 7. Kế Hoạch Triển Khai Chi Tiết (Milestone Roadmap — v1.9.0)
+
+| Bước | Giai đoạn | Công việc cụ thể | Người phụ trách chính |
+| :---: | :--- | :--- | :---: |
+| **P1** | **Chuẩn bị & Nền tảng** | • Tạo nhánh `feat/duy-DDMMYYYY-whisper-model-hub`.<br>• Cài đặt & cấu hình `faster-whisper`, `ctranslate2`.<br>• Khởi tạo khung `src/services/whisper_service.py`. | 👤 Partner (AI Specialist) |
+| **P2** | **Marketplace UI & Hardware Hub** | • Thiết kế `src/ui_flet/components/model_hub_dialog.py`.<br>• Viết module quét phần cứng (RAM, CPU, GPU).<br>• Quản lý tải / xóa model tại `%APPDATA%`. | 👤 Duy Phan (Lead Frontend) |
+| **P3** | **Audio Pipeline & Markdown Generator** | • Xây dựng bộ giải mã âm thanh từ `.mp4`, `.mp3`, `.wav`, `.m4a`.<br>• Tích hợp VAD băm câu và sinh mốc thời gian `[mm:ss]`.<br>• Format tài liệu Markdown chuẩn chỉnh. | 👤 Partner (AI Specialist) |
+| **P4** | **Tích hợp Workspace & Controller** | • Gắn nút khởi chạy trên Ribbon Bar, Welcome View và Explorer.<br>• Đưa tài liệu kết quả mở tự động thành Tab mới trong Workspace.<br>• Tích hợp mục quản lý Model vào `SettingsView`. | 👤 Duy Phan (Lead Frontend) |
+| **P5** | **Benchmark, QA & Đóng gói v1.9.0** | • Benchmark độ chính xác tiếng Việt / tiếng Anh.<br>• Kiểm thử Zero GUI Freeze, xử lý lỗi mất mạng, hủy tác vụ.<br>• Viết Unit Test Suite và cập nhật `Document Converter.spec`. | 👥 Cả 2 cùng phối hợp |

@@ -319,9 +319,12 @@ def process_markdown_timestamps(content: str) -> str:
     return content
 
 
-def format_preview_image_token(alt_text: str, uri: str, align: str = "") -> str:
-    """Formats markdown image with optional alignment HTML block for rich preview rendering."""
-    md_img = f"![{alt_text}]({uri})"
+def format_preview_image_token(alt_text: str, uri: str, align: str = "", tok_start: int = -1) -> str:
+    """Formats markdown image with optional alignment HTML block and interactive click link for rich preview rendering."""
+    if tok_start >= 0:
+        md_img = f"[![{alt_text}]({uri})](imgaction://select?start={tok_start})"
+    else:
+        md_img = f"![{alt_text}]({uri})"
     align_norm = (align or "").lower().strip()
     if align_norm == "center":
         return f'<div align="center">\n\n{md_img}\n\n</div>'
@@ -372,7 +375,7 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
 
         if uri.startswith(("http://", "https://", "data:")):
             if tok.raw_token.strip().startswith(("<img", "<p")):
-                img_rendered = format_preview_image_token(alt_text, uri, tok.align)
+                img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
                 result = result.replace(tok.raw_token, img_rendered, 1)
             continue
 
@@ -384,10 +387,10 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
 
         if os.path.exists(resolved_path):
             base64_uri = image_to_base64_uri(resolved_path, target_width=target_w)
-            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align)
+            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
             result = result.replace(tok.raw_token, img_rendered, 1)
         elif tok.raw_token.strip().startswith(("<img", "<p")):
-            img_rendered = format_preview_image_token(alt_text, uri, tok.align)
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
             result = result.replace(tok.raw_token, img_rendered, 1)
 
     t_elapsed = time.time() - t0
@@ -439,7 +442,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
 
         if uri.startswith(("http://", "https://", "data:")):
             if tok.raw_token.strip().startswith(("<img", "<p")):
-                replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align)
+                replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
             continue
 
         resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir, session_id=session_id)
@@ -450,7 +453,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
 
         if os.path.exists(resolved_path):
             base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path, target_w)
-            replacements[tok.raw_token] = format_preview_image_token(alt_text, base64_uri, tok.align)
+            replacements[tok.raw_token] = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
             if progress_callback:
                 try:
                     progress_callback(idx, total_imgs)
@@ -474,11 +477,13 @@ class MarkdownPreview(ft.Container):
         self,
         on_open_file: Optional[Callable[[str], None]] = None,
         get_workspace_path: Optional[Callable[[], str]] = None,
+        on_image_link_clicked: Optional[Callable[[str], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.on_open_file = on_open_file
         self._get_workspace_path = get_workspace_path
+        self.on_image_link_clicked = on_image_link_clicked
         self.expand = True
         self.border_radius = 8
         self.padding = ft.Padding(left=8, top=4, right=8, bottom=6)
@@ -575,6 +580,14 @@ class MarkdownPreview(ft.Container):
         """Handles link clicks in MarkdownPreview. Interactive YouTube timestamps jump video position."""
         url = getattr(e, "data", "") or ""
         if not url:
+            return
+
+        if url.startswith("imgaction://"):
+            if hasattr(self, "on_image_link_clicked") and self.on_image_link_clicked:
+                try:
+                    self.on_image_link_clicked(url)
+                except Exception as ex:
+                    print(f"[DEBUG] on_image_link_clicked error: {ex}")
             return
 
         from src.services.youtube_service import extract_video_id

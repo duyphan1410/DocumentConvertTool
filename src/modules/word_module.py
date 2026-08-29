@@ -373,12 +373,12 @@ class WordModule(BaseDocumentModule):
                             try:
                                 p = doc.add_paragraph()
                                 # Apply alignment from token
-                                if tok.align == "left":
-                                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                                if tok.align == "center":
+                                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                 elif tok.align == "right":
                                     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
                                 else:
-                                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
                                 run = p.add_run()
                                 

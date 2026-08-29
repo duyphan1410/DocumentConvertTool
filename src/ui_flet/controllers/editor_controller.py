@@ -46,13 +46,18 @@ class EditorController:
                 self._undo_timer = threading.Timer(0.3, self._push_undo_state)
                 self._undo_timer.start()
 
-        was_dirty = getattr(self.state, "is_dirty", False)
-        self.state.is_dirty = True
         current_text = self.editor_view.get_text()
         self.state.full_content = current_text
 
-        # Update WorkspaceTabBar dirty dot if status changed
-        if not was_dirty:
+        active_tab = self.state.active_tab
+        saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+        new_dirty = (current_text != saved)
+        was_dirty = getattr(self.state, "is_dirty", False)
+
+        if was_dirty != new_dirty:
+            self.state.is_dirty = new_dirty
+            if active_tab:
+                active_tab.is_dirty = new_dirty
             tab_bar = self.app_controls.get("workspace_tab_bar")
             if tab_bar and hasattr(tab_bar, "render_tabs"):
                 tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
@@ -60,13 +65,12 @@ class EditorController:
         words = len(current_text.split())
         chars = len(current_text)
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-        if self.preview.doc_info_text.page:
-            try:
+        try:
+            if self.preview.doc_info_text.page:
                 self.preview.doc_info_text.update()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-        active_tab = self.state.active_tab
         if active_tab:
             active_tab.full_content = current_text
             session_id = active_tab.media_session_id
@@ -140,6 +144,17 @@ class EditorController:
             start_idx, end_idx = self._compute_diff_range(current, prev_text)
             self.editor_view.set_text_with_selection(prev_text, start_idx, end_idx, focus=True)
 
+            active_tab = self.state.active_tab
+            saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+            new_dirty = (prev_text != saved)
+            if getattr(self.state, "is_dirty", False) != new_dirty:
+                self.state.is_dirty = new_dirty
+                if active_tab:
+                    active_tab.is_dirty = new_dirty
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None
             )
@@ -162,6 +177,17 @@ class EditorController:
 
             start_idx, end_idx = self._compute_diff_range(prev_text, next_text)
             self.editor_view.set_text_with_selection(next_text, start_idx, end_idx, focus=True)
+
+            active_tab = self.state.active_tab
+            saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+            new_dirty = (next_text != saved)
+            if getattr(self.state, "is_dirty", False) != new_dirty:
+                self.state.is_dirty = new_dirty
+                if active_tab:
+                    active_tab.is_dirty = new_dirty
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None

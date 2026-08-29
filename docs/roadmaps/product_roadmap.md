@@ -63,14 +63,28 @@
 
 ---
 
+### ✅ v1.8.2 (Floating Image Formatting, Multi-Tab Footer Sync & Explorer UX Polish):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Floating Image Format & Alignment Engine** | `src/modules/word_module.py`, `src/ui_flet/components/context_menu.py`, `src/ui_flet/views/preview_view.py` | Engine căn lề ảnh (Trái, Giữa, Phải) sử dụng cú pháp chuẩn `<p align="...">`, đồng bộ 100% khi xuất sang Word `.docx` bằng `WD_ALIGN_PARAGRAPH`. Menu chuột phải trên Live Preview nhấp vào ảnh để chỉnh kích thước hoặc căn lề. | ✅ Completed (v1.8.2) |
+| **Redesigned `ImageSizeDialog`** | `src/ui_flet/components/image_size_dialog.py` | Giao diện điều chỉnh kích thước ảnh trực quan, cân đối chiều cao input/dropdown, loại bỏ khoảng trắng thừa, phím bấm hàng ngang (`Reset`, `Cancel`, `Apply Sizing`), hỗ trợ nhấp ra ngoài để đóng và xử lý vòng đời overlay an toàn. | ✅ Completed (v1.8.2) |
+| **Multi-Tab Conversion State & Per-Tab FooterBar Sync** | `src/ui_flet/controllers/layout_controller.py`, `src/ui_flet/controllers/file_controller.py`, `src/ui_flet/layout/footer_bar.py` | Đồng bộ hóa trạng thái chuyển đổi và 2 nút `Open File` / `Open Location` theo từng Tab độc lập (`Per-Tab Hydration`); tự động ẩn khi nạp tệp mới từ Explorer hoặc khi Tab chưa được chuyển đổi. | ✅ Completed (v1.8.2) |
+| **Explorer Tree Scrolling & Clipping Fix** | `src/ui_flet/views/explorer_view.py` | Sửa triệt để lỗi mất thanh cuộn cây thư mục và lỗi hiển thị tràn viền xuống thanh Footer bằng `ClipBehavior.HARD_EDGE` và cấu trúc Flex Container chuẩn mực tương tự `EditorView`. | ✅ Completed (v1.8.2) |
+| **Smart Expanded Folder State Preservation** | `src/ui_flet/views/explorer_view.py` | Ghi nhớ đệ quy danh sách thư mục đang mở trước khi làm mới (`restore_expanded`), phân biệt hoàn hảo giữa `Refresh` (giữ nguyên các folder đang mở) và `Collapse All` (thu gọn toàn bộ). | ✅ Completed (v1.8.2) |
+| **Full Folder Zone Drag & Drop** | `src/ui_flet/views/explorer_view.py` | Kéo thả tệp vào bất kỳ tệp con nào bên trong một thư mục đang mở rộng sẽ chuyển tệp vào đúng thư mục đó; loại bỏ vùng bắt rác toàn cục và gán điểm đón an toàn cho thư mục gốc. | ✅ Completed (v1.8.2) |
+| **Fixed Keyboard Shortcut `Ctrl+B`** | `src/ui_flet/controllers/layout_controller.py` | Khắc phục lỗi phím tắt `Ctrl+B` không đóng mở được Sidebar do điều kiện event `e is not None`. | ✅ Completed (v1.8.2) |
+
+---
+
 ## 🚀 Kế hoạch phát triển các phiên bản tiếp theo
 
-### 🛠️ v1.8.2 (Patch, Backlog & Memory Optimization):
+### 🛠️ v1.8.3 (Patch, Backlog & Memory Optimization):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **`PERF-001` Bounded LRU Cache & Session Purge** | `src/ui_flet/views/preview_view.py`, `src/services/media_asset_manager.py` | Chuyển đổi `_BASE64_CACHE` sang `OrderedDict` (tối đa 128 mục) thread-safe; Tích hợp hook `purge_session_base64_cache()` giải phóng 100% RAM ảnh khi đóng Tab. *(Xem `docs/backlog/PERF_001_base64_cache_lru_eviction.md`)*. | 🟡 In Progress |
-| **Batch Collision Disambiguation & Polish** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Tự động gắn hậu tố `(docx)`, `(pdf)` khi nhiều tệp trùng tên gốc trong cùng thư mục xuất sang `.md`; Nâng cấp `open_file_or_folder_foreground` (Win32 Z-Index #1) cho nút Open Result. | ✅ Completed |
+| **Batch Collision Disambiguation & Polish** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Tự động gắn hậu tố `(docx)`, `(pdf)` khi nhiều tệp trùng tên gốc trong cùng thư mục xuất sang `.md`; Nâng cấp `open_file_or_foreground` (Win32 Z-Index #1) cho nút Open Result. | ✅ Completed |
 
 ---
 

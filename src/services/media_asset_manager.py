@@ -137,7 +137,13 @@ class MediaAssetManager:
                 if os.path.exists(candidate) and os.path.isfile(candidate):
                     return candidate
 
-            # Smart Fallback: Check relative to CWD, Desktop, User home & their immediate subdirectories
+            # Priority 1: Check target session cache directory strictly without cross-session bleed
+            base_name = os.path.basename(uri)
+            session_cand = os.path.normpath(os.path.join(self.get_session_dir(session_id=session_id), base_name))
+            if os.path.exists(session_cand) and os.path.isfile(session_cand):
+                return session_cand
+
+            # Priority 2: Smart Fallback: Check relative to CWD, Desktop, User home & their immediate subdirectories
             clean_rel = uri.lstrip("./").lstrip(".\\")
             search_bases = [
                 os.getcwd(),
@@ -158,12 +164,6 @@ class MediaAssetManager:
                                     return cand_sub
                     except Exception:
                         pass
-
-            # Check target session cache directory strictly without cross-session bleed
-            base_name = os.path.basename(uri)
-            session_cand = os.path.normpath(os.path.join(self.get_session_dir(session_id=session_id), base_name))
-            if os.path.exists(session_cand) and os.path.isfile(session_cand):
-                return session_cand
 
         return uri
 
@@ -292,31 +292,42 @@ class MediaAssetManager:
 
     DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
 
-    def cleanup_cache(self, max_age_days: int = 7):
+    def cleanup_cache(self, max_age_days: int = 7, protected_session_ids: set[str] | list[str] | None = None):
         """Removes session cache folders older than max_age_days and enforces LRU size limits."""
         import time
         if not os.path.exists(self.cache_dir):
             return
         now = time.time()
         max_age_sec = max_age_days * 24 * 60 * 60
+        prot_set = set(protected_session_ids or [])
         for item in os.listdir(self.cache_dir):
             item_path = os.path.join(self.cache_dir, item)
             if os.path.isdir(item_path):
+                # Skip protected sessions (e.g. any currently open tab)
+                if item in prot_set or (self.current_session_id and item == self.current_session_id):
+                    continue
+                if self.current_session_dir and os.path.exists(self.current_session_dir):
+                    try:
+                        if os.path.samefile(item_path, self.current_session_dir):
+                            continue
+                    except Exception:
+                        pass
                 try:
                     mtime = os.path.getmtime(item_path)
                     if now - mtime > max_age_sec:
                         shutil.rmtree(item_path)
                 except Exception as e:
                     print(f"[DEBUG] MediaAssetManager: Failed to clean cache dir {item_path}: {e}")
-        self.enforce_lru_cache_limit()
+        self.enforce_lru_cache_limit(protected_session_ids=protected_session_ids)
 
-    def enforce_lru_cache_limit(self, max_bytes: int = DEFAULT_MAX_CACHE_BYTES):
-        """Purges oldest cached sessions until total cache size is under max_bytes."""
+    def enforce_lru_cache_limit(self, max_bytes: int = DEFAULT_MAX_CACHE_BYTES, protected_session_ids: set[str] | list[str] | None = None):
+        """Purges oldest cached sessions until total cache size is under max_bytes, protecting active and background open tabs."""
         if not os.path.exists(self.cache_dir):
             return
 
         sessions = []
         total_size = 0
+        prot_set = set(protected_session_ids or [])
 
         for item in os.listdir(self.cache_dir):
             item_path = os.path.join(self.cache_dir, item)
@@ -328,27 +339,33 @@ class MediaAssetManager:
                         for f in files
                     )
                     atime = os.path.getmtime(item_path)
-                    sessions.append((item_path, dir_size, atime))
+                    sessions.append((item, item_path, dir_size, atime))
                     total_size += dir_size
                 except Exception:
                     pass
 
         # Sort by access/modification time ascending (oldest first)
-        sessions.sort(key=lambda x: x[2])
+        sessions.sort(key=lambda x: x[3])
 
-        for path, size, _ in sessions:
+        for session_name, path, size, _ in sessions:
             if total_size <= max_bytes:
                 break
-            # Skip removing currently active session
-            if self.current_session_dir and os.path.samefile(path, self.current_session_dir):
+            # Skip removing currently active session and protected background tabs
+            if session_name in prot_set or (self.current_session_id and session_name == self.current_session_id):
                 continue
+            if self.current_session_dir and os.path.exists(self.current_session_dir):
+                try:
+                    if os.path.samefile(path, self.current_session_dir):
+                        continue
+                except Exception:
+                    pass
             try:
                 shutil.rmtree(path)
                 total_size -= size
             except Exception as e:
                 print(f"[DEBUG] MediaAssetManager: LRU purge failed for {path}: {e}")
 
-    def cleanup_old_sessions(self, max_age_days: int = 7):
+    def cleanup_old_sessions(self, max_age_days: int = 7, protected_session_ids: set[str] | list[str] | None = None):
         """Removes session cache folders older than max_age_days."""
-        self.cleanup_cache(max_age_days=max_age_days)
+        self.cleanup_cache(max_age_days=max_age_days, protected_session_ids=protected_session_ids)
 

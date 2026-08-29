@@ -309,25 +309,55 @@ class BatchConversionService:
                 working_output_dir = output_destination
                 os.makedirs(working_output_dir, exist_ok=True)
 
+            # Pre-compute relative destinations and detect name collisions
+            planned_jobs = []
+            dest_counts: Dict[str, int] = {}
+            for src_file in files_to_convert:
+                if preserve_structure:
+                    rel_path = os.path.relpath(src_file, working_source_dir)
+                else:
+                    rel_path = os.path.basename(src_file)
+
+                base_rel, src_ext = os.path.splitext(rel_path)
+                default_dest = os.path.normpath(os.path.join(working_output_dir, f"{base_rel}{target_clean}"))
+                dest_counts[default_dest] = dest_counts.get(default_dest, 0) + 1
+                planned_jobs.append((src_file, rel_path, base_rel, src_ext, default_dest))
+
+            final_tasks = []
+            used_dests: Set[str] = set()
+
+            for src_file, rel_path, base_rel, src_ext, default_dest in planned_jobs:
+                if dest_counts[default_dest] > 1:
+                    # Collision detected: disambiguate using source extension tag
+                    src_clean = src_ext.lower()
+                    if src_clean == target_clean and default_dest not in used_dests:
+                        dest_file = default_dest
+                    else:
+                        ext_tag = src_clean.lstrip(".") or "src"
+                        candidate = os.path.normpath(os.path.join(working_output_dir, f"{base_rel} ({ext_tag}){target_clean}"))
+                        counter = 1
+                        while candidate in used_dests:
+                            candidate = os.path.normpath(os.path.join(working_output_dir, f"{base_rel} ({ext_tag}_{counter}){target_clean}"))
+                            counter += 1
+                        dest_file = candidate
+                else:
+                    dest_file = default_dest
+
+                used_dests.add(dest_file)
+                final_tasks.append((src_file, dest_file))
+
             # 4. Multi-threaded processing
             completed_count = 0
 
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = {}
-                for src_file in files_to_convert:
+                for src_file, dest_file in final_tasks:
                     if self._cancel_event.is_set():
                         break
 
-                    if preserve_structure:
-                        rel_path = os.path.relpath(src_file, working_source_dir)
-                    else:
-                        rel_path = os.path.basename(src_file)
-
-                    base_rel, _ = os.path.splitext(rel_path)
-                    dest_file = os.path.join(working_output_dir, f"{base_rel}{target_clean}")
-
                     future = executor.submit(self.convert_single_file, src_file, dest_file, target_clean)
                     futures[future] = src_file
+
 
                 for future in as_completed(futures):
                     if self._cancel_event.is_set():

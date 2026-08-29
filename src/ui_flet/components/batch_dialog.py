@@ -604,5 +604,10 @@ class BatchDialog:
     def _handle_open_result_clicked(self, e):
         res_path = getattr(self, "_last_result_path", "")
         if res_path and os.path.exists(res_path):
-            reveal_in_windows_explorer(res_path)
+            from src.utils.env import open_file_or_folder_foreground
+            try:
+                open_file_or_folder_foreground(res_path, is_folder=os.path.isdir(res_path))
+            except Exception:
+                reveal_in_windows_explorer(res_path)
             self._close_dialog()
+

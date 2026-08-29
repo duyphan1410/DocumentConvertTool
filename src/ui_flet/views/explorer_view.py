@@ -920,7 +920,18 @@ class ExplorerView(ft.Container):
         """Scans the root workspace folder asynchronously."""
         if not self.workspace_path or not os.path.isdir(self.workspace_path):
             return
-        asyncio.create_task(self._async_scan_root())
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._async_scan_root())
+        except RuntimeError:
+            if self.page and hasattr(self.page, "run_task"):
+                self.page.run_task(self._async_scan_root)
+            else:
+                try:
+                    asyncio.run(self._async_scan_root())
+                except Exception:
+                    pass
+
 
     async def _async_scan_root(self):
         if self._is_scanning:

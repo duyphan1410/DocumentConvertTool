@@ -1,8 +1,7 @@
 # 010. Kiến Trúc Đóng Gói Thư Mục Chuẩn Desktop (`--onedir`) & Bộ Cài Đặt Inno Setup 7 (`Setup.exe`)
 
-**Trạng thái:** Hoàn thành & Đã áp dụng (v1.7.2)  
-**Tác giả:** Duy Phan (@duyphan1410)  
-**Ngày:** 27/08/2026  
+**Trạng thái:** Hoàn thành & Đã áp dụng (v1.8.0)  
+**Ngày cập nhật:** 24/08/2026  
 
 ---
 

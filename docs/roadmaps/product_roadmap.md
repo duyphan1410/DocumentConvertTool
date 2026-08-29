@@ -44,12 +44,13 @@
 | **In-App YouTube Companion Player** | `src/services/youtube_player.py` | Cửa sổ WebView2 (`540x335`, 16:9, Top-Left `x=24, y=65`), Local HTTP Bridge Server `127.0.0.1` chống Error 153, cờ `--autoplay-policy=no-user-gesture-required`. | ✅ Completed (v1.7.2) |
 | **Interactive Timestamps (`yt://...`)** | `src/ui_flet/views/preview_view.py` | Tự động phân tích mốc `[mm:ss]` thành link tương tác `[mm:ss](yt://<id>?t=sec)`, click để tua video trực tiếp trong app hoặc fallback trình duyệt. | ✅ Completed (v1.7.2) |
 | **Dynamic Win32 Window Focus (Non-Pinning)** | `src/services/youtube_player.py` | `on_top=False`, sử dụng `_force_window_foreground` với Win32 `AttachThreadInput` và `SetForegroundWindow` đưa cửa sổ lên đỉnh tức thì khi click timestamp. | ✅ Completed (v1.7.2) |
+| **Folder Mode (`--onedir`) & Inno Setup 7 Installer** | `Document Converter.spec` / `installer/` | Chuyển đổi đóng gói sang Thư mục (`--onedir`) kết hợp bộ cài đặt Inno Setup 7 (`Setup.exe`), khởi động tức thì < 1s, phân quyền `%LocalAppData%\Programs`. | ✅ Completed (v1.7.2) |
 | **Auto YouTube Draft Restoration** | `src/ui_flet/controllers/file_controller.py` | Nhận diện phụ đề YouTube khi nạp lại bản nháp khởi động, tự động bật nút `▶ Watch Video` và phân giải timestamp. | ✅ Completed (v1.7.2) |
 | **3-Layer Sync Auto-Close & PyInstaller Packaging** | `Document Converter.spec`, `run.py`, `layout_controller.py` | Đóng đồng bộ khi tắt app chính qua Window Event + `atexit` + `stdin` EOF; hỗ trợ chạy subprocess độc lập trong file `.exe`. | ✅ Completed (v1.7.2) |
 
 ---
 
-### 🔄 v1.8.0 Release (Studio Workspace & Multi-Doc Architecture):
+### 🔄 v1.8.0 / v1.8.1 Release (Studio Workspace & Multi-Doc Architecture):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
@@ -58,12 +59,11 @@
 | **Draggable Split Panes (Splitter)** | `src/ui_flet/components/draggable_splitter.py` | Thanh kéo co giãn 60fps mượt mà giữa Sidebar ↔ Workspace và Editor ↔ Preview, Snap-to-Collapse (<100px), bounds (150-500px, 20%-80%), persistence `settings.json`. | ✅ Completed (v1.8.0) |
 | **Overhauled 2x2 Welcome Screen** | `src/ui_flet/views/welcome_view.py` | Lưới 4 Thẻ tác vụ 2x2 trực quan, phím tắt vật lý `<kbd>`, độ tương phản màu chuẩn xác Dark/Light Mode. | ✅ Completed (v1.8.0) |
 | **Explorer Context Menu & Safe File Ops** | `src/ui_flet/components/context_menu.py`, `src/ui_flet/components/file_modals.py`, `src/utils/file_ops.py`, `src/ui_flet/views/explorer_view.py` | Menu chuột phải nổi IDE, Win32 `SHFileOperationW` Recycle Bin (zero data loss), Smart 2-Tier Quick Convert (1-click to MD, 8 export formats flyout), Rename, Safe Delete (cảnh báo `is_dirty`), New File/Folder, nút *Collapse All Folders*, và Responsive Header (Actions Dropdown khi < 210px). | ✅ Completed (v1.8.1a) |
-| **Draggable Multi-Tab Workspace** | `src/ui_flet/components/workspace_tab_bar.py`, `src/ui_flet/controllers/layout_controller.py` | Quản lý đa Tab độc lập, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), animated `ProgressRing` loading cho file nặng, phím tắt chuyển tab `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+T`, `Ctrl+W`. | ✅ Completed (v1.8.1b) |
-| **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py`, `src/ui_flet/controllers/file_controller.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation không gây breaking change; Autosave draft riêng biệt theo `drafts/{tab_id}.md` & `tab_session.json`; Cô lập bộ nhớ đệm ảnh theo `media_session_id`. | ✅ Completed (v1.8.1b) |
-| **Smart `Ctrl+S` & Unsaved Tab Modals** | `src/ui_flet/controllers/file_controller.py`, `src/ui_flet/components/file_modals.py` | Bấm `Ctrl+S` lưu nhanh file hiện hữu hoặc bật Save Dialog trỏ đúng thư mục workspace cho tab Untitled; Modal cảnh báo Unsaved tab/Orphaned file an toàn chống mất dữ liệu. | ✅ Completed (v1.8.1b) |
-| **Smart Drag & Drop (Editor Insert)** | `src/ui_flet/views/explorer_view.py`, `src/ui_flet/views/editor_view.py` | Kéo file từ Explorer thả vào Editor để tự động chèn cú pháp Link `[Tên](path)` hoặc nhúng ảnh `![Ảnh](path)` vào tab đang active. | ⏳ Planned (v1.8.1c) |
-| **Filesystem Drag & Drop (Move)** | `src/ui_flet/views/explorer_view.py` | Kéo thả tệp/thư mục nội bộ cây thư mục Explorer để di chuyển tệp vật lý (`ft.Draggable` & `ft.DragTarget` nội bộ Flet). | ⏳ Planned (v1.8.1c) |
-| **Batch & ZIP Converter** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Chuyển đổi hàng loạt tài liệu theo Thư mục hoặc Tệp nén `.zip` chạy ngầm (Background Worker đa luồng), tự động cô lập lỗi (Error Isolation), giữ nguyên cây thư mục và đóng gói xuất ra `.zip` hoặc folder kết quả. Bổ sung hook *"Batch Convert this Folder"* vào Context Menu. | ⏳ Planned (v1.8.1c) |
+| **Draggable Multi-Tab Workspace** | `src/ui_flet/components/workspace_tab_bar.py`, `src/ui_flet/controllers/layout_controller.py` | Quản lý đa Tab độc lập, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), animated `ProgressRing` loading cho file nặng, phím tắt chuyển tab `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+T`, `Ctrl+W`. Menu chuột phải quản lý Tab (Đóng tab, đóng các tab khác, đóng tab bên phải, đóng tất cả, copy path, reveal explorer) và thanh cuộn 3px siêu mỏng. | ✅ Completed (v1.8.1b) |
+| **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py`, `src/ui_flet/controllers/file_controller.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation không gây breaking change; Autosave draft riêng biệt theo `drafts/{tab_id}.md` & `tab_session.json`; Cô lập bộ nhớ đệm ảnh theo `media_session_id`; Bộ nhớ đệm 0ms RAM Preview và Atomic Concurrency Guard. | ✅ Completed (v1.8.1b) |
+| **Smart Drag & Drop (Editor Insert)** | `src/ui_flet/views/explorer_view.py`, `src/ui_flet/views/editor_view.py` | Kéo file từ Explorer thả vào Editor để tự động chèn cú pháp Link `[Tên](path)` hoặc nhúng ảnh `![Ảnh](path)` vào tab đang active; Hỗ trợ mở link tương đối từ Workspace trong tab Untitled. | ✅ Completed (v1.8.1c) |
+| **Filesystem Drag & Drop (Move)** | `src/ui_flet/views/explorer_view.py`, `src/utils/file_ops.py` | Kéo thả tệp/thư mục nội bộ cây thư mục Explorer để di chuyển tệp vật lý (`ft.Draggable` & `ft.DragTarget` nội bộ Flet), tích hợp bộ kiểm tra an toàn `validate_move_operation` và đồng bộ hóa Workspace Tabs. | ✅ Completed (v1.8.1c) |
+| **Batch & Archive Converter** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Chuyển đổi hàng loạt tài liệu theo Thư mục hoặc Tệp nén (`.zip`, `.rar`, `.7z`, `.tar.gz`) chạy ngầm (Background Worker đa luồng `ThreadPoolExecutor`), tự động cô lập lỗi (Error Isolation), giữ nguyên cây thư mục và đóng gói xuất ra `.zip` hoặc folder kết quả. Bổ sung hook *"Batch Convert this Folder"* vào Context Menu và Archive File Picker chuyên dụng. | ✅ Completed (v1.8.1c) |
 
 ---
 
@@ -74,7 +74,7 @@
 | **Manual Wikilink `[[...]]`** | `src/services/link_parser.py` | Cú pháp `[[Tên File]]` tách biệt với link markdown cũ; Fuzzy Match (lowercase, bỏ dấu tiếng Việt `NFD`, trim space); In-memory graph index. | 🔮 Planned (v2.0) |
 | **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng màu cảnh báo / gạch chân; hỗ trợ Click để tự động tạo file `.md` mới trong workspace. | 🔮 Planned (v2.0) |
 | **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel thanh bên hiển thị danh sách các tài liệu đang dẫn liên kết tới tài liệu hiện hành. | 🔮 Planned (v2.0) |
-| **Folder Mode (`--onedir`) & Inno Setup 7 Installer** | `Document Converter.spec` / `installer/` | Chuyển đổi đóng gói sang Thư mục (`--onedir`) kết hợp bộ cài đặt Inno Setup 7 (`Setup.exe`), khởi động tức thì < 1s, phân quyền `%LocalAppData%\Programs`. | ✅ Completed (v1.7.2) |
+
 
 ---
 

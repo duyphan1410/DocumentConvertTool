@@ -54,6 +54,11 @@ docs/
 - [005_universal_dynamic_window_focus.md](architecture/005_universal_dynamic_window_focus.md): Universal 100% dynamic window title matching & Win32 `AttachThreadInput` browser elevation solution.
 - [006_parentheses_image_path_resolution_fix.md](architecture/006_parentheses_image_path_resolution_fix.md): Parentheses image path resolution fix for MediaAssetManager.
 - [007_module_architecture_and_pptx_refactoring.md](architecture/007_module_architecture_and_pptx_refactoring.md): Document Module architecture, structural un-nesting of PPTXModule, and Markdown table parsing deduplication.
+- [008_pdf_table_metric_and_win32_clipboard_architecture.md](architecture/008_pdf_table_metric_and_win32_clipboard_architecture.md): High-accuracy PDF table reconstruction and Win32 clipboard monitoring.
+- [009_pdf_card_layout_and_artifact_filter_pipeline.md](architecture/009_pdf_card_layout_and_artifact_filter_pipeline.md): Adaptive PDF 2-column card layout and artifact filtering.
+- [010_onedir_inno_setup_packaging_architecture.md](architecture/010_onedir_inno_setup_packaging_architecture.md): PyInstaller `--onedir` distribution combined with Inno Setup 7.
+- [011_drag_drop_and_batch_archive_converter.md](architecture/011_drag_drop_and_batch_archive_converter.md): Smart Drag & Drop Markdown token insertion, filesystem move validator, and multi-threaded Batch & Archive conversion service.
+
 
 ---
 
@@ -76,7 +81,11 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260829_tab_context_menu_micro_scrollbar_and_batch_polish.md](archive/20260829_tab_context_menu_micro_scrollbar_and_batch_polish.md): Workspace Tab Context Menu, Micro Scrollbar, Link Resolution & Batch Polish (v1.8.1c) — Menu chuột phải quản lý Tab, thanh cuộn mỏng 3px, bộ lọc file nén cho Batch Converter, tự động phân giải relative link cho tab Untitled và đề xuất tên lưu thông minh theo Heading.
+- [20260829_multitab_session_performance_and_atomic_guards.md](archive/20260829_multitab_session_performance_and_atomic_guards.md): Multi-Tab Session Restoration, 0ms RAM Preview Cache & Atomic Concurrency Guards (v1.8.1b) — Bộ nhớ đệm Preview tức thì trong RAM, Pillow thumbnail downsampling giảm 96% dung lượng, và khóa tương tranh nguyên tử (Atomic UI Guard) chống ghi đè khi switch tab.
+- [20260828_multi_tab_workspace.md](archive/20260828_multi_tab_workspace.md): Multi-Tab Workspace Architecture & AppState Delegation (v1.8.1b) — Kiến trúc đa Tab tài liệu độc lập, kéo thả sắp xếp tab (`ft.Draggable`), cô lập bản nháp `tab_session.json` và Media Session cache.
 - [20260828_explorer_context_menu_and_safe_file_operations.md](archive/20260828_explorer_context_menu_and_safe_file_operations.md): Explorer Context Menu & Safe File Operations (v1.8.1a) — Menu chuột phải thông minh, Win32 `SHFileOperationW` Recycle Bin qua ctypes double-null, Smart 2-Tier Quick Convert (1-click to MD, 8-format hover flyout), nút Collapse All Folders, hover highlight và đồng bộ Footer Status.
+
 - [20260827_activity_bar_and_studio_workspace.md](archive/20260827_activity_bar_and_studio_workspace.md): Studio Workspace & File Explorer Architecture (v1.8.0) — Activity Bar navigation, recursive File Explorer tree with inline filter, Quick Open fuzzy file search modal (`Ctrl+P`), 60fps Draggable Splitters with ratio persistence, and 2x2 Welcome View overhaul.
 - [20260818_youtube_transcript_and_json_yaml_formatting_fixes.md](archive/20260818_youtube_transcript_and_json_yaml_formatting_fixes.md): YouTube Subtitles/Transcript Extractor (Multi-tier Strategy: Subtitles & Server-side Auto-Translate + Lightweight Non-AI Speech Fallback), Direct Markdown Export (`.md`), Win32 Clipboard (`Win + V`) & JSON/YAML multiline formatting fixes.
 - [20260814_json_yaml_conversion_modules.md](archive/20260814_json_yaml_conversion_modules.md): Bi-directional JSON ↔ MD & YAML ↔ MD conversion modules, Lazy Import Rule compliance, and unit tests integration.

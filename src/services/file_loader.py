@@ -15,6 +15,7 @@ class LoadResult:
     content: str = ""
     mode: str = ""
     path: str = ""
+    session_id: str = ""
     error: Optional[DocumentError] = None
     error_short: Optional[str] = None
     error_detail: Optional[str] = None
@@ -29,10 +30,11 @@ def get_missing_dependencies_for_path(path: str) -> List[str]:
     return []
 
 
-def load_document(path: str) -> LoadResult:
+def load_document(path: str, session_id: Optional[str] = None) -> LoadResult:
     """
     Loads document file through the Validation Pipeline and Module Importers.
     Guarantees structured DocumentError on failure.
+    If session_id is provided, sets MediaAssetManager active session directly without hashing.
     """
     # 1. Validation Pipeline Step (Exist -> Ext -> Type -> Perm -> Size -> Integrity)
     try:
@@ -41,6 +43,7 @@ def load_document(path: str) -> LoadResult:
         return LoadResult(
             success=False,
             path=path,
+            session_id=session_id or "",
             error=doc_err,
             error_short=doc_err.title,
             error_detail=doc_err.message,
@@ -50,6 +53,7 @@ def load_document(path: str) -> LoadResult:
         return LoadResult(
             success=False,
             path=path,
+            session_id=session_id or "",
             error=doc_err,
             error_short=doc_err.title,
             error_detail=doc_err.message,
@@ -58,7 +62,11 @@ def load_document(path: str) -> LoadResult:
     # 2. Asset Manager Session
     from src.services.media_asset_manager import MediaAssetManager
     asset_mgr = MediaAssetManager()
-    asset_mgr.open_session(clean_path)
+    if session_id:
+        asset_mgr.set_active_session(session_id)
+        actual_session_id = session_id
+    else:
+        actual_session_id = asset_mgr.open_session(clean_path)
 
     ext = os.path.splitext(clean_path)[1].lower()
     module = ModuleRegistry.get_module_by_extension(ext)
@@ -68,11 +76,11 @@ def load_document(path: str) -> LoadResult:
             try:
                 with open(clean_path, encoding="utf-8") as f:
                     raw_content = f.read()
-                content = asset_mgr.import_local_images(raw_content, os.path.dirname(clean_path))
-                return LoadResult(success=True, content=content, mode="MD -> Excel", path=clean_path)
+                content = asset_mgr.import_local_images(raw_content, os.path.dirname(clean_path), session_id=actual_session_id)
+                return LoadResult(success=True, content=content, mode="MD -> Excel", path=clean_path, session_id=actual_session_id)
             except Exception as exc:
                 doc_err = ErrorMapper.map_exception(exc, context_path=clean_path, stage="read")
-                return LoadResult(success=False, path=clean_path, error=doc_err, error_short=doc_err.title, error_detail=doc_err.message)
+                return LoadResult(success=False, path=clean_path, session_id=actual_session_id, error=doc_err, error_short=doc_err.title, error_detail=doc_err.message)
 
         doc_err = DocumentError(
             code=ErrorCode.UNSUPPORTED_EXTENSION,
@@ -80,7 +88,7 @@ def load_document(path: str) -> LoadResult:
             message=f"Tệp đuôi '{ext}' không được hỗ trợ.",
             suggestion="Chọn một tệp thuộc các định dạng .docx, .pdf, .xlsx, .csv, .md, .html.",
         )
-        return LoadResult(success=False, path=clean_path, error=doc_err, error_short=doc_err.title, error_detail=doc_err.message)
+        return LoadResult(success=False, path=clean_path, session_id=actual_session_id, error=doc_err, error_short=doc_err.title, error_detail=doc_err.message)
 
     # 3. Missing Dependencies Check
     missing = module.check_dependencies()
@@ -94,6 +102,7 @@ def load_document(path: str) -> LoadResult:
         return LoadResult(
             success=False,
             path=clean_path,
+            session_id=actual_session_id,
             error=doc_err,
             error_short=doc_err.title,
             error_detail=doc_err.message,
@@ -104,12 +113,13 @@ def load_document(path: str) -> LoadResult:
     try:
         content = module.load_to_markdown(clean_path)
         mode = f"{module.name} -> MD"
-        return LoadResult(success=True, content=content, mode=mode, path=clean_path)
+        return LoadResult(success=True, content=content, mode=mode, path=clean_path, session_id=actual_session_id)
     except Exception as exc:
         doc_err = ErrorMapper.map_exception(exc, context_path=clean_path, stage="read")
         return LoadResult(
             success=False,
             path=clean_path,
+            session_id=actual_session_id,
             error=doc_err,
             error_short=doc_err.title,
             error_detail=doc_err.message,

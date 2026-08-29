@@ -52,6 +52,7 @@ class TestYouTubeDialog(unittest.TestCase):
         app_controls["ribbon_bar"].mode_dropdown.value = "MD -> Markdown"
 
         controller = FileController(page=self.page, state=state, app_controls=app_controls)
+        controller.perform_autosave = MagicMock()
         controller.handle_youtube_transcript_loaded(
             content="# Video Title\nTranscript content here",
             source_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",

@@ -31,6 +31,7 @@ class DocumentTabState:
     current_match_idx: int = -1
     media_session_id: str = ""
     cursor_position: int = 0
+    cached_preview_md: str = ""
     created_at: float = field(default_factory=time.time)
 
     def __post_init__(self):
@@ -175,14 +176,62 @@ class AppState:
             tab = self.tabs.pop(src_idx)
             self.tabs.insert(tgt_idx, tab)
 
+    @property
+    def open_session_ids(self) -> set[str]:
+        """Returns a set of all media_session_ids across all currently open tabs."""
+        return {tab.media_session_id for tab in self.tabs if tab.media_session_id}
+
     def _ensure_active_tab(self) -> DocumentTabState:
         """Returns the active tab, creating an initial default tab if tabs is empty."""
         tab = self.active_tab
         if tab is None:
+            import traceback
+            caller = traceback.extract_stack(limit=2)[0]
+            print(f"[WARN] _ensure_active_tab: auto-created tab from {caller.filename}:{caller.lineno}")
             tab = self.create_tab()
         return tab
 
     # ── Transparent Property Delegation (Backward Compatibility) ───────
+
+    @property
+    def media_session_id(self) -> str:
+        tab = self.active_tab
+        return tab.media_session_id if tab else ""
+
+    @media_session_id.setter
+    def media_session_id(self, val: str):
+        tab = self._ensure_active_tab()
+        tab.media_session_id = val
+
+    @property
+    def is_loading(self) -> bool:
+        tab = self.active_tab
+        return tab.is_loading if tab else False
+
+    @is_loading.setter
+    def is_loading(self, val: bool):
+        tab = self._ensure_active_tab()
+        tab.is_loading = val
+
+    @property
+    def cursor_position(self) -> int:
+        tab = self.active_tab
+        return tab.cursor_position if tab else 0
+
+    @cursor_position.setter
+    def cursor_position(self, val: int):
+        tab = self._ensure_active_tab()
+        tab.cursor_position = val
+
+    @property
+    def title(self) -> str:
+        tab = self.active_tab
+        return tab.title if tab else "Untitled"
+
+    @title.setter
+    def title(self, val: str):
+        tab = self._ensure_active_tab()
+        tab.title = val
 
     @property
     def in_path(self) -> str:
@@ -305,3 +354,13 @@ class AppState:
     def current_match_idx(self, val: int):
         tab = self._ensure_active_tab()
         tab.current_match_idx = val
+
+    @property
+    def cached_preview_md(self) -> str:
+        tab = self.active_tab
+        return tab.cached_preview_md if tab else ""
+
+    @cached_preview_md.setter
+    def cached_preview_md(self, val: str):
+        tab = self._ensure_active_tab()
+        tab.cached_preview_md = val

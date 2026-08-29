@@ -262,7 +262,13 @@ class DocumentConvertApp:
             on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
         )
 
-        self.preview = MarkdownPreview()
+        self.preview = MarkdownPreview(
+            on_open_file=lambda path: asyncio.create_task(
+                self.file_controller.open_file_by_path(path)
+            ),
+            get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
+        )
+
         self.right_pane = ft.Container(
             content=self.preview,
             expand=True,
@@ -284,6 +290,11 @@ class DocumentConvertApp:
             ),
         )
 
+        self.editor_view.set_path_providers(
+            get_active_file_path=lambda: getattr(self.state, "in_path", ""),
+            get_workspace_path=lambda: getattr(self.state, "workspace_folder", ""),
+        )
+
         self.explorer_view = ExplorerView(
             on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
             on_file_click=lambda path: asyncio.create_task(self._on_explorer_file_clicked(path)),
@@ -295,6 +306,7 @@ class DocumentConvertApp:
             on_new_file=lambda new_p: asyncio.create_task(self.file_controller.open_file_by_path(new_p)),
             on_new_folder=lambda new_folder: None,
             on_status_message=lambda msg, col=None: self.footer_bar.set_status(msg, color=col),
+            on_batch_convert=lambda p: self._show_batch_converter(p),
             get_is_dirty=lambda: getattr(self.state, "is_dirty", False),
             get_active_file=lambda: getattr(self.state, "in_path", ""),
             workspace_path=getattr(self.state, "workspace_folder", ""),
@@ -320,12 +332,21 @@ class DocumentConvertApp:
             is_vertical=True,
         )
 
+        from src.utils.clipboard import set_clipboard_text
+        from src.utils.file_ops import reveal_in_windows_explorer
+
         self.workspace_tab_bar = WorkspaceTabBar(
             on_tab_select=lambda tid: self.layout_controller.handle_doc_tab_selected(tid),
             on_tab_close=lambda tid: self.layout_controller.handle_doc_tab_closed(tid),
             on_tab_reorder=lambda sid, tid: self.layout_controller.handle_doc_tab_reordered(sid, tid),
             on_new_tab=lambda: self.layout_controller.handle_new_doc_tab(),
+            on_close_others=lambda tid: self.layout_controller.handle_close_other_tabs(tid),
+            on_close_to_right=lambda tid: self.layout_controller.handle_close_tabs_to_right(tid),
+            on_close_all=lambda: self.layout_controller.handle_close_all_tabs(),
+            on_copy_path=lambda path: set_clipboard_text(path, self.page),
+            on_reveal=lambda path: reveal_in_windows_explorer(path),
         )
+
 
         self.editor_split_row = ft.Row(
             controls=[
@@ -398,6 +419,7 @@ class DocumentConvertApp:
             "file_picker_out": self.file_picker_out,
             "on_show_editor": self._show_editor_view,
             "on_mode_changed": self._on_mode_changed,
+            "show_batch_converter": self._show_batch_converter,
         }
 
         # 3. Modular Controllers
@@ -550,9 +572,21 @@ class DocumentConvertApp:
     async def _on_explorer_file_clicked(self, file_path: str):
         await self.file_controller.open_file_by_path(file_path)
 
+    def _show_batch_converter(self, initial_source: str = ""):
+        """Opens the Batch & Archive Converter modal dialog."""
+        from src.ui_flet.components.batch_dialog import BatchDialog
+        src = initial_source or getattr(self.state, "workspace_folder", "")
+        dlg = BatchDialog(
+            page=self.page,
+            initial_source=src,
+            on_completed=lambda res: self.explorer_view.refresh_tree(),
+        )
+        dlg.show()
+
 
 def main(page: ft.Page):
     app = DocumentConvertApp(page)
+
 
 
 if __name__ == "__main__":

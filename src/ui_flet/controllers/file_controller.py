@@ -437,15 +437,24 @@ class FileController:
             return
 
         active_tab = self.state.active_tab
-        init_file = "document.md"
-        if active_tab and active_tab.title and active_tab.title != "Untitled":
+        init_file = "Untitled.md"
+        if active_tab and active_tab.title and active_tab.title not in ("Untitled", t("tab.untitled")):
             base = os.path.splitext(active_tab.title)[0]
             init_file = f"{base}.md"
         elif self.state.in_path:
             base = os.path.splitext(os.path.basename(self.state.in_path))[0]
             init_file = f"{base}.md"
+        else:
+            # Smart default: Extract title from first heading in content (# Title)
+            import re
+            m = re.search(r"^#+\s+(.+)$", content, re.MULTILINE)
+            if m:
+                clean_t = re.sub(r'[\\/*?:"<>|]', "", m.group(1).strip())
+                if clean_t:
+                    init_file = f"{clean_t}.md"
 
         init_dir = getattr(self.state, "workspace_folder", "") or None
+
 
         file_path = await pick_output_file_async(
             default_ext=".md",
@@ -522,9 +531,15 @@ class FileController:
             print(f"[LOG][TAB_SESSION][ERROR] Failed to save tab session: {e}")
 
     def has_draft_on_disk(self) -> bool:
-        """Returns True if auto draft files or tab session exist on disk and are non-empty."""
+        """Returns True if auto draft files or non-empty tab session exist on disk."""
         if os.path.exists(TAB_SESSION_PATH) and os.path.getsize(TAB_SESSION_PATH) > 0:
-            return True
+            try:
+                with open(TAB_SESSION_PATH, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                if manifest.get("tabs") and len(manifest["tabs"]) > 0:
+                    return True
+            except Exception:
+                pass
         if os.path.exists(DRAFTS_DIR):
             try:
                 if any(f.endswith(".md") for f in os.listdir(DRAFTS_DIR)):
@@ -554,9 +569,15 @@ class FileController:
         t0 = time.time()
         res = await asyncio.to_thread(self._sync_load_all_draft_data)
         if not res or not res.get("tabs"):
+            self.footer_bar.set_status(t("status.ready"), color=ft.Colors.ON_SURFACE_VARIANT)
             if workspace_view and hasattr(workspace_view, "show_welcome"):
                 workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+            try:
+                self.page.update()
+            except Exception:
+                pass
             return False
+
 
         restored_tabs = res["tabs"]
         active_id = res.get("active_tab_id")
@@ -826,12 +847,13 @@ class FileController:
         MediaAssetManager().clear_session(sid)
         self.save_tab_session()
         if len(self.state.tabs) == 0:
-            for path in [DRAFT_PATH, DRAFT_META_PATH]:
+            for path in [DRAFT_PATH, DRAFT_META_PATH, TAB_SESSION_PATH]:
                 if os.path.exists(path):
                     try:
                         os.remove(path)
                     except Exception:
                         pass
+
 
     def clear_draft_file(self):
         """Clears draft files for the currently active tab and legacy files."""

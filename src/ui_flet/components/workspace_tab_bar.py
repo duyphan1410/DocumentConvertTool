@@ -108,18 +108,21 @@ class DocumentTabItem(ft.Container):
 
         # Tab Title & Icon Click Area (isolated from close button)
         title_click_area = ft.Container(
-            content=ft.Row(
-                controls=[
-                    leading_icon,
-                    ft.Container(content=title_text, expand=True),
-                ],
-                alignment=ft.MainAxisAlignment.START,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=6,
+            content=ft.GestureDetector(
+                content=ft.Row(
+                    controls=[
+                        leading_icon,
+                        ft.Container(content=title_text, expand=True),
+                    ],
+                    alignment=ft.MainAxisAlignment.START,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=6,
+                ),
+                on_tap=lambda e: self.on_select(self.tab.tab_id),
+                on_secondary_tap_down=lambda e: self._handle_secondary_tap(e) if self.on_context_menu else None,
+                on_long_press=lambda e: self._handle_secondary_tap(e) if self.on_context_menu else None,
             ),
             expand=True,
-            on_click=lambda e: self.on_select(self.tab.tab_id),
-            on_long_press=lambda e: self._handle_secondary_tap(e) if self.on_context_menu else None,
         )
 
         # Tab Content Row
@@ -182,9 +185,17 @@ class DocumentTabItem(ft.Container):
     def _on_close_clicked(self, e):
         self.on_close(self.tab.tab_id)
 
-    def _handle_secondary_tap(self, e: ft.ControlEvent):
+    def _handle_secondary_tap(self, e):
         if self.on_context_menu:
-            self.on_context_menu(self.tab.tab_id, e)
+            gx = 300.0
+            gy = 80.0
+            if hasattr(e, "global_position") and e.global_position:
+                gx = float(e.global_position.x)
+                gy = float(e.global_position.y)
+            elif hasattr(e, "local_position") and e.local_position:
+                gx = float(e.local_position.x)
+                gy = float(e.local_position.y)
+            self.on_context_menu(self.tab.tab_id, gx, gy)
 
     def _on_drag_accept(self, e):
         src_ctrl_id = getattr(e, "src_id", None)
@@ -208,7 +219,7 @@ class DocumentTabItem(ft.Container):
 class WorkspaceTabBar(ft.Container):
     """
     Top Tab Bar component positioned above the Editor & Preview area.
-    Manages document tabs, dynamic active highlight, and Add Tab button.
+    Manages document tabs, dynamic active highlight, 3px micro scrollbar, and context menus.
     """
 
     def __init__(
@@ -218,8 +229,10 @@ class WorkspaceTabBar(ft.Container):
         on_tab_reorder: Callable[[str, str], None],
         on_new_tab: Callable[[], None],
         on_close_others: Optional[Callable[[str], None]] = None,
+        on_close_to_right: Optional[Callable[[str], None]] = None,
         on_close_all: Optional[Callable[[], None]] = None,
         on_copy_path: Optional[Callable[[str], None]] = None,
+        on_reveal: Optional[Callable[[str], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -228,8 +241,23 @@ class WorkspaceTabBar(ft.Container):
         self.on_tab_reorder = on_tab_reorder
         self.on_new_tab = on_new_tab
         self.on_close_others = on_close_others
+        self.on_close_to_right = on_close_to_right
         self.on_close_all = on_close_all
         self.on_copy_path = on_copy_path
+        self.on_reveal = on_reveal
+        self.context_menu = None
+
+        # TabBar-specific ultra-sleek micro scrollbar (3px) matching RibbonBar
+        self.theme = ft.Theme(
+            scrollbar_theme=ft.ScrollbarTheme(
+                thickness=3,
+                radius=2,
+                track_visibility=False,
+                thumb_visibility=False,
+                interactive=True,
+            )
+        )
+        self.dark_theme = self.theme
 
         self._cached_tabs: list[DocumentTabState] = []
         self._cached_active_id: str | None = None
@@ -307,13 +335,40 @@ class WorkspaceTabBar(ft.Container):
                 break
         self.render_tabs(self._cached_tabs, self._cached_active_id)
 
-    def _show_tab_context_menu(self, tab_id: str, e: ft.ControlEvent):
+    def _show_tab_context_menu(self, tab_id: str, x: float, y: float):
         """Context menu for document tabs."""
-        # Optional: Can show a context menu or execute context action
-        pass
+        if not self.page:
+            return
+        from src.ui_flet.components.context_menu import ExplorerContextMenu
+        if not self.context_menu:
+            self.context_menu = ExplorerContextMenu(self.page)
+
+        tab = next((t for t in self._cached_tabs if t.tab_id == tab_id), None)
+        if not tab:
+            return
+
+        idx = next((i for i, t in enumerate(self._cached_tabs) if t.tab_id == tab_id), -1)
+        can_close_others = len(self._cached_tabs) > 1
+        can_close_to_right = (idx >= 0 and idx < len(self._cached_tabs) - 1)
+
+        self.context_menu.show_tab_menu(
+            x=x,
+            y=y,
+            tab_id=tab_id,
+            in_path=tab.in_path or "",
+            can_close_others=can_close_others,
+            can_close_to_right=can_close_to_right,
+            on_close=self.on_tab_close,
+            on_close_others=self.on_close_others,
+            on_close_to_right=self.on_close_to_right,
+            on_close_all=self.on_close_all,
+            on_copy_path=self.on_copy_path,
+            on_reveal=self.on_reveal,
+        )
 
     def update_locale(self):
         """Refreshes tooltips on locale change."""
         self.new_tab_btn.tooltip = t("tab.new_tab")
         if self._cached_tabs:
             self.render_tabs(self._cached_tabs, self._cached_active_id)
+

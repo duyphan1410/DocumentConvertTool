@@ -155,3 +155,50 @@ def reveal_in_windows_explorer(path: str) -> bool:
             return True
         except Exception:
             return False
+
+
+def validate_move_operation(src_path: str, dest_dir: str) -> Tuple[bool, str]:
+    """
+    Validates moving a file or directory into dest_dir.
+    Guarantees loop-free, non-destructive filesystem move.
+    Returns (is_valid, error_message).
+    """
+    from src.i18n import t
+
+    if not src_path or not dest_dir:
+        return False, t("validator.move_invalid_paths")
+
+    src_norm = os.path.normcase(os.path.normpath(os.path.abspath(src_path)))
+    dest_norm = os.path.normcase(os.path.normpath(os.path.abspath(dest_dir)))
+
+    if not os.path.exists(src_path):
+        return False, t("validator.move_src_not_found", name=os.path.basename(src_path))
+
+    if not os.path.exists(dest_dir) or not os.path.isdir(dest_dir):
+        return False, t("validator.move_dest_not_found", name=os.path.basename(dest_dir))
+
+    if src_norm == dest_norm:
+        return False, t("validator.move_same_path")
+
+    # Prevent moving into its current parent folder
+    parent_norm = os.path.normcase(os.path.normpath(os.path.dirname(src_path)))
+    if parent_norm == dest_norm:
+        return False, t("validator.move_already_in_dir")
+
+    # Prevent moving a parent directory into its own sub-folder
+    if os.path.isdir(src_path):
+        try:
+            common = os.path.commonpath([src_norm, dest_norm])
+            if common == src_norm:
+                return False, t("validator.move_circular_error")
+        except ValueError:
+            pass
+
+    # Check name collision in destination directory
+    target_path = os.path.join(dest_dir, os.path.basename(src_path))
+    if os.path.exists(target_path):
+        return False, t("validator.move_target_exists", name=os.path.basename(src_path))
+
+    return True, ""
+
+

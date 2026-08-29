@@ -690,4 +690,26 @@ class LayoutController:
         prev_idx = (idx - 1) % len(self.state.tabs)
         self.handle_doc_tab_selected(self.state.tabs[prev_idx].tab_id)
 
+    def handle_close_other_tabs(self, keep_tab_id: str):
+        """Closes all tabs except the specified keep_tab_id."""
+        tabs_to_close = [t.tab_id for t in list(self.state.tabs) if t.tab_id != keep_tab_id]
+        for tid in tabs_to_close:
+            self.handle_doc_tab_closed(tid)
+
+    def handle_close_tabs_to_right(self, from_tab_id: str):
+        """Closes all tabs to the right of from_tab_id."""
+        idx = self.state.get_tab_index(from_tab_id)
+        if idx < 0:
+            return
+        tabs_to_close = [t.tab_id for t in list(self.state.tabs[idx + 1:])]
+        for tid in tabs_to_close:
+            self.handle_doc_tab_closed(tid)
+
+    def handle_close_all_tabs(self):
+        """Closes all document tabs."""
+        tabs_to_close = [t.tab_id for t in list(self.state.tabs)]
+        for tid in tabs_to_close:
+            self.handle_doc_tab_closed(tid)
+
+
 

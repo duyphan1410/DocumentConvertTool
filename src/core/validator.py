@@ -341,3 +341,52 @@ def validate_file_integrity(path: str) -> Optional[Tuple[str, str]]:
         return (err.title, err.message + (" " + err.suggestion if err.suggestion else ""))
     except Exception as exc:
         return (t("validator.integrity_check_error"), str(exc))
+
+
+ARCHIVE_EXTS = {".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2"}
+
+
+def validate_archive_file(path: str) -> Tuple[bool, str]:
+    """
+    Validates an archive file for batch decompression and conversion.
+    Returns (is_valid, error_message).
+    """
+    if not path or not path.strip():
+        return False, t("validator.empty_path_msg")
+
+    clean_path = os.path.normpath(path.strip())
+    if not os.path.exists(clean_path):
+        return False, t("validator.not_found_msg", path=clean_path)
+
+    if os.path.isdir(clean_path):
+        return False, t("validator.is_dir_msg", filename=os.path.basename(clean_path))
+
+    ext = os.path.splitext(clean_path)[1].lower()
+    if clean_path.lower().endswith(".tar.gz") or clean_path.lower().endswith(".tar.bz2"):
+        ext = ".tar.gz"
+
+    if ext not in ARCHIVE_EXTS:
+        valid_str = ", ".join(sorted(ARCHIVE_EXTS))
+        return False, t("validator.archive_unsupported_ext", ext=ext, valid_exts=valid_str)
+
+    try:
+        size = os.path.getsize(clean_path)
+        if size == 0:
+            return False, t("validator.file_empty_msg", filename=os.path.basename(clean_path))
+        if size > 2 * 1024 * 1024 * 1024:
+            return False, t("validator.file_too_large_msg", filename=os.path.basename(clean_path))
+    except Exception as ex:
+        return False, t("validator.archive_size_check_err", error=str(ex))
+
+    try:
+        with open(clean_path, "rb") as f:
+            header = f.read(16)
+        if ext == ".zip" and not header.startswith(b"PK\x03\x04") and not zipfile.is_zipfile(clean_path):
+            return False, t("validator.corrupted_zip_msg", filename=os.path.basename(clean_path))
+    except PermissionError:
+        return False, t("validator.file_locked_msg", filename=os.path.basename(clean_path))
+    except Exception as ex:
+        return False, t("validator.archive_read_err", error=str(ex))
+
+    return True, ""
+

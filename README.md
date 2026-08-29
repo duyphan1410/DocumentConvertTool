@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.8.0)
+# Document Converter Workspace (v1.8.1)
 
 ![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
 ![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%20Studio%20MVC-purple)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.8.0-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.8.1-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern desktop workspace for editing and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **CSV**, **HTML**, **JSON**, and **YAML** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,8 @@ A modern desktop workspace for editing and converting documents between **Markdo
 
 Download the latest standalone executable (no Python installation required):
 
-➡️ [**Download Document Converter (v1.8.0) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.8.1) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -94,7 +95,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 # Or manual PyInstaller --onedir build
 python -m PyInstaller "Document Converter.spec"
 ```
-The standalone desktop bundle will be generated at `dist/Document Converter/` and the Windows installer at `dist/installer/Document_Converter_Setup_v1.7.2.exe`.
+The standalone desktop bundle will be generated at `dist/Document Converter/` and the Windows installer at `dist/installer/Document_Converter_Setup_v1.8.1.exe`.
+
 
 ---
 
@@ -109,7 +111,7 @@ The standalone desktop bundle will be generated at `dist/Document Converter/` an
 - **v1.6.6 — PDF Card Table Layout, Image Artifact Filter & High-Speed Pipeline**: N-column spatial card table router ($N=2..5$), hierarchy tree alignment, illustration pseudo-table linguistic guard, Polaroid blank core frame filter, button glow/halo filter, and thumbnail downsampling (20x faster).
 - **v1.7.0 — YouTube Extractor, Direct MD Export, Single-Row Ribbon & Studio UI**: Multi-tier YouTube Subtitle & Non-AI Speech Transcriber, direct Markdown file download (`[⬇]`) & save flow, Win32 Clipboard auto-fill (`Win + V`), simplified single-row Ribbon Bar (38–40px), dynamic toggle visual states, native directory picker dialogs, single-row File Path Bar, JSON/YAML multiline & escape sequence fixes, and card-grid Help View.
 - **v1.7.2 — YouTube Companion Player & Inno Setup 7 Desktop Installer**: Embedded Microsoft Edge WebView2 Mini Player (`540x335`, 16:9) with clickable transcript timestamps (`yt://...`), local HTTP bridge server eliminating YouTube Error 153, instant unmuted autoplay, Win32 dynamic focus elevation, auto YouTube draft detection, and Inno Setup 7 modern installer (`--onedir`, `< 1s` instant launch, non-admin `%LocalAppData%\Programs` support).
-- **v1.8.0 / v1.8.1a — Studio Workspace, Activity Bar, Explorer Context Menu & Safe File Ops (Current)**: Full IDE-grade transformation with Activity Bar dock, recursive File Explorer tree, Quick Open fuzzy search modal (`Ctrl+P`), 60fps Dual Draggable Splitters with ratio persistence, 2x2 Welcome Screen, floating right-click Context Menu, Win32 `SHFileOperationW` Recycle Bin deletion, 2-Tier Quick Convert (8 export formats), and responsive compact actions dropdown.
+- **v1.8.0 / v1.8.1 — Studio Workspace, Multi-Tab Architecture, Batch & Archive Converter (Current)**: Full IDE-grade transformation with Activity Bar dock, recursive File Explorer tree with inline filter, Quick Open fuzzy search modal (`Ctrl+P`), 60fps Dual Draggable Splitters, 2x2 Welcome Screen, floating right-click Context Menu, Win32 `SHFileOperationW` Recycle Bin deletion, 2-Tier Quick Convert (8 export formats), Multi-Tab Workspace (`ft.Draggable` tabs, `tab_session.json` isolated drafts, 0ms RAM preview, Atomic UI concurrency protection), Tab Context Menu & 3px micro scrollbar, Smart Drag & Drop (insert link/image into editor, move files in explorer), and multi-threaded Batch & Archive Converter (`.zip`, `.rar`, `.7z`, `.tar.gz`).
 
 
 > [!NOTE]

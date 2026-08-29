@@ -1,8 +1,9 @@
-# Multi-Tab Session Restoration, 0ms RAM Preview Cache & Atomic Concurrency Guards
+# Multi-Tab Session Restoration, 0ms RAM Preview Cache & Atomic Concurrency Guards (v1.8.1b)
 
+**Phiên bản**: `v1.8.1b`  
 **Ngày cập nhật**: 29/08/2026  
 **Nhánh liên quan**: `fix/duy-29082026-multitab-loading-ram-cache`  
-**Tác giả**: Duy Phan  
+
 
 ---
 

@@ -86,6 +86,50 @@ def pick_input_file_sync() -> str | None:
     return None
 
 
+ARCHIVE_FILETYPES = [
+    ("Supported Archives (*.zip;*.rar;*.7z;*.tar.gz;*.tgz;*.tar)", "*.zip;*.rar;*.7z;*.tar.gz;*.tgz;*.tbz2;*.tar;*.bz2"),
+    ("ZIP Archive (*.zip)", "*.zip"),
+    ("RAR Archive (*.rar)", "*.rar"),
+    ("7-Zip Archive (*.7z)", "*.7z"),
+    ("Tarball (*.tar.gz;*.tgz;*.tar)", "*.tar.gz;*.tgz;*.tar;*.tbz2;*.bz2"),
+    ("All Files (*.*)", "*.*"),
+]
+
+
+
+def pick_archive_file_sync() -> str | None:
+    """Synchronous worker that opens transient Windows Open File Dialog filtered for compressed archives."""
+    ensure_tcl_tk()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_path = filedialog.askopenfilename(
+            title="Select Compressed Archive File",
+            filetypes=ARCHIVE_FILETYPES,
+        )
+        if selected_path:
+            return os.path.normpath(selected_path)
+    except Exception as e:
+        print(f"[DEBUG] Native archive filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
 def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx", initial_dir: str | None = None) -> str | None:
     """Synchronous worker that opens transient Windows Save File Dialog."""
     ensure_tcl_tk()
@@ -102,12 +146,21 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
+
+        # Prioritize the matching default_ext filter to be the first selected in Windows dialog
+        sorted_filetypes = list(OUTPUT_FILETYPES)
+        if default_ext:
+            ext_pat = f"*{default_ext.lower()}"
+            matched = [ft for ft in OUTPUT_FILETYPES if ext_pat in ft[1].lower()]
+            unmatched = [ft for ft in OUTPUT_FILETYPES if ft not in matched]
+            sorted_filetypes = matched + unmatched
+
         save_path = filedialog.asksaveasfilename(
             title="Select Output Destination",
             defaultextension=default_ext,
             initialfile=initial_file,
             initialdir=initial_dir,
-            filetypes=OUTPUT_FILETYPES,
+            filetypes=sorted_filetypes,
             confirmoverwrite=True,
         )
         if save_path:
@@ -121,6 +174,7 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
             except Exception:
                 pass
     return None
+
 
 
 async def pick_input_file_async(page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:

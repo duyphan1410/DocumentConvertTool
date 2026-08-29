@@ -152,15 +152,29 @@ class ExplorerContextMenu:
         on_copy_path: Callable[[str], None],
         on_rename: Callable[[str], None],
         on_delete: Callable[[str], None],
+        on_batch_convert: Optional[Callable[[str], None]] = None,
     ):
-        """Opens right-click menu for a file node with smart 2-tier Quick Convert."""
+        """Opens right-click menu for a file node with smart 2-tier Quick Convert and Archive Batch Convert."""
         self.hide()
 
         name = os.path.basename(file_path)
         ext = os.path.splitext(name)[1].lower()
         is_markdown = ext in (".md", ".markdown")
+        is_archive = ext in (".zip", ".rar", ".7z", ".tar.gz", ".tgz", ".tbz2", ".tar")
 
         items: List[ft.Control] = []
+
+        # 0. Archive Batch Convert (when right-clicking .zip, .rar, .7z, .tar.gz)
+        if is_archive and on_batch_convert:
+            items.append(
+                ContextMenuItem(
+                    title=t("explorer.batch_convert"),
+                    icon=ft.Icons.DYNAMIC_FEED_ROUNDED,
+                    icon_color=ft.Colors.AMBER_500,
+                    on_click=lambda: self._wrap_action(on_batch_convert, file_path),
+                )
+            )
+            items.append(ContextMenuDivider())
 
         # 1. Smart Quick Convert Section
         if is_markdown:
@@ -191,6 +205,7 @@ class ExplorerContextMenu:
                 )
             )
             items.append(ContextMenuDivider())
+
 
         # 2. File Operations
         items.append(
@@ -321,11 +336,25 @@ class ExplorerContextMenu:
         on_new_folder: Callable[[str], None],
         on_reveal: Callable[[str], None],
         on_copy_path: Callable[[str], None],
+        on_batch_convert: Optional[Callable[[str], None]] = None,
     ):
         """Opens right-click menu for a directory node."""
         self.hide()
 
-        items: List[ft.Control] = [
+        items: List[ft.Control] = []
+
+        if on_batch_convert:
+            items.append(
+                ContextMenuItem(
+                    title=t("explorer.batch_convert"),
+                    icon=ft.Icons.DYNAMIC_FEED_ROUNDED,
+                    icon_color=ft.Colors.AMBER_500,
+                    on_click=lambda: self._wrap_action(on_batch_convert, folder_path),
+                )
+            )
+            items.append(ContextMenuDivider())
+
+        items.extend([
             ContextMenuItem(
                 title=t("explorer.new_file"),
                 icon=ft.Icons.NOTE_ADD_ROUNDED,
@@ -349,9 +378,10 @@ class ExplorerContextMenu:
                 icon=ft.Icons.CONTENT_COPY_ROUNDED,
                 on_click=lambda: self._wrap_action(on_copy_path, folder_path),
             ),
-        ]
+        ])
 
         self._render_menu(x, y, items)
+
 
     def show_header_menu(
         self,
@@ -394,6 +424,78 @@ class ExplorerContextMenu:
             )
 
         self._render_menu(x, y, items)
+
+    def show_tab_menu(
+        self,
+        x: float,
+        y: float,
+        tab_id: str,
+        in_path: str,
+        can_close_others: bool,
+        can_close_to_right: bool,
+        on_close: Callable[[str], None],
+        on_close_others: Optional[Callable[[str], None]] = None,
+        on_close_to_right: Optional[Callable[[str], None]] = None,
+        on_close_all: Optional[Callable[[], None]] = None,
+        on_copy_path: Optional[Callable[[str], None]] = None,
+        on_reveal: Optional[Callable[[str], None]] = None,
+    ):
+        """Opens right-click context menu for workspace document tab."""
+        self.hide()
+        items: List[ft.Control] = [
+            ContextMenuItem(
+                title=t("tab.close"),
+                icon=ft.Icons.CLOSE,
+                on_click=lambda: self._wrap_action(on_close, tab_id),
+            ),
+        ]
+        if can_close_others and on_close_others:
+            items.append(
+                ContextMenuItem(
+                    title=t("tab.close_others"),
+                    icon=ft.Icons.CLOSE_FULLSCREEN_ROUNDED,
+                    on_click=lambda: self._wrap_action(on_close_others, tab_id),
+                )
+            )
+        if can_close_to_right and on_close_to_right:
+            items.append(
+                ContextMenuItem(
+                    title=t("tab.close_to_right"),
+                    icon=ft.Icons.ARROW_FORWARD_ROUNDED,
+                    on_click=lambda: self._wrap_action(on_close_to_right, tab_id),
+                )
+            )
+
+        if on_close_all:
+            items.append(
+                ContextMenuItem(
+                    title=t("tab.close_all"),
+                    icon=ft.Icons.CLEAR_ALL_ROUNDED,
+                    on_click=lambda: self._wrap_action(on_close_all),
+                )
+            )
+
+        if in_path and os.path.exists(in_path):
+            items.append(ContextMenuDivider())
+            if on_copy_path:
+                items.append(
+                    ContextMenuItem(
+                        title=t("explorer.copy_path"),
+                        icon=ft.Icons.CONTENT_COPY_ROUNDED,
+                        on_click=lambda: self._wrap_action(on_copy_path, in_path),
+                    )
+                )
+            if on_reveal:
+                items.append(
+                    ContextMenuItem(
+                        title=t("explorer.reveal_explorer"),
+                        icon=ft.Icons.FOLDER_OPEN_ROUNDED,
+                        on_click=lambda: self._wrap_action(on_reveal, in_path),
+                    )
+                )
+
+        self._render_menu(x, y, items)
+
 
     def _wrap_action(self, callback: Callable, *args):
         self.hide()

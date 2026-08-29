@@ -1,7 +1,10 @@
 # Phase 1.8.1b: Multi-Tab Workspace Architecture & AppState Delegation Summary
 
-**Branch**: `feat/duy-28082026-multi-tab-workspace`  
-**Date**: 2026-08-28  
+**Phiên bản**: `v1.8.1b`  
+**Nhánh**: `feat/duy-28082026-multi-tab-workspace`  
+**Ngày cập nhật**: 2026-08-28  
+
+
 **Scope**: Multi-Tab Document Architecture, Property Delegation, Isolated Draft Sessions, Draggable TabBar UI, and Smart File Operations.
 
 ---

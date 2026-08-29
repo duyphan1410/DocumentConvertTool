@@ -79,7 +79,7 @@ def _extract_tap_position(e: ft.TapEvent) -> tuple[float, float]:
 
 
 class FileTreeItem(ft.Container):
-    """An individual file entry in the Explorer tree."""
+    """An individual file entry in the Explorer tree with Draggable support."""
 
     def __init__(
         self,
@@ -120,7 +120,7 @@ class FileTreeItem(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        super().__init__(
+        self.item_box = ft.Container(
             content=ft.GestureDetector(
                 content=row_content,
                 on_tap=self._handle_click,
@@ -132,24 +132,51 @@ class FileTreeItem(ft.Container):
             border_radius=4,
             bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY) if is_active else ft.Colors.TRANSPARENT,
             ink=True,
+        )
+
+        feedback_chip = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(icon, size=14, color=color),
+                    ft.Text(name, size=11, weight=ft.FontWeight.W_600, color=ft.Colors.PRIMARY),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            padding=ft.Padding(8, 4, 8, 4),
+            border_radius=6,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=6, color=ft.Colors.BLACK38),
+        )
+
+        self.draggable = ft.Draggable(
+            group="doc_explorer",
+            data=file_path,
+            content=self.item_box,
+            content_feedback=feedback_chip,
+        )
+
+        super().__init__(
+            content=self.draggable,
+            padding=0,
             **kwargs,
         )
 
     def _handle_enter(self, e=None):
         if not self.is_active:
-            self.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+            self.item_box.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
             try:
                 if self.page:
-                    self.update()
+                    self.item_box.update()
             except Exception:
                 pass
 
     def _handle_exit(self, e=None):
         if not self.is_active:
-            self.bgcolor = ft.Colors.TRANSPARENT
+            self.item_box.bgcolor = ft.Colors.TRANSPARENT
             try:
                 if self.page:
-                    self.update()
+                    self.item_box.update()
             except Exception:
                 pass
 
@@ -157,14 +184,14 @@ class FileTreeItem(ft.Container):
         self.is_active = is_active
         self.label.weight = ft.FontWeight.W_600 if is_active else ft.FontWeight.NORMAL
         self.label.color = ft.Colors.PRIMARY if is_active else None
-        self.bgcolor = (
+        self.item_box.bgcolor = (
             ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY)
             if is_active
             else ft.Colors.TRANSPARENT
         )
         try:
             if self.page:
-                self.update()
+                self.item_box.update()
         except Exception:
             pass
 
@@ -179,7 +206,7 @@ class FileTreeItem(ft.Container):
 
 
 class DirectoryTreeItem(ft.Column):
-    """A directory node supporting lazy-loading of child items on expansion."""
+    """A directory node supporting lazy-loading, Draggable, and DragTarget move operations."""
 
     def __init__(
         self,
@@ -189,6 +216,7 @@ class DirectoryTreeItem(ft.Column):
         on_file_click: Optional[Callable[[str], None]] = None,
         on_file_secondary: Optional[Callable[[str, float, float], None]] = None,
         on_folder_secondary: Optional[Callable[[str, float, float], None]] = None,
+        on_move_entry: Optional[Callable[[str, str], None]] = None,
         active_path: str = "",
         **kwargs,
     ):
@@ -198,6 +226,7 @@ class DirectoryTreeItem(ft.Column):
         self.on_file_click = on_file_click
         self.on_file_secondary = on_file_secondary
         self.on_folder_secondary = on_folder_secondary
+        self.on_move_entry = on_move_entry
         self.active_path = active_path
         self.is_expanded = False
         self._is_loaded = False
@@ -231,7 +260,7 @@ class DirectoryTreeItem(ft.Column):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        self.header = ft.Container(
+        self.header_box = ft.Container(
             content=ft.GestureDetector(
                 content=header_row,
                 on_tap=self._toggle_expand,
@@ -244,6 +273,36 @@ class DirectoryTreeItem(ft.Column):
             ink=True,
         )
 
+        feedback_chip = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.FOLDER_ROUNDED, size=14, color=ft.Colors.AMBER_500),
+                    ft.Text(name, size=11, weight=ft.FontWeight.W_600, color=ft.Colors.PRIMARY),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            padding=ft.Padding(8, 4, 8, 4),
+            border_radius=6,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=6, color=ft.Colors.BLACK38),
+        )
+
+        draggable_header = ft.Draggable(
+            group="doc_explorer",
+            data=dir_path,
+            content=self.header_box,
+            content_feedback=feedback_chip,
+        )
+
+        self.header = ft.DragTarget(
+            group="doc_explorer",
+            content=draggable_header,
+            on_accept=self._handle_drag_accept,
+            on_will_accept=self._handle_will_accept,
+            on_leave=self._handle_drag_leave,
+        )
+
         self.children_column = ft.Column(spacing=1, visible=False)
 
         super().__init__(
@@ -252,19 +311,59 @@ class DirectoryTreeItem(ft.Column):
             **kwargs,
         )
 
-    def _handle_header_enter(self, e=None):
-        self.header.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+    def _handle_will_accept(self, e):
+        self.header_box.bgcolor = ft.Colors.with_opacity(0.18, ft.Colors.PRIMARY)
         try:
             if self.page:
-                self.header.update()
+                self.header_box.update()
+        except Exception:
+            pass
+
+    def _handle_drag_leave(self, e):
+        self.header_box.bgcolor = ft.Colors.TRANSPARENT
+        try:
+            if self.page:
+                self.header_box.update()
+        except Exception:
+            pass
+
+    def _handle_drag_accept(self, e):
+        self.header_box.bgcolor = ft.Colors.TRANSPARENT
+        try:
+            if self.page:
+                self.header_box.update()
+        except Exception:
+            pass
+
+        src_path = None
+        src_ctrl_id = getattr(e, "src_id", None)
+        if src_ctrl_id and self.page:
+            try:
+                src_ctrl = self.page.get_control(src_ctrl_id)
+                if src_ctrl and hasattr(src_ctrl, "data") and src_ctrl.data:
+                    src_path = str(src_ctrl.data)
+            except Exception:
+                pass
+
+        if not src_path:
+            src_path = getattr(e, "data", None)
+
+        if src_path and self.on_move_entry:
+            self.on_move_entry(src_path, self.dir_path)
+
+    def _handle_header_enter(self, e=None):
+        self.header_box.bgcolor = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+        try:
+            if self.page:
+                self.header_box.update()
         except Exception:
             pass
 
     def _handle_header_exit(self, e=None):
-        self.header.bgcolor = ft.Colors.TRANSPARENT
+        self.header_box.bgcolor = ft.Colors.TRANSPARENT
         try:
             if self.page:
-                self.header.update()
+                self.header_box.update()
         except Exception:
             pass
 
@@ -318,6 +417,7 @@ class DirectoryTreeItem(ft.Column):
                             on_file_click=self.on_file_click,
                             on_file_secondary=self.on_file_secondary,
                             on_folder_secondary=self.on_folder_secondary,
+                            on_move_entry=self.on_move_entry,
                             active_path=self.active_path,
                         )
                     )
@@ -356,6 +456,7 @@ class DirectoryTreeItem(ft.Column):
             pass
 
 
+
 class ExplorerView(ft.Container):
     """
     Explorer Sidebar panel displaying the current Workspace directory tree.
@@ -372,6 +473,7 @@ class ExplorerView(ft.Container):
         on_new_file: Optional[Callable[[str], None]] = None,
         on_new_folder: Optional[Callable[[str], None]] = None,
         on_status_message: Optional[Callable[[str, Optional[str]], None]] = None,
+        on_batch_convert: Optional[Callable[[str], None]] = None,
         get_is_dirty: Optional[Callable[[], bool]] = None,
         get_active_file: Optional[Callable[[], str]] = None,
         workspace_path: str = "",
@@ -387,6 +489,7 @@ class ExplorerView(ft.Container):
         self._on_new_file = on_new_file
         self._on_new_folder = on_new_folder
         self._on_status_message = on_status_message
+        self._on_batch_convert = on_batch_convert
         self._get_is_dirty = get_is_dirty
         self._get_active_file = get_active_file
 
@@ -496,6 +599,12 @@ class ExplorerView(ft.Container):
             padding=ft.Padding(left=0, top=0, right=0, bottom=0),
         )
 
+        self.tree_list_drag_target = ft.DragTarget(
+            group="doc_explorer",
+            content=self.tree_list,
+            on_accept=self._handle_root_drag_accept,
+        )
+
         # Empty State
         self.empty_state = ft.Container(
             content=ft.Column(
@@ -527,7 +636,7 @@ class ExplorerView(ft.Container):
                 self.folder_title_row,
                 self.filter_input,
                 self.empty_state,
-                self.tree_list,
+                self.tree_list_drag_target,
             ],
             spacing=4,
             expand=True,
@@ -544,6 +653,54 @@ class ExplorerView(ft.Container):
         if workspace_path:
             self.load_workspace(workspace_path, active_file_path)
 
+    def _handle_root_drag_accept(self, e):
+        if not self.workspace_path or not os.path.isdir(self.workspace_path):
+            return
+        src_path = None
+        src_ctrl_id = getattr(e, "src_id", None)
+        if src_ctrl_id and self.page:
+            try:
+                src_ctrl = self.page.get_control(src_ctrl_id)
+                if src_ctrl and hasattr(src_ctrl, "data") and src_ctrl.data:
+                    src_path = str(src_ctrl.data)
+            except Exception:
+                pass
+        if not src_path:
+            src_path = getattr(e, "data", None)
+        if src_path:
+            self._handle_move_entry(src_path, self.workspace_path)
+
+    def _handle_move_entry(self, src_path: str, dest_dir: str):
+        from src.utils.file_ops import validate_move_operation
+        import shutil
+
+        is_valid, err_msg = validate_move_operation(src_path, dest_dir)
+        if not is_valid:
+            if self._on_status_message:
+                self._on_status_message(err_msg, ft.Colors.AMBER_400)
+            return
+
+        dest_name = os.path.basename(dest_dir) or dest_dir
+        src_name = os.path.basename(src_path)
+        dest_target = os.path.join(dest_dir, src_name)
+
+        try:
+            shutil.move(src_path, dest_target)
+            if self._on_rename:
+                self._on_rename(src_path, dest_target)
+            if self._on_status_message:
+                self._on_status_message(
+                    t("explorer.moved_status", name=src_name, folder=dest_name),
+                    ft.Colors.GREEN_400,
+                )
+            self.refresh_tree()
+        except Exception as ex:
+            if self._on_status_message:
+                self._on_status_message(
+                    t("explorer.move_error", error=str(ex)),
+                    ft.Colors.RED_400,
+                )
+
     def _ensure_context_menu(self):
         if not self.context_menu and self.page:
             self.context_menu = ExplorerContextMenu(self.page)
@@ -551,7 +708,6 @@ class ExplorerView(ft.Container):
     def _handle_more_clicked(self, e: ft.ControlEvent):
         self._ensure_context_menu()
         if self.context_menu:
-            # Anchor dropdown menu right below header row
             gx = float(getattr(self, "width", 180) or 180) + 30
             gy = 60.0
             if hasattr(e, "global_position") and e.global_position:
@@ -588,7 +744,9 @@ class ExplorerView(ft.Container):
             on_delete=lambda p: show_safe_delete_dialog(
                 self.page, p, is_active, is_dirty, self._handle_delete_confirmed
             ),
+            on_batch_convert=self._on_batch_convert if self._on_batch_convert else None,
         )
+
 
     def _show_folder_context_menu(self, folder_path: str, x: float, y: float):
         self._ensure_context_menu()
@@ -607,6 +765,7 @@ class ExplorerView(ft.Container):
             ),
             on_reveal=reveal_in_windows_explorer,
             on_copy_path=self._handle_copy_path,
+            on_batch_convert=self._on_batch_convert if self._on_batch_convert else None,
         )
 
     def _handle_copy_path(self, path: str):
@@ -761,7 +920,18 @@ class ExplorerView(ft.Container):
         """Scans the root workspace folder asynchronously."""
         if not self.workspace_path or not os.path.isdir(self.workspace_path):
             return
-        asyncio.create_task(self._async_scan_root())
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._async_scan_root())
+        except RuntimeError:
+            if self.page and hasattr(self.page, "run_task"):
+                self.page.run_task(self._async_scan_root)
+            else:
+                try:
+                    asyncio.run(self._async_scan_root())
+                except Exception:
+                    pass
+
 
     async def _async_scan_root(self):
         if self._is_scanning:
@@ -800,6 +970,7 @@ class ExplorerView(ft.Container):
                             on_file_click=self._handle_file_click,
                             on_file_secondary=self._show_file_context_menu,
                             on_folder_secondary=self._show_folder_context_menu,
+                            on_move_entry=self._handle_move_entry,
                             active_path=self.active_file_path,
                         )
                     )

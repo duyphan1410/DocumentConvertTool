@@ -14,8 +14,10 @@ import collections
 import mimetypes
 import time
 import pathlib
+from typing import Optional, Callable
 import flet as ft
 from src.i18n import t
+
 
 import threading
 from src.services.media_asset_manager import MediaAssetManager
@@ -412,8 +414,15 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
 
 
 class MarkdownPreview(ft.Container):
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        on_open_file: Optional[Callable[[str], None]] = None,
+        get_workspace_path: Optional[Callable[[], str]] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
+        self.on_open_file = on_open_file
+        self._get_workspace_path = get_workspace_path
         self.expand = True
         self.border_radius = 8
         self.padding = ft.Padding(left=8, top=4, right=8, bottom=6)
@@ -425,6 +434,8 @@ class MarkdownPreview(ft.Container):
         self._palette_name = "Violet Cyberpunk"
         self._base_dir = None
         self._session_id = None
+
+
 
         # Header elements — owned by MarkdownPreview for palette sync
         self.header_icon = ft.Icon(ft.Icons.PREVIEW_ROUNDED, size=16)
@@ -545,15 +556,58 @@ class MarkdownPreview(ft.Container):
             YouTubePlayerManager.get_instance().play(vid, start_seconds=start_sec, title=title)
             return
 
-        # Non-YouTube link: launch in system browser
-        try:
-            if self.page:
-                self.page.launch_url(url)
+        # Check if url points to a local document file in current folder / workspace
+        if not url.startswith(("http://", "https://", "mailto:", "ftp://")):
+            clean_url = url.split("?")[0].split("#")[0].replace("%20", " ").strip()
+            candidate = None
+            if os.path.isabs(clean_url) and os.path.exists(clean_url):
+                candidate = os.path.normpath(clean_url)
             else:
-                import webbrowser
+                # 1. Try relative to active file directory
+                if self._base_dir:
+                    cand = os.path.normpath(os.path.abspath(os.path.join(self._base_dir, clean_url)))
+                    if os.path.exists(cand):
+                        candidate = cand
+
+                # 2. Try relative to open workspace directory (e.g. for Untitled notes)
+                if not candidate and hasattr(self, "_get_workspace_path") and self._get_workspace_path:
+                    ws_dir = self._get_workspace_path()
+                    if ws_dir:
+                        cand = os.path.normpath(os.path.abspath(os.path.join(ws_dir, clean_url)))
+                        if os.path.exists(cand):
+                            candidate = cand
+
+            if candidate and os.path.isfile(candidate):
+                doc_exts = {
+                    ".md", ".docx", ".xlsx", ".xls", ".csv", ".pdf",
+                    ".html", ".htm", ".pptx", ".json", ".yaml", ".yml"
+                }
+                ext = os.path.splitext(candidate)[1].lower()
+                if ext in doc_exts and hasattr(self, "on_open_file") and self.on_open_file:
+                    self.on_open_file(candidate)
+                    return
+                else:
+                    try:
+                        os.startfile(candidate)
+                        return
+                    except Exception:
+                        pass
+
+        # Non-YouTube and non-local document link: launch in system browser / default OS app
+        try:
+            import webbrowser
+            if url.startswith(("http://", "https://", "mailto:", "ftp://")):
                 webbrowser.open(url)
+            elif candidate and os.path.exists(candidate):
+                os.startfile(candidate)
         except Exception as ex:
             print(f"[DEBUG] Failed to launch URL '{url}': {ex}")
+
+    def set_workspace_provider(self, get_workspace_path: Optional[Callable[[], str]] = None):
+        """Sets callback to dynamically get active workspace directory for link resolution."""
+        self._get_workspace_path = get_workspace_path
+
+
 
     def _on_watch_video_clicked(self, e):
         """Launches the in-app player for the detected YouTube video in the current document."""
@@ -648,9 +702,13 @@ class MarkdownPreview(ft.Container):
             self.markdown.value = self._cached_processed_text
 
         try:
-            self.update()
+            if hasattr(self.markdown, "page") and self.markdown.page:
+                self.markdown.update()
+            if self.page:
+                self.update()
         except Exception:
             pass
+
 
     def set_processed_content(self, processed_md: str, raw_text: str, base_dir: str = None, session_id: str | None = None):
         """Sets pre-computed processed markdown directly in 0ms without re-parsing images or re-encoding Base64."""

@@ -6,8 +6,7 @@ import flet as ft
 from src.i18n import t
 from src.ui_flet.theme import STYLE, resolve_color, make_border
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
-
-
+from src.ui_flet.components.floating_image_toolbar import FloatingImageToolbar
 from src.ui_flet.helpers.image_token_helper import (
     ImageTokenInfo,
     find_image_token_at_offset,
@@ -38,6 +37,15 @@ class EditorView:
         self.on_save_md = on_save_md
         self.on_image_context_changed = on_image_context_changed
         self.active_image_token: Optional[ImageTokenInfo] = None
+        self.pinned_image_token: Optional[ImageTokenInfo] = None
+        self._dismissed_token_raw: Optional[str] = None
+        self._suppress_image_detection: bool = False
+
+        self._on_toolbar_preset: Optional[Callable[[str], None]] = None
+        self._on_toolbar_align: Optional[Callable[[str], None]] = None
+        self._on_toolbar_custom: Optional[Callable[[], None]] = None
+        self._on_toolbar_replace: Optional[Callable[[], None]] = None
+        self._on_toolbar_reset: Optional[Callable[[], None]] = None
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
@@ -72,9 +80,28 @@ class EditorView:
 
         self.title_text = ft.Text(t("editor.title"), size=12, weight=ft.FontWeight.W_600)
 
-        self.toolbar = ft.Row(
+        # Contextual Floating Mini-Toolbar placed seamlessly inside editor header
+        self.floating_image_toolbar = FloatingImageToolbar(
+            on_open_context_menu=lambda x, y: self._handle_toolbar_open_menu(x, y),
+            on_preset_click=lambda p: self._handle_toolbar_preset(p),
+            on_align_click=lambda a: self._handle_toolbar_align(a),
+            on_custom_click=lambda: self._handle_toolbar_custom(),
+            on_replace_click=lambda: self._handle_toolbar_replace(),
+            on_reset_click=lambda: self._handle_toolbar_reset(),
+            on_dismiss_click=lambda: self._handle_toolbar_dismiss(),
+        )
+
+        self.toolbar_left = ft.Row(
             controls=[
                 self.title_text,
+            ],
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        self.toolbar = ft.Row(
+            controls=[
+                self.toolbar_left,
                 ft.Container(expand=True),
                 self.btn_open_file,
                 self.btn_undo,
@@ -133,6 +160,70 @@ class EditorView:
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
 
+    def set_image_action_handlers(
+        self,
+        on_preset: Optional[Callable[[str], None]] = None,
+        on_align: Optional[Callable[[str], None]] = None,
+        on_custom: Optional[Callable[[], None]] = None,
+        on_replace: Optional[Callable[[], None]] = None,
+        on_reset: Optional[Callable[[], None]] = None,
+        on_open_menu: Optional[Callable[[float, float], None]] = None,
+    ):
+        """Sets callbacks for floating image toolbar actions."""
+        self._on_toolbar_preset = on_preset
+        self._on_toolbar_align = on_align
+        self._on_toolbar_custom = on_custom
+        self._on_toolbar_replace = on_replace
+        self._on_toolbar_reset = on_reset
+        self._on_toolbar_open_menu = on_open_menu
+
+    def _handle_toolbar_open_menu(self, x: float, y: float):
+        if self._on_toolbar_open_menu:
+            self._on_toolbar_open_menu(x, y)
+
+    def _handle_toolbar_preset(self, preset: str):
+        tok = self.pinned_image_token or self.active_image_token
+        if tok and self._on_toolbar_preset:
+            self._on_toolbar_preset(preset)
+
+    def _handle_toolbar_align(self, align: str):
+        tok = self.pinned_image_token or self.active_image_token
+        if tok and self._on_toolbar_align:
+            self._on_toolbar_align(align)
+
+    def _handle_toolbar_custom(self):
+        if self._on_toolbar_custom:
+            self._on_toolbar_custom()
+
+    def _handle_toolbar_replace(self):
+        if self._on_toolbar_replace:
+            self._on_toolbar_replace()
+
+    def _handle_toolbar_reset(self):
+        tok = self.pinned_image_token or self.active_image_token
+        if tok and self._on_toolbar_reset:
+            self._on_toolbar_reset()
+
+    def _handle_toolbar_dismiss(self):
+        tok = self.pinned_image_token or self.active_image_token
+        if tok:
+            self._dismissed_token_raw = tok.raw_token
+        self.pinned_image_token = None
+        self.active_image_token = None
+        self.title_text.visible = True
+        self.floating_image_toolbar.set_image_context(None)
+        try:
+            if hasattr(self, "toolbar_left") and self.toolbar_left.page:
+                self.toolbar_left.update()
+        except Exception:
+            pass
+        if self.on_image_context_changed:
+            try:
+                self.on_image_context_changed(None)
+            except Exception:
+                pass
+        self.focus_editor()
+
     def _handle_drag_will_accept(self, e):
         try:
             self.editor.border_color = ft.Colors.PRIMARY
@@ -178,18 +269,14 @@ class EditorView:
             if raw_data and not (isinstance(raw_data, str) and raw_data.startswith("_")):
                 file_path = raw_data
 
-        print(f"[DEBUG][DRAG_ACCEPT] src_id={src_ctrl_id}, page={bool(page)}, resolved_file_path='{file_path}'")
-
         if not file_path or not isinstance(file_path, str):
             return
-
 
         import os
         name = os.path.basename(file_path)
         ext = os.path.splitext(file_path)[1].lower()
         image_exts = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"}
 
-        # Calculate relative path relative to active file directory if possible
         clean_path = name
         try:
             active_p = self._get_active_file_path() if (hasattr(self, "_get_active_file_path") and self._get_active_file_path) else None
@@ -204,7 +291,6 @@ class EditorView:
 
         clean_path = clean_path.replace("\\", "/")
 
-
         if ext in image_exts:
             token = f"![{name}]({clean_path})"
             self.insert_image_token(token)
@@ -216,7 +302,6 @@ class EditorView:
         """Sets callbacks to dynamically resolve relative paths on drag and drop."""
         self._get_active_file_path = get_active_file_path
         self._get_workspace_path = get_workspace_path
-
 
     def update_dynamic_width(self):
         """Calculates dynamic width based on the longest line when word wrap is disabled."""
@@ -262,43 +347,89 @@ class EditorView:
             self.check_image_context()
 
     def check_image_context(self):
-        """Checks if current cursor or selection range is inside/on an image token and fires on_image_context_changed."""
+        """Checks if current cursor or selection range is inside/on an image token and updates toolbar."""
+        if getattr(self, "_suppress_image_detection", False):
+            return
+
         raw_val = self.editor.value or ""
         start = self.selection_start if self.selection_start is not None else 0
         end = self.selection_end if self.selection_end is not None else start
         token = find_image_token_at_offset(raw_val, start, end)
-        self.active_image_token = token
-        if self.on_image_context_changed:
-            try:
-                self.on_image_context_changed(token)
-            except Exception as ex:
-                print(f"[DEBUG] on_image_context_changed error: {ex}")
+
+        if token:
+            self.pinned_image_token = token
+            self.active_image_token = token
+            if self.on_image_context_changed:
+                try:
+                    self.on_image_context_changed(token)
+                except Exception as ex:
+                    print(f"[DEBUG] on_image_context_changed error: {ex}")
+        else:
+            self._dismissed_token_raw = None
+            if self.active_image_token is not None:
+                self.active_image_token = None
+                if self.on_image_context_changed:
+                    try:
+                        self.on_image_context_changed(None)
+                    except Exception as ex:
+                        print(f"[DEBUG] on_image_context_changed error: {ex}")
 
     def replace_image_token(self, image_info: ImageTokenInfo, new_token: str):
-        """Replaces an image token accurately, shifts cursor offset, and triggers change events."""
+        """Replaces an image token accurately, preserves cursor offset, and triggers change events."""
         if not image_info or not new_token or getattr(self.editor, "read_only", False):
             return
         raw_val = self.editor.value or ""
         start, end = image_info.start, image_info.end
-        if start < 0 or end > len(raw_val) or start > end:
-            return
+
+        # Verify exact slice or fallback search to prevent offset drift
+        if not (0 <= start <= end <= len(raw_val) and raw_val[start:end] == image_info.raw_token):
+            idx = raw_val.find(image_info.raw_token)
+            if idx != -1:
+                start = idx
+                end = idx + len(image_info.raw_token)
+            else:
+                return
 
         new_val = raw_val[:start] + new_token + raw_val[end:]
-        new_pos = start + len(new_token)
+        new_cursor = start + len(new_token)
         self.editor.value = new_val
-        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
-        self.selection_start, self.selection_end = new_pos, new_pos
+        self.editor.selection = ft.TextSelection(base_offset=new_cursor, extent_offset=new_cursor)
+        self.selection_start, self.selection_end = new_cursor, new_cursor
+
+        # Refresh token coordinates
+        new_token_info = find_image_token_at_offset(new_val, start, start + len(new_token))
+        self.pinned_image_token = new_token_info
+        self.active_image_token = new_token_info
+        if self.floating_image_toolbar and new_token_info:
+            self.floating_image_toolbar.set_image_context(new_token_info)
 
         try:
             if self.editor.page:
                 self.editor.update()
+            if self.floating_image_toolbar.page:
+                self.floating_image_toolbar.update()
         except Exception:
             pass
 
         if self.on_editor_changed:
             self.on_editor_changed(None)
 
-        self.check_image_context()
+    def focus_and_select_image_at_offset(self, offset: int):
+        """Focuses the editor and sets cursor/selection to the image token at offset."""
+        raw_val = self.editor.value or ""
+        token = find_image_token_at_offset(raw_val, offset, offset)
+        if token:
+            self.selection_start = token.start
+            self.selection_end = token.end
+            self.editor.selection = ft.TextSelection(base_offset=token.start, extent_offset=token.end)
+            self._dismissed_token_raw = None
+            self.check_image_context()
+            self.focus_editor()
+            try:
+                if self.editor.page:
+                    self.editor.update()
+            except Exception:
+                pass
 
     def apply_image_size(
         self,
@@ -385,7 +516,6 @@ class EditorView:
         if self.on_editor_changed:
             self.on_editor_changed(None)
 
-
     def get_text(self) -> str:
         return self.editor.value or ""
 
@@ -400,10 +530,16 @@ class EditorView:
             pass
 
     def set_text(self, text: str):
+        self._suppress_image_detection = True
         self.editor.value = (text or "").replace("\r\n", "\n")
         self.editor.read_only = False
         self.selection_start = 0
         self.selection_end = 0
+        self.pinned_image_token = None
+        self.active_image_token = None
+        self._dismissed_token_raw = None
+        if hasattr(self, "floating_image_toolbar"):
+            self.floating_image_toolbar.set_image_context(None)
         if not getattr(self, "word_wrap_enabled", True):
             self.update_dynamic_width()
         try:
@@ -411,6 +547,7 @@ class EditorView:
                 self.editor.update()
         except Exception:
             pass
+        self._suppress_image_detection = False
 
     def set_text_with_selection(self, text: str, start: int, end: int, focus: bool = True):
         """Updates editor text then defers selection to next event loop tick to avoid Flutter cursor-reset on value change."""
@@ -431,14 +568,10 @@ class EditorView:
         except Exception:
             pass
 
-        # Defer the selection update to the next event loop tick so Flutter
-        # has processed the new value before we set the cursor position.
-        # Scale delay slightly for large documents.
         delay = 0.05 + min(0.1, len(clean_text) / 500_000)
 
         async def _apply_selection():
             await asyncio.sleep(delay)
-            # Re-read self.editor.value in case Flet normalised line endings.
             raw_val = self.editor.value or ""
             lf_val = raw_val.replace("\r\n", "\n")
             text_len = len(lf_val)
@@ -477,7 +610,6 @@ class EditorView:
         except Exception:
             pass
 
-
     def focus_editor(self):
         """Focus the editor text field."""
         try:
@@ -502,7 +634,6 @@ class EditorView:
                 self.editor.update()
         except Exception:
             pass
-
 
     def apply_formatting(self, prefix: str, suffix: str):
         """Applies prefix and suffix formatting around current selected text or at cursor index."""
@@ -549,12 +680,10 @@ class EditorView:
         start = max(0, min(start, len(val)))
         end = max(start, min(end, len(val)))
 
-        # Ensure image token stands as a clean block item if inserted next to non-newline text
         prefix_nl = "\n" if start > 0 and val[start - 1] != "\n" else ""
         suffix_nl = "\n" if end < len(val) and val[end] != "\n" else ""
         block_token = f"{prefix_nl}{token}{suffix_nl}"
 
-        # Replace selection if start < end, or insert at cursor 'start'
         new_val = val[:start] + block_token + val[end:]
         new_pos = start + len(block_token)
 
@@ -600,11 +729,8 @@ class EditorView:
         if self.on_editor_changed:
             self.on_editor_changed(None)
 
-
-
-
     def apply_palette(self, palette: dict, is_dark: bool):
-        """Apply palette colors to the editor view."""
+        """Apply palette colors to the editor view and floating image toolbar."""
         bg_dark = resolve_color(palette, "bg_pure_dark", is_dark)
         bg_comp = resolve_color(palette, "bg_component", is_dark)
         border = resolve_color(palette, "border_color", is_dark)
@@ -614,7 +740,7 @@ class EditorView:
         self.container.bgcolor = bg_dark
         self.container.border = make_border(1, border)
 
-        # Editor text area styling (dễ nhận diện với đường viền rõ ràng)
+        # Editor text area styling
         self.editor.bgcolor = bg_comp
         self.editor.border_color = border
         self.editor.focused_border_color = accent
@@ -622,6 +748,9 @@ class EditorView:
 
         # Title text accent color
         self.title_text.color = accent
+
+        if hasattr(self, "floating_image_toolbar"):
+            self.floating_image_toolbar.apply_palette(palette, is_dark)
 
         try:
             if self.container.page:

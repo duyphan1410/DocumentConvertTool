@@ -88,6 +88,7 @@ class FileTreeItem(ft.Container):
         depth: int,
         on_click: Optional[Callable[[str], None]] = None,
         on_secondary_tap_down: Optional[Callable[[str, float, float], None]] = None,
+        on_move_entry: Optional[Callable[[str, str], None]] = None,
         is_active: bool = False,
         **kwargs,
     ):
@@ -96,6 +97,7 @@ class FileTreeItem(ft.Container):
         self.depth = depth
         self._on_click_callback = on_click
         self._on_secondary_callback = on_secondary_tap_down
+        self.on_move_entry = on_move_entry
         self.is_active = is_active
 
         ext = os.path.splitext(name)[1].lower()
@@ -156,11 +158,56 @@ class FileTreeItem(ft.Container):
             content_feedback=feedback_chip,
         )
 
-        super().__init__(
+        self.drag_target = ft.DragTarget(
+            group="doc_explorer",
             content=self.draggable,
+            on_accept=self._handle_drag_accept,
+            on_will_accept=self._handle_will_accept,
+            on_leave=self._handle_drag_leave,
+        )
+
+        super().__init__(
+            content=self.drag_target,
             padding=0,
             **kwargs,
         )
+
+    def _handle_will_accept(self, e):
+        self.item_box.bgcolor = ft.Colors.with_opacity(0.18, ft.Colors.PRIMARY)
+        try:
+            if self.page:
+                self.item_box.update()
+        except Exception:
+            pass
+
+    def _handle_drag_leave(self, e):
+        self.item_box.bgcolor = (
+            ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY)
+            if self.is_active
+            else ft.Colors.TRANSPARENT
+        )
+        try:
+            if self.page:
+                self.item_box.update()
+        except Exception:
+            pass
+
+    def _handle_drag_accept(self, e):
+        self._handle_drag_leave(e)
+        src_path = None
+        src_ctrl_id = getattr(e, "src_id", None)
+        if src_ctrl_id and self.page:
+            try:
+                src_ctrl = self.page.get_control(src_ctrl_id)
+                if src_ctrl and hasattr(src_ctrl, "data") and src_ctrl.data:
+                    src_path = str(src_ctrl.data)
+            except Exception:
+                pass
+        if not src_path:
+            src_path = getattr(e, "data", None)
+        if src_path and self.on_move_entry:
+            dest_dir = os.path.dirname(self.file_path)
+            self.on_move_entry(src_path, dest_dir)
 
     def _handle_enter(self, e=None):
         if not self.is_active:
@@ -434,6 +481,7 @@ class DirectoryTreeItem(ft.Column):
                             depth=self.depth + 1,
                             on_click=self.on_file_click,
                             on_secondary_tap_down=self.on_file_secondary,
+                            on_move_entry=self.on_move_entry,
                             is_active=is_act,
                         )
                     )
@@ -454,6 +502,19 @@ class DirectoryTreeItem(ft.Column):
                 self.update()
         except Exception:
             pass
+
+    def restore_expanded(self, expanded_paths: set[str]):
+        """Expands this directory if its path is in expanded_paths, and recursively restores children."""
+        norm = os.path.normpath(self.dir_path)
+        if norm in expanded_paths:
+            self.is_expanded = True
+            self.icon_arrow.name = ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
+            self.icon_folder.name = ft.Icons.FOLDER_OPEN_ROUNDED
+            self._load_children()
+            self.children_column.visible = True
+            for ctrl in self.children_column.controls:
+                if isinstance(ctrl, DirectoryTreeItem):
+                    ctrl.restore_expanded(expanded_paths)
 
 
 
@@ -567,7 +628,7 @@ class ExplorerView(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        self.folder_title_row = ft.Container(
+        self.folder_title_container = ft.Container(
             content=ft.Row(
                 [
                     ft.Icon(ft.Icons.FOLDER_SPECIAL_ROUNDED, size=15, color=ft.Colors.PRIMARY),
@@ -577,6 +638,15 @@ class ExplorerView(ft.Container):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding(left=4, top=2, right=4, bottom=2),
+            border_radius=4,
+        )
+
+        self.folder_title_row = ft.DragTarget(
+            group="doc_explorer",
+            content=self.folder_title_container,
+            on_accept=self._handle_root_drag_accept,
+            on_will_accept=self._handle_root_will_accept,
+            on_leave=self._handle_root_drag_leave,
             visible=bool(workspace_path),
         )
 
@@ -597,12 +667,6 @@ class ExplorerView(ft.Container):
             expand=True,
             spacing=1,
             padding=ft.Padding(left=0, top=0, right=0, bottom=0),
-        )
-
-        self.tree_list_drag_target = ft.DragTarget(
-            group="doc_explorer",
-            content=self.tree_list,
-            on_accept=self._handle_root_drag_accept,
         )
 
         # Empty State
@@ -636,7 +700,7 @@ class ExplorerView(ft.Container):
                 self.folder_title_row,
                 self.filter_input,
                 self.empty_state,
-                self.tree_list_drag_target,
+                self.tree_list,
             ],
             spacing=4,
             expand=True,
@@ -647,13 +711,36 @@ class ExplorerView(ft.Container):
             width=width,
             padding=ft.Padding(left=8, top=6, right=6, bottom=6),
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
             **kwargs,
         )
 
         if workspace_path:
             self.load_workspace(workspace_path, active_file_path)
 
+    def _handle_root_will_accept(self, e):
+        self.folder_title_container.bgcolor = ft.Colors.with_opacity(0.18, ft.Colors.PRIMARY)
+        try:
+            if self.page:
+                self.folder_title_container.update()
+        except Exception:
+            pass
+
+    def _handle_root_drag_leave(self, e):
+        self.folder_title_container.bgcolor = ft.Colors.TRANSPARENT
+        try:
+            if self.page:
+                self.folder_title_container.update()
+        except Exception:
+            pass
+
     def _handle_root_drag_accept(self, e):
+        self.folder_title_container.bgcolor = ft.Colors.TRANSPARENT
+        try:
+            if self.page:
+                self.folder_title_container.update()
+        except Exception:
+            pass
         if not self.workspace_path or not os.path.isdir(self.workspace_path):
             return
         src_path = None
@@ -907,6 +994,7 @@ class ExplorerView(ft.Container):
                     depth=0,
                     on_click=self._handle_file_click,
                     on_secondary_tap_down=self._show_file_context_menu,
+                    on_move_entry=self._handle_move_entry,
                     is_active=is_act,
                 )
             )
@@ -916,24 +1004,37 @@ class ExplorerView(ft.Container):
         except Exception:
             pass
 
+    def _collect_expanded_paths(self) -> set[str]:
+        """Gathers all normalized paths of currently expanded directory items."""
+        expanded = set()
+        def _collect(controls):
+            for ctrl in controls:
+                if isinstance(ctrl, DirectoryTreeItem):
+                    if ctrl.is_expanded:
+                        expanded.add(os.path.normpath(ctrl.dir_path))
+                        _collect(ctrl.children_column.controls)
+        _collect(self.tree_list.controls)
+        return expanded
+
     def refresh_tree(self):
-        """Scans the root workspace folder asynchronously."""
+        """Scans the root workspace folder asynchronously while preserving expanded folder states."""
         if not self.workspace_path or not os.path.isdir(self.workspace_path):
             return
+        expanded_paths = self._collect_expanded_paths()
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._async_scan_root())
+            loop.create_task(self._async_scan_root(expanded_paths=expanded_paths))
         except RuntimeError:
             if self.page and hasattr(self.page, "run_task"):
-                self.page.run_task(self._async_scan_root)
+                self.page.run_task(self._async_scan_root, expanded_paths=expanded_paths)
             else:
                 try:
-                    asyncio.run(self._async_scan_root())
+                    asyncio.run(self._async_scan_root(expanded_paths=expanded_paths))
                 except Exception:
                     pass
 
 
-    async def _async_scan_root(self):
+    async def _async_scan_root(self, expanded_paths: Optional[set[str]] = None):
         if self._is_scanning:
             return
         self._is_scanning = True
@@ -962,18 +1063,19 @@ class ExplorerView(ft.Container):
 
             for path, name, is_dir in items:
                 if is_dir:
-                    self.tree_list.controls.append(
-                        DirectoryTreeItem(
-                            dir_path=path,
-                            name=name,
-                            depth=0,
-                            on_file_click=self._handle_file_click,
-                            on_file_secondary=self._show_file_context_menu,
-                            on_folder_secondary=self._show_folder_context_menu,
-                            on_move_entry=self._handle_move_entry,
-                            active_path=self.active_file_path,
-                        )
+                    dir_item = DirectoryTreeItem(
+                        dir_path=path,
+                        name=name,
+                        depth=0,
+                        on_file_click=self._handle_file_click,
+                        on_file_secondary=self._show_file_context_menu,
+                        on_folder_secondary=self._show_folder_context_menu,
+                        on_move_entry=self._handle_move_entry,
+                        active_path=self.active_file_path,
                     )
+                    if expanded_paths and os.path.normpath(path) in expanded_paths:
+                        dir_item.restore_expanded(expanded_paths)
+                    self.tree_list.controls.append(dir_item)
                 else:
                     is_act = (
                         os.path.normpath(path) == os.path.normpath(self.active_file_path)
@@ -987,6 +1089,7 @@ class ExplorerView(ft.Container):
                             depth=0,
                             on_click=self._handle_file_click,
                             on_secondary_tap_down=self._show_file_context_menu,
+                            on_move_entry=self._handle_move_entry,
                             is_active=is_act,
                         )
                     )

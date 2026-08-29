@@ -200,59 +200,6 @@ class RibbonBar(ft.Container):
             on_insert_image=self.on_insert_image,
         )
 
-        # ── 4b. Contextual Picture Format Group ────────────────────────────────
-        self.badge_picture_format_icon = ft.Icon(ft.Icons.IMAGE_ROUNDED, size=16, color=ft.Colors.PRIMARY)
-        self.badge_picture_format_text = ft.Text(t("ribbon.picture_format"), size=11, weight=ft.FontWeight.BOLD)
-        self.badge_picture_format = ft.Row(
-            controls=[self.badge_picture_format_icon, self.badge_picture_format_text],
-            spacing=3,
-            tight=True,
-        )
-
-        self.btn_img_p25 = ft.TextButton("25%", on_click=lambda _: self._on_img_preset_click("25%"), style=ft.ButtonStyle(padding=ft.Padding(4, 0, 4, 0)))
-        self.btn_img_p50 = ft.TextButton("50%", on_click=lambda _: self._on_img_preset_click("50%"), style=ft.ButtonStyle(padding=ft.Padding(4, 0, 4, 0)))
-        self.btn_img_p75 = ft.TextButton("75%", on_click=lambda _: self._on_img_preset_click("75%"), style=ft.ButtonStyle(padding=ft.Padding(4, 0, 4, 0)))
-        self.btn_img_p100 = ft.TextButton("100%", on_click=lambda _: self._on_img_preset_click("100%"), style=ft.ButtonStyle(padding=ft.Padding(4, 0, 4, 0)))
-
-        self.btn_img_align_left = ft.IconButton(icon=ft.Icons.FORMAT_ALIGN_LEFT_ROUNDED, tooltip=t("image_dialog.align_left"), icon_size=16, on_click=lambda _: self._on_img_align_click("left"))
-        self.btn_img_align_center = ft.IconButton(icon=ft.Icons.FORMAT_ALIGN_CENTER_ROUNDED, tooltip=t("image_dialog.align_center"), icon_size=16, on_click=lambda _: self._on_img_align_click("center"))
-        self.btn_img_align_right = ft.IconButton(icon=ft.Icons.FORMAT_ALIGN_RIGHT_ROUNDED, tooltip=t("image_dialog.align_right"), icon_size=16, on_click=lambda _: self._on_img_align_click("right"))
-
-        self.btn_img_custom = ft.IconButton(icon=ft.Icons.ASPECT_RATIO_ROUNDED, tooltip=t("ribbon.img_custom_size"), icon_size=16, on_click=self._on_img_custom_click)
-        self.btn_img_replace = ft.IconButton(icon=ft.Icons.IMAGE_SEARCH_ROUNDED, tooltip=t("ribbon.img_replace"), icon_size=16, on_click=self._on_img_replace_click)
-        self.btn_img_reset = ft.IconButton(icon=ft.Icons.RESTORE_ROUNDED, tooltip=t("ribbon.img_reset"), icon_size=16, on_click=self._on_img_reset_click)
-        self.btn_img_dismiss = ft.IconButton(icon=ft.Icons.CLOSE_ROUNDED, tooltip="Dismiss", icon_size=14, on_click=lambda _: self.set_image_context(None))
-
-        self.picture_format_row = ft.Row(
-            controls=[
-                self.badge_picture_format,
-                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.btn_img_p25,
-                self.btn_img_p50,
-                self.btn_img_p75,
-                self.btn_img_p100,
-                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.btn_img_align_left,
-                self.btn_img_align_center,
-                self.btn_img_align_right,
-                ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.btn_img_custom,
-                self.btn_img_replace,
-                self.btn_img_reset,
-                self.btn_img_dismiss,
-            ],
-            spacing=2,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            tight=True,
-        )
-
-        self.picture_format_container = ft.Container(
-            content=self.picture_format_row,
-            visible=False,
-            border_radius=6,
-            padding=ft.Padding(left=6, top=1, right=4, bottom=1),
-        )
-
         # ── 5. Search & Replace Toggle Button ────────────────────────────────────
         self.btn_tab_edit_search = ft.IconButton(
             icon=ft.Icons.SEARCH_ROUNDED,
@@ -327,7 +274,6 @@ class RibbonBar(ft.Container):
                 self.btn_youtube,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
-                self.picture_format_container,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.btn_tab_edit_search,
                 self.ribbon_spacer,
@@ -604,34 +550,8 @@ class RibbonBar(ft.Container):
             self.on_reset_image_size()
 
     def set_image_context(self, image_info: Optional[ImageTokenInfo]):
-        """Show or hide contextual Picture Format tools on the ribbon based on active image selection."""
+        """Backward-compatibility stub for image context updates."""
         self.active_image_token = image_info
-        self.picture_format_container.visible = bool(image_info)
-
-        if image_info:
-            w = (image_info.width or "").strip()
-            align = (image_info.align or "").strip().lower()
-            accent = resolve_color(getattr(self, "_current_palette", None), "text_accent_primary", getattr(self, "_is_dark", True)) if hasattr(self, "_current_palette") and self._current_palette else ft.Colors.PRIMARY
-
-            for p_str, btn in [("25%", self.btn_img_p25), ("50%", self.btn_img_p50), ("75%", self.btn_img_p75), ("100%", self.btn_img_p100)]:
-                is_active = (w == p_str) or (p_str == "100%" and not w)
-                btn.style = ft.ButtonStyle(
-                    bgcolor=accent if is_active else None,
-                    color=ft.Colors.WHITE if is_active else None,
-                    padding=ft.Padding(4, 0, 4, 0),
-                )
-
-            self.btn_img_align_left.icon_color = accent if align == "left" else None
-            self.btn_img_align_center.icon_color = accent if align == "center" else None
-            self.btn_img_align_right.icon_color = accent if align == "right" else None
-
-        try:
-            if self.picture_format_container.page:
-                self.picture_format_container.update()
-            if self.page:
-                self.update()
-        except Exception:
-            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # Search & Replace Panel Toggle

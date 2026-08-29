@@ -71,7 +71,8 @@ docs/
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
-- [v1.8.0.md](releases/v1.8.0.md): Version 1.8.0 Release Notes (Studio Workspace, Activity Bar, File Explorer Tree with inline filter, Quick Open File Switcher `Ctrl+P`, 60fps Dual Draggable Splitters, and 2x2 Welcome Screen with `<kbd>` shortcut badges).
+- [v1.8.0.md](releases/v1.8.0.md): Version 1.8.0 Release Notes (Studio Workspace, Activity Bar Dock, Recursive File Explorer Tree with Inline Filter, Draggable Splitter, Quick Open `Ctrl+P`, and Overhauled 2x2 Welcome Screen).
+- [v1.7.2.md](releases/v1.7.2.md): Version 1.7.2 Release Notes (Embedded Microsoft Edge WebView2 YouTube Companion Player with Clickable Transcript Seeking, Local HTTP Bridge Server, Win32 Dynamic Focus Elevation, and Inno Setup 7 Desktop Installer).
 - [v1.7.0.md](releases/v1.7.0.md): Version 1.7.0 Release Notes (YouTube Subtitles/Transcript Extractor with Auto-Translate & Non-AI Speech Fallback, Direct Markdown Export, Win32 Clipboard URL Auto-Fill, Simplified Single-Row Ribbon, and JSON/YAML multiline fixes).
 - [v1.6.0.md](releases/v1.6.0.md) ([English](releases/v1.6.0_en.md)): Version 1.6.0 Release Notes (PowerPoint Module `PPTX ↔ MD`, Architecture Refactoring, Table Parsing Deduplication, Word/PDF Formatting Fixes, and Universal Dynamic Window Focus).
 - [v1.5.3.md](releases/v1.5.3.md): Version 1.5.3 Release Notes (Async draft restoration UX, 60fps LoadingView, 1-Click Smart Auto-Rename, and Exact Filename Highlight).
@@ -81,6 +82,7 @@ docs/
 
 ### 📦 4. Historical Archive (`docs/archive/`)
 
+- [20260830_floating_image_formatting_multitab_footer_sync_and_explorer_polish.md](archive/20260830_floating_image_formatting_multitab_footer_sync_and_explorer_polish.md): Floating Image Formatting, Multi-Tab Footer Synchronization & Explorer UX Polish (v1.8.2) — Menu ngữ cảnh ảnh trên Preview, căn lề `<p align="...">` đồng bộ Word `.docx`, thiết kế lại `ImageSizeDialog` gọn gàng, đồng bộ Footer Bar theo từng Tab (`Per-Tab Hydration`), sửa cuộn/tràn viền Explorer, khôi phục thư mục mở rộng khi Refresh và kéo thả toàn vùng thư mục con.
 - [20260829_tab_context_menu_micro_scrollbar_and_batch_polish.md](archive/20260829_tab_context_menu_micro_scrollbar_and_batch_polish.md): Workspace Tab Context Menu, Micro Scrollbar, Link Resolution & Batch Polish (v1.8.1c) — Menu chuột phải quản lý Tab, thanh cuộn mỏng 3px, bộ lọc file nén cho Batch Converter, tự động phân giải relative link cho tab Untitled và đề xuất tên lưu thông minh theo Heading.
 - [20260829_multitab_session_performance_and_atomic_guards.md](archive/20260829_multitab_session_performance_and_atomic_guards.md): Multi-Tab Session Restoration, 0ms RAM Preview Cache & Atomic Concurrency Guards (v1.8.1b) — Bộ nhớ đệm Preview tức thì trong RAM, Pillow thumbnail downsampling giảm 96% dung lượng, và khóa tương tranh nguyên tử (Atomic UI Guard) chống ghi đè khi switch tab.
 - [20260828_multi_tab_workspace.md](archive/20260828_multi_tab_workspace.md): Multi-Tab Workspace Architecture & AppState Delegation (v1.8.1b) — Kiến trúc đa Tab tài liệu độc lập, kéo thả sắp xếp tab (`ft.Draggable`), cô lập bản nháp `tab_session.json` và Media Session cache.

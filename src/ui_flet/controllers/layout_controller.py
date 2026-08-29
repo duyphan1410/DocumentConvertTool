@@ -268,8 +268,8 @@ class LayoutController:
         current_active = getattr(self.state, "active_activity_tab", "explorer")
         is_open = getattr(self.state, "show_sidebar", True)
 
-        if is_open and current_active == tab_name and e is not None:
-            # Clicked active tab -> collapse
+        if is_open and current_active == tab_name:
+            # Clicked active tab or pressed Ctrl+B while open -> collapse
             self.state.show_sidebar = False
         else:
             # Switch to this tab or open
@@ -563,6 +563,23 @@ class LayoutController:
         # 10. Persist Tab Session Manifest
         if file_controller:
             file_controller.save_tab_session()
+
+        # 11. Hydrate FooterBar (Per-Tab conversion result & status)
+        footer_bar = self.app_controls.get("footer_bar")
+        if footer_bar:
+            has_valid_converted = bool(
+                incoming_tab.last_converted_path
+                and os.path.exists(incoming_tab.last_converted_path)
+            )
+            footer_bar.set_result_buttons_visible(has_valid_converted)
+            if has_valid_converted:
+                fname = os.path.basename(incoming_tab.last_converted_path)
+                footer_bar.set_status(
+                    f"✓ {fname}",
+                    color=ft.Colors.GREEN_400,
+                )
+            else:
+                footer_bar.set_status_key("footer.status_ready")
 
         try:
             self.page.update()

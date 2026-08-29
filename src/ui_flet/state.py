@@ -95,6 +95,10 @@ class AppState:
         self.active_tab_id = self.tabs[0].tab_id
         return self.tabs[0]
 
+    def get_active_tab(self) -> DocumentTabState | None:
+        """Helper alias method returning the active tab."""
+        return self.active_tab
+
     def create_tab(
         self,
         in_path: str = "",

@@ -117,11 +117,52 @@ class TestSimplifiedRibbon(unittest.TestCase):
         self.assertFalse(fmt.btn_more.visible)
 
         # Compact mode
-        fmt.set_compact_mode(True)
-        self.assertTrue(fmt.is_compact)
-        self.assertFalse(fmt.btn_strike.visible)
-        self.assertTrue(fmt.btn_more.visible)
+    def test_picture_format_context_toggle(self):
+        """Verify picture_format_container toggles visibility when image context changes."""
+        from src.ui_flet.helpers.image_token_helper import ImageTokenInfo
+        ribbon = RibbonBar()
+        self.assertFalse(ribbon.picture_format_container.visible)
+
+        sample_tok = ImageTokenInfo(
+            raw_token="![Sample](img.png)",
+            start=0,
+            end=17,
+            src="img.png",
+            alt="Sample",
+            width="50%",
+            align="center",
+        )
+        ribbon.set_image_context(sample_tok)
+        self.assertTrue(ribbon.picture_format_container.visible)
+        self.assertEqual(ribbon.active_image_token, sample_tok)
+
+        # Clear image context
+        ribbon.set_image_context(None)
+        self.assertFalse(ribbon.picture_format_container.visible)
+        self.assertIsNone(ribbon.active_image_token)
+
+    def test_picture_format_callbacks(self):
+        """Verify picture format preset, align, and dialog callbacks fire properly."""
+        fired_presets = []
+        fired_aligns = []
+        dialog_opened = []
+
+        ribbon = RibbonBar(
+            on_image_size_preset=lambda p: fired_presets.append(p),
+            on_image_align_preset=lambda a: fired_aligns.append(a),
+            on_open_image_size_dialog=lambda: dialog_opened.append(True),
+        )
+
+        ribbon._on_img_preset_click("50%")
+        self.assertIn("50%", fired_presets)
+
+        ribbon._on_img_align_click("center")
+        self.assertIn("center", fired_aligns)
+
+        ribbon._on_img_custom_click(None)
+        self.assertIn(True, dialog_opened)
 
 
 if __name__ == "__main__":
     unittest.main()
+

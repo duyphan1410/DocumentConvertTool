@@ -49,6 +49,41 @@ class TestDocumentPreviewLogic(unittest.TestCase):
             self.assertEqual(os.path.normpath(opened_paths[0]), os.path.normpath(target_doc))
 
 
+    def test_process_markdown_media_html_image(self):
+        import os
+        import tempfile
+        from PIL import Image
+        from src.ui_flet.views.preview_view import process_markdown_media, format_preview_image_token
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            img_path = os.path.join(tmp_dir, "test.png")
+            img = Image.new("RGB", (800, 600), color="blue")
+            img.save(img_path)
+
+            normalized_path = img_path.replace("\\", "/")
+            md_input = f'<p align="center"><img src="{normalized_path}" alt="test_alt" width="50%" /></p>'
+            
+            rendered = process_markdown_media(md_input, base_dir=tmp_dir)
+            self.assertIn("![test_alt](data:image/", rendered)
+            self.assertIn('align="center"', rendered)
+            self.assertNotIn("<img", rendered)
+
+    def test_format_preview_image_token(self):
+        from src.ui_flet.views.preview_view import format_preview_image_token
+
+        centered = format_preview_image_token("alt", "uri", "center")
+        self.assertIn('<div align="center">', centered)
+        self.assertIn('![alt](uri)', centered)
+
+        right = format_preview_image_token("alt", "uri", "right")
+        self.assertIn('<div align="right">', right)
+
+        default = format_preview_image_token("alt", "uri", "left")
+        self.assertEqual(default, "![alt](uri)")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
 

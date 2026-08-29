@@ -306,6 +306,31 @@ class FileController:
             token = f"![{alt_text}]({normalized_path})"
             self.editor_view.insert_image_token(token)
 
+    def trigger_replace_image(self, e=None):
+        asyncio.create_task(self.async_replace_image())
+
+    async def async_replace_image(self):
+        active_tok = getattr(self.editor_view, "active_image_token", None)
+        if not active_tok:
+            return
+        img_path = await pick_image_file_async(
+            page=self.page, picker=self.file_picker_in
+        )
+        if img_path:
+            normalized_path = img_path.replace("\\", "/")
+            img_name = os.path.basename(img_path)
+            alt_text = os.path.splitext(img_name)[0]
+            editor_ctrl = self.app_controls.get("editor_controller")
+            if editor_ctrl:
+                editor_ctrl.apply_image_size(
+                    active_tok,
+                    width=active_tok.width,
+                    height=active_tok.height,
+                    align=active_tok.align,
+                    alt=alt_text,
+                    src=normalized_path,
+                )
+
     def trigger_youtube_import(self, e=None):
         """Opens modal dialog to import subtitles from a YouTube URL."""
         from src.ui_flet.components.youtube_dialog import show_youtube_dialog

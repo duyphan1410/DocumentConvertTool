@@ -79,12 +79,15 @@ class LayoutController:
         def _delayed_save():
             _sync_geometry()
             self._safe_save_settings()
-            print(
-                f"[DEBUG][WINDOW] 💾 Đã lưu cấu hình (event: {evt_name}): "
-                f"width={self.state.window_width}, height={self.state.window_height}, "
-                f"top={self.state.window_top}, left={self.state.window_left}, "
-                f"maximized={self.state.window_maximized}"
-            )
+            try:
+                print(
+                    f"[DEBUG][WINDOW] Da luu cau hinh (event: {evt_name}): "
+                    f"width={self.state.window_width}, height={self.state.window_height}, "
+                    f"top={self.state.window_top}, left={self.state.window_left}, "
+                    f"maximized={self.state.window_maximized}"
+                )
+            except Exception:
+                pass
 
         self._window_save_timer = threading.Timer(0.5, _delayed_save)
         self._window_save_timer.daemon = True
@@ -357,6 +360,15 @@ class LayoutController:
             ribbon_bar = self.app_controls.get("ribbon_bar")
             if ribbon_bar and hasattr(ribbon_bar, "set_preview_visible"):
                 ribbon_bar.set_preview_visible(self.state.show_preview)
+            if right_pane.visible:
+                editor_view = self.app_controls.get("editor_view")
+                preview = self.app_controls.get("preview")
+                if editor_view and preview:
+                    active_tab = self.state.active_tab
+                    session_id = active_tab.media_session_id if active_tab else None
+                    base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+                    current_text = editor_view.get_text()
+                    preview.update_preview(current_text, base_dir=base_dir, session_id=session_id)
             self._safe_save_settings()
             try:
                 self.page.update()

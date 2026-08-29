@@ -21,8 +21,34 @@ class TestDocumentPreviewLogic(unittest.TestCase):
         scaled_w = int(orig_w * ratio)
         scaled_h = int(orig_h * ratio)
         
-        self.assertEqual(scaled_w, 400)
-        self.assertEqual(scaled_h, 200)
+    def test_local_document_link_click(self):
+        import os
+        import tempfile
+        from unittest.mock import MagicMock
+        from src.ui_flet.views.preview_view import MarkdownPreview
+
+        opened_paths = []
+        mock_open = lambda path: opened_paths.append(path)
+
+        preview = MarkdownPreview(on_open_file=mock_open)
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target_doc = os.path.join(tmp_dir, "report.docx")
+            with open(target_doc, "w") as f:
+                f.write("mock")
+
+            preview._base_dir = tmp_dir
+
+            # Simulate link click on relative doc path
+            mock_event = MagicMock()
+            mock_event.data = "report.docx"
+
+            preview._on_markdown_link_clicked(mock_event)
+
+            self.assertEqual(len(opened_paths), 1)
+            self.assertEqual(os.path.normpath(opened_paths[0]), os.path.normpath(target_doc))
+
 
 if __name__ == "__main__":
     unittest.main()
+

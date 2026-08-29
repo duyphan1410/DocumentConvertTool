@@ -91,11 +91,19 @@ class EditorView:
             hint_text=t("editor.hint"),
         )
 
+        self.editor_drag_target = ft.DragTarget(
+            group="doc_explorer",
+            content=self.editor,
+            on_accept=self._handle_drag_accept,
+            on_will_accept=self._handle_drag_will_accept,
+            on_leave=self._handle_drag_leave,
+        )
+
         self.editor_column = ft.Column(
             controls=[
                 self.toolbar,
                 self.search_replace_bar.results_container,
-                self.editor,
+                self.editor_drag_target,
             ],
             expand=True,
             spacing=2,
@@ -108,6 +116,91 @@ class EditorView:
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
         )
+
+    def _handle_drag_will_accept(self, e):
+        try:
+            self.editor.border_color = ft.Colors.PRIMARY
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+    def _handle_drag_leave(self, e):
+        try:
+            self.editor.border_color = None
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+    def _handle_drag_accept(self, e):
+        try:
+            self.editor.border_color = None
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+        file_path = None
+        src_ctrl_id = getattr(e, "src_id", None)
+        page = (
+            getattr(self.container, "page", None)
+            or getattr(self.editor, "page", None)
+            or getattr(getattr(e, "control", None), "page", None)
+            or getattr(self, "page", None)
+        )
+        if src_ctrl_id and page:
+            try:
+                src_ctrl = page.get_control(src_ctrl_id)
+                if src_ctrl and hasattr(src_ctrl, "data") and src_ctrl.data:
+                    file_path = str(src_ctrl.data)
+            except Exception as ex:
+                print(f"[DEBUG] Error getting draggable control data: {ex}")
+
+        if not file_path:
+            raw_data = getattr(e, "data", None)
+            if raw_data and not (isinstance(raw_data, str) and raw_data.startswith("_")):
+                file_path = raw_data
+
+        print(f"[DEBUG][DRAG_ACCEPT] src_id={src_ctrl_id}, page={bool(page)}, resolved_file_path='{file_path}'")
+
+        if not file_path or not isinstance(file_path, str):
+            return
+
+
+        import os
+        name = os.path.basename(file_path)
+        ext = os.path.splitext(file_path)[1].lower()
+        image_exts = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"}
+
+        # Calculate relative path relative to active file directory if possible
+        clean_path = name
+        try:
+            active_p = self._get_active_file_path() if (hasattr(self, "_get_active_file_path") and self._get_active_file_path) else None
+            ws_p = self._get_workspace_path() if (hasattr(self, "_get_workspace_path") and self._get_workspace_path) else None
+
+            if active_p:
+                clean_path = os.path.relpath(file_path, os.path.dirname(active_p))
+            elif ws_p:
+                clean_path = os.path.relpath(file_path, ws_p)
+        except Exception:
+            clean_path = file_path
+
+        clean_path = clean_path.replace("\\", "/")
+
+
+        if ext in image_exts:
+            token = f"![{name}]({clean_path})"
+            self.insert_image_token(token)
+        else:
+            token = f"[{name}]({clean_path})"
+            self.insert_text_at_cursor(token)
+
+    def set_path_providers(self, get_active_file_path: Optional[Callable[[], str]] = None, get_workspace_path: Optional[Callable[[], str]] = None):
+        """Sets callbacks to dynamically resolve relative paths on drag and drop."""
+        self._get_active_file_path = get_active_file_path
+        self._get_workspace_path = get_workspace_path
+
 
     def update_dynamic_width(self):
         """Calculates dynamic width based on the longest line when word wrap is disabled."""
@@ -194,13 +287,20 @@ class EditorView:
         end = max(start, min(end, len(raw_val)))
 
         new_val = raw_val[:start] + text + raw_val[end:]
+        new_pos = start + len(text)
         self.editor.value = new_val
-        new_cursor = start + len(text)
-        self.selection_start = new_cursor
-        self.selection_end = new_cursor
+        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
+        self.selection_start, self.selection_end = new_pos, new_pos
+
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
         if self.on_editor_changed:
             self.on_editor_changed(None)
-        self.select_range(new_cursor, new_cursor, focus=True)
+
 
     def get_text(self) -> str:
         return self.editor.value or ""

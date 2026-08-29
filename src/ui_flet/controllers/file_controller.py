@@ -67,6 +67,9 @@ class FileController:
         # 1. Multi-Tab Deduplication Guard: If file is already open, switch to that tab
         existing_tab = self.state.find_tab_by_path(file_path)
         if existing_tab:
+            if existing_tab.is_loading:
+                # Tab is already in the middle of loading from the previous click; ignore duplicate click
+                return
             layout_controller = self.app_controls.get("layout_controller")
             if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
                 layout_controller.handle_doc_tab_selected(existing_tab.tab_id)
@@ -80,150 +83,193 @@ class FileController:
             pass
 
         filename = os.path.basename(file_path)
-        self.editor_view.set_loading(filename)
-        self.preview.set_content(f"*Loading {filename}...*")
-        self.preview.doc_info_text.value = "Loading..."
-        self.footer_bar.set_status_key("status.file_loading", color=ft.Colors.AMBER_400, filename=filename)
-        self.footer_bar.set_processing(True)
+        tab_bar = self.app_controls.get("workspace_tab_bar")
+
+        # ── BƯỚC 1: CAPTURE previous_active_id VÀ XÁC ĐỊNH TARGET TAB ──
+        prev_active_id = self.state.active_tab_id
+        curr_active_tab = self.state.active_tab
+
+        can_reuse_blank = (
+            len(self.state.tabs) == 1
+            and curr_active_tab is not None
+            and not curr_active_tab.in_path
+            and not curr_active_tab.full_content.strip()
+            and not curr_active_tab.is_dirty
+            and not curr_active_tab.is_orphaned
+        )
+
+        if can_reuse_blank:
+            target_tab = curr_active_tab
+            target_tab.in_path = file_path
+            target_tab.title = filename
+            target_tab.is_loading = True
+            is_new_placeholder = False
+        else:
+            target_tab = self.state.create_tab(
+                in_path=file_path,
+                title=filename,
+                activate=True,
+            )
+            target_tab.is_loading = True
+            is_new_placeholder = True
+
+        self.state.active_tab_id = target_tab.tab_id
+
+        if tab_bar and hasattr(tab_bar, "render_tabs"):
+            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+        if self.state.active_tab_id == target_tab.tab_id:
+            self.editor_view.set_loading(filename)
+            self.preview.set_content(f"*Loading {filename}...*", session_id=target_tab.media_session_id)
+            self.preview.doc_info_text.value = "Loading..."
+            self.footer_bar.set_status_key("status.file_loading", color=ft.Colors.AMBER_400, filename=filename)
+            self.footer_bar.set_processing(True)
+
         self.page.update()
 
+        # ── BƯỚC 2: ASYNC LOAD VỚI GUARD TOÀN DIỆN ──
         t0 = time.time()
-        res = await asyncio.to_thread(load_document, file_path)
-        t_extract = time.time() - t0
+        try:
+            res = await asyncio.to_thread(
+                load_document, file_path, session_id=target_tab.media_session_id
+            )
 
-        if not res.success:
-            doc_err = res.error
-            if not doc_err:
-                doc_err = ErrorMapper.map_exception(
+            if not res.success:
+                doc_err = res.error or ErrorMapper.map_exception(
                     Exception(res.error_detail or "Không thể nạp nội dung tài liệu"),
                     context_path=file_path,
                     stage="read",
                 )
 
-            self.footer_bar.set_status_key(
-                "status.load_failed",
-                color=ft.Colors.RED_400,
-                doc_err=doc_err,
-                is_error=True,
-            )
-            self.footer_bar.set_processing(False)
+                if self.state.active_tab_id == target_tab.tab_id:
+                    show_message_dialog(self.page, doc_err)
+                    self.footer_bar.set_status_key("status.load_failed", color=ft.Colors.RED_400, is_error=True)
+                else:
+                    self.footer_bar.set_status(f"Load failed: {filename}", color=ft.Colors.RED_400)
 
-            # Restore editor and preview from current active tab state or blank
-            prev_content = getattr(self.state, "full_content", "") or ""
-            if prev_content:
-                self.editor_view.set_text(prev_content)
-                base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
-                self.preview.update_preview(prev_content, base_dir=base_dir)
-                words = len(prev_content.split())
-                chars = len(prev_content)
-                self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-            else:
-                self.editor_view.set_text("")
-                self.preview.set_content("")
-                self.preview.doc_info_text.value = t("preview.no_doc")
+                if is_new_placeholder:
+                    still_on_target = (self.state.active_tab_id == target_tab.tab_id)
+                    self.state.close_tab(target_tab.tab_id)
+                    self.clear_tab_draft(target_tab.tab_id, media_session_id=target_tab.media_session_id)
 
-            self.page.update()
-            show_message_dialog(self.page, doc_err)
-            return
+                    if still_on_target:
+                        fallback_id = prev_active_id if (prev_active_id and self.state.find_tab_by_id(prev_active_id)) else self.state.active_tab_id
+                        fallback_tab = self.state.find_tab_by_id(fallback_id) if fallback_id else None
+                        if fallback_tab:
+                            self.state.active_tab_id = fallback_id
+                            if self.editor_view:
+                                self.editor_view.set_text(fallback_tab.full_content)
+                            layout_controller = self.app_controls.get("layout_controller")
+                            if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
+                                layout_controller.handle_doc_tab_selected(fallback_id)
+                        else:
+                            if self.editor_view:
+                                self.editor_view.set_text("")
+                            if self.preview:
+                                self.preview.set_content("")
+                                self.preview.doc_info_text.value = t("preview.no_doc")
+                            if self.file_path_bar:
+                                self.file_path_bar.set_in_path("")
+                                self.file_path_bar.set_out_path("")
+                else:
+                    target_tab.in_path = ""
+                    target_tab.title = "Untitled"
+                    target_tab.full_content = ""
+                    if self.state.active_tab_id == target_tab.tab_id:
+                        self.editor_view.set_text("")
+                        self.preview.set_content("")
+                        self.preview.doc_info_text.value = t("preview.no_doc")
+                        self.file_path_bar.set_in_path("")
+                        self.file_path_bar.set_out_path("")
+                return
 
-        content = res.content
-        actual_path = res.path or file_path
-        ext = os.path.splitext(actual_path)[1].lower()
+            content = res.content
+            actual_path = res.path or file_path
+            ext = os.path.splitext(actual_path)[1].lower()
 
-        # Determine target mode and out_path
-        preferred_mode = getattr(self.state, "default_mode", "")
-        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
-        mode = self.ribbon_bar.mode_dropdown.value
-        out_ext = MODES.get(mode, {}).get("out_ext", ".md")
-        base, _ = os.path.splitext(actual_path)
-        out_path = f"{base}{out_ext}"
+            preferred_mode = getattr(self.state, "default_mode", "")
+            self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
+            mode = self.ribbon_bar.mode_dropdown.value
+            out_ext = MODES.get(mode, {}).get("out_ext", ".md")
+            base, _ = os.path.splitext(actual_path)
+            out_path = f"{base}{out_ext}"
 
-        # Reuse single blank untitled tab if present, otherwise create new tab
-        active_tab = self.state.active_tab
-        if (
-            len(self.state.tabs) == 1
-            and active_tab
-            and not active_tab.in_path
-            and not active_tab.full_content.strip()
-            and not active_tab.is_dirty
-            and not active_tab.is_orphaned
-        ):
-            target_tab = active_tab
+            # Cập nhật Data Model
             target_tab.in_path = actual_path
             target_tab.out_path = out_path
             target_tab.title = filename
             target_tab.current_mode = mode
             target_tab.full_content = content
-        else:
-            target_tab = self.state.create_tab(
-                in_path=actual_path,
-                out_path=out_path,
-                title=filename,
-                content=content,
-                mode=mode,
-                activate=True,
+            target_tab.is_dirty = False
+            target_tab.is_orphaned = False
+            target_tab.undo_stack.clear()
+            target_tab.redo_stack.clear()
+            target_tab.undo_stack.append(
+                content[:EDITOR_DISPLAY_LIMIT] if len(content) > EDITOR_DISPLAY_LIMIT else content
             )
 
-        self.state.active_tab_id = target_tab.tab_id
-        MediaAssetManager().set_active_session(target_tab.media_session_id)
+            self.perform_autosave(target_tab.tab_id)
+            self.save_tab_session()
 
-        self.file_path_bar.set_in_path(actual_path)
-        self.file_path_bar.set_out_path(out_path)
-
-        target_tab.undo_stack.clear()
-        target_tab.redo_stack.clear()
-
-        if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
-        else:
-            self.editor_view.set_text(content)
-
-        target_tab.undo_stack.append(self.editor_view.get_text())
-        target_tab.is_dirty = False
-        target_tab.is_orphaned = False
-
-        words = len(content.split())
-        chars = len(content)
-        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-
-        base_dir = os.path.dirname(actual_path)
-        self.preview.update_preview(content, base_dir=base_dir)
-
-        t_total = time.time() - t0
-        print(f"[BENCHMARK] Total load time: {t_total:.2f}s | Module extraction: {t_extract:.2f}s")
-
-        if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.footer_bar.set_status_key(
-                "status.file_truncated",
-                color=ft.Colors.ORANGE_400,
-                limit=EDITOR_DISPLAY_LIMIT,
-                duration=f"{t_total:.2f}",
+            # Compute preview asynchronously first
+            is_dark = getattr(self.preview, "_is_dark", False)
+            palette_name = getattr(self.preview, "_palette_name", "Deep Ocean")
+            base_dir = os.path.dirname(actual_path)
+            processed_md = await process_markdown_media_async(
+                content,
+                base_dir=base_dir,
+                is_dark=is_dark,
+                palette_name=palette_name,
+                session_id=target_tab.media_session_id,
             )
-        else:
-            self.footer_bar.set_status_key(
-                "status.file_loaded",
-                color=ft.Colors.GREEN_400,
-                filename=os.path.basename(actual_path),
-                duration=f"{t_total:.2f}",
-            )
+            target_tab.cached_preview_md = processed_md
 
-        self.footer_bar.set_processing(False)
+            # Atomic UI Guard: Only mutate UI widgets if target_tab is STILL the active tab
+            if self.state.active_tab_id == target_tab.tab_id:
+                if len(content) > EDITOR_DISPLAY_LIMIT:
+                    self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+                else:
+                    self.editor_view.set_text(content)
 
-        # Synchronize WorkspaceTabBar
-        tab_bar = self.app_controls.get("workspace_tab_bar")
-        if tab_bar and hasattr(tab_bar, "render_tabs"):
-            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                self.file_path_bar.set_in_path(actual_path)
+                self.file_path_bar.set_out_path(out_path)
 
-        self.perform_autosave(target_tab.tab_id)
-        self.save_tab_session()
+                words = len(content.split())
+                chars = len(content)
+                self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+                self.preview.set_processed_content(
+                    processed_md, content, base_dir=base_dir, session_id=target_tab.media_session_id
+                )
 
-        explorer_view = self.app_controls.get("explorer_view")
-        if explorer_view and hasattr(explorer_view, "set_active_file"):
-            explorer_view.set_active_file(actual_path)
+                t_total = time.time() - t0
+                from src.__version__ import __version__
+                self.page.title = f"{filename} — Document Converter v{__version__}"
 
-        from src.__version__ import __version__
-        self.page.title = f"{filename} — Document Converter v{__version__}"
-        self.page.update()
+                if len(content) > EDITOR_DISPLAY_LIMIT:
+                    self.footer_bar.set_status_key(
+                        "status.file_truncated",
+                        color=ft.Colors.ORANGE_400,
+                        limit=EDITOR_DISPLAY_LIMIT,
+                        duration=f"{t_total:.2f}",
+                    )
+                else:
+                    self.footer_bar.set_status_key(
+                        "status.file_loaded",
+                        color=ft.Colors.GREEN_400,
+                        filename=filename,
+                        duration=f"{t_total:.2f}",
+                    )
+
+                explorer_view = self.app_controls.get("explorer_view")
+                if explorer_view and hasattr(explorer_view, "set_active_file"):
+                    explorer_view.set_active_file(actual_path)
+
+        finally:
+            target_tab.is_loading = False
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+            self.footer_bar.set_processing(False)
+            self.page.update()
 
     def trigger_browse_output(self, e=None):
         asyncio.create_task(self.async_browse_output())
@@ -365,7 +411,7 @@ class FileController:
                     tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
                 self.save_tab_session()
                 self.footer_bar.set_status(
-                    t("status.draft_autosaved") if "status.draft_autosaved" in t("status.draft_autosaved") else f"Đã lưu -> {os.path.basename(active_tab.in_path)}",
+                    f"Đã lưu -> {os.path.basename(active_tab.in_path)}",
                     color=ft.Colors.GREEN_400,
                 )
                 try:
@@ -508,6 +554,8 @@ class FileController:
         t0 = time.time()
         res = await asyncio.to_thread(self._sync_load_all_draft_data)
         if not res or not res.get("tabs"):
+            if workspace_view and hasattr(workspace_view, "show_welcome"):
+                workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
             return False
 
         restored_tabs = res["tabs"]
@@ -568,15 +616,14 @@ class FileController:
         is_dark = getattr(self.preview, "_is_dark", False)
         palette_name = getattr(self.preview, "_palette_name", "Deep Ocean")
         processed_md = await process_markdown_media_async(
-            content, base_dir=base_dir, is_dark=is_dark, palette_name=palette_name
+            content, base_dir=base_dir, is_dark=is_dark, palette_name=palette_name, session_id=active_tab.media_session_id
         )
 
-        self.preview._last_raw_text = content
-        self.preview._cached_processed_text = processed_md
-        self.preview.markdown.value = processed_md
+        active_tab.cached_preview_md = processed_md
+        self.preview.set_processed_content(
+            processed_md, content, base_dir=base_dir, session_id=active_tab.media_session_id
+        )
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-        if hasattr(self.preview, "detect_youtube_video"):
-            self.preview.detect_youtube_video(content)
 
         t_total = time.time() - t0
         dur_str = f"{t_total:.2f}"
@@ -617,18 +664,21 @@ class FileController:
                     tid = item.get("tab_id")
                     if not tid:
                         continue
+                    content = ""
                     md_path, _ = self.get_tab_draft_paths(tid)
                     if os.path.exists(md_path):
                         try:
                             with open(md_path, "r", encoding="utf-8") as mf:
                                 raw_c = mf.read()
-                                if not raw_c.startswith("<MagicMock"):
+                                if not raw_c.startswith("<MagicMock") and not raw_c.startswith("⏳ Loading") and not raw_c.startswith("*Loading"):
                                     content = raw_c
                         except Exception:
                             pass
-                    elif item.get("in_path") and os.path.exists(item.get("in_path")):
+                    
+                    if not content and item.get("in_path") and os.path.exists(item.get("in_path")):
                         try:
-                            res = load_document(item["in_path"])
+                            sid = item.get("media_session_id", f"session_{tid}")
+                            res = load_document(item["in_path"], session_id=sid)
                             if res.success and not res.content.startswith("<MagicMock"):
                                 content = res.content
                         except Exception:
@@ -654,7 +704,7 @@ class FileController:
             try:
                 with open(DRAFT_PATH, "r", encoding="utf-8") as f:
                     legacy_content = f.read()
-                if legacy_content.strip() and not legacy_content.startswith("<MagicMock"):
+                if legacy_content.strip() and not legacy_content.startswith("<MagicMock") and not legacy_content.startswith("⏳ Loading"):
                     meta = {}
                     if os.path.exists(DRAFT_META_PATH):
                         try:
@@ -696,14 +746,18 @@ class FileController:
             return
 
         target_tab = self.state.find_tab_by_id(tab_id) if tab_id else self.state.active_tab
-        if not target_tab:
+        if not target_tab or target_tab.is_loading:
             return
 
         try:
             # If target tab is the currently active tab, sync latest text from editor
-            if target_tab.tab_id == self.state.active_tab_id and self.editor_view:
+            if (
+                target_tab.tab_id == self.state.active_tab_id
+                and self.editor_view
+                and not getattr(self.editor_view.editor, "read_only", False)
+            ):
                 text = self.editor_view.get_text()
-                if isinstance(text, str) and not text.startswith("<MagicMock"):
+                if isinstance(text, str) and not text.startswith("<MagicMock") and not text.startswith("⏳ Loading"):
                     target_tab.full_content = text
 
             content_to_save = target_tab.full_content
@@ -754,7 +808,7 @@ class FileController:
         except Exception as e:
             print(f"[LOG][AUTO-SAVE][ERROR] Autosave error for tab {target_tab.tab_id}: {e}")
 
-    def clear_tab_draft(self, tab_id: str):
+    def clear_tab_draft(self, tab_id: str, media_session_id: str | None = None):
         """Removes the draft and metadata files for the specified tab_id and clears media cache."""
         md_path, meta_path = self.get_tab_draft_paths(tab_id)
         for path in [md_path, meta_path]:
@@ -764,7 +818,12 @@ class FileController:
                     print(f"[LOG][AUTO-SAVE] Removed tab draft: {path}")
                 except Exception as e:
                     print(f"[LOG][AUTO-SAVE][ERROR] Failed to remove {path}: {e}")
-        MediaAssetManager().clear_session(f"session_{tab_id}")
+        
+        sid = media_session_id
+        if not sid:
+            tab = self.state.find_tab_by_id(tab_id)
+            sid = tab.media_session_id if tab else f"session_{tab_id}"
+        MediaAssetManager().clear_session(sid)
         self.save_tab_session()
         if len(self.state.tabs) == 0:
             for path in [DRAFT_PATH, DRAFT_META_PATH]:
@@ -777,7 +836,9 @@ class FileController:
     def clear_draft_file(self):
         """Clears draft files for the currently active tab and legacy files."""
         if self.state.active_tab_id:
-            self.clear_tab_draft(self.state.active_tab_id)
+            tab = self.state.active_tab
+            sid = tab.media_session_id if tab else None
+            self.clear_tab_draft(self.state.active_tab_id, media_session_id=sid)
         for path in [DRAFT_PATH, DRAFT_META_PATH]:
             if os.path.exists(path):
                 try:
@@ -851,7 +912,7 @@ class FileController:
             return
 
         deleted_norm = os.path.normcase(os.path.normpath(deleted_path))
-        tabs_to_close = []
+        tabs_to_close: list[tuple[str, str]] = []  # (tab_id, media_session_id)
         state_changed = False
 
         for tab in list(self.state.tabs):
@@ -875,11 +936,11 @@ class FileController:
                         )
                 else:
                     # Clean tab with zero unsaved changes: close immediately
-                    tabs_to_close.append(tab.tab_id)
+                    tabs_to_close.append((tab.tab_id, tab.media_session_id))
 
-        for tid in tabs_to_close:
+        for tid, sid in tabs_to_close:
             self.state.close_tab(tid)
-            self.clear_tab_draft(tid)
+            self.clear_tab_draft(tid, media_session_id=sid)
 
         if not state_changed:
             return

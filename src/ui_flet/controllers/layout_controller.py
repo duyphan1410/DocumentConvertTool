@@ -3,6 +3,7 @@ Layout Controller for Flet UI.
 Manages panel visibility toggles (Preview pane, File path bar, Editor panel, Status bar) and editor dynamic height math.
 """
 import os
+import time
 import asyncio
 import flet as ft
 from src.i18n import t
@@ -10,6 +11,7 @@ from src.ui_flet.state import AppState
 from src.utils.settings_store import save_settings
 from src.services.media_asset_manager import MediaAssetManager
 from src.ui_flet.components.file_modals import show_unsaved_tab_dialog
+from src.ui_flet.views.preview_view import process_markdown_media_async
 
 
 class LayoutController:
@@ -399,30 +401,41 @@ class LayoutController:
 
     def handle_doc_tab_selected(self, tab_id: str):
         """
-        Switches active document tab.
-        Eagerly flushes outgoing tab content from EditorView into DocumentTabState,
-        then hydrates EditorView and Preview with incoming tab state in 0ms (RAM cache).
+        Activates selected document tab, hydrates EditorView, FilePathBar, Mode dropdown, and Preview.
+        Eagerly flushes outgoing tab buffer to prevent data-loss on fast clicking.
         """
+        t_switch_0 = time.time()
         editor_view = self.app_controls.get("editor_view")
         file_path_bar = self.app_controls.get("file_path_bar")
-        preview = self.app_controls.get("preview")
         ribbon_bar = self.app_controls.get("ribbon_bar")
+        preview = self.app_controls.get("preview")
         tab_bar = self.app_controls.get("workspace_tab_bar")
         file_controller = self.app_controls.get("file_controller")
         explorer_view = self.app_controls.get("explorer_view")
 
-        # 1. Eagerly flush outgoing tab
         outgoing_tab = self.state.active_tab
-        if outgoing_tab and editor_view:
+        print(f"[LOG][TAB_SWITCH] Starting switch: from={getattr(outgoing_tab, 'title', None)} ({self.state.active_tab_id}) -> to={tab_id}")
+
+        # 1. Eagerly flush outgoing tab
+        if (
+            outgoing_tab
+            and outgoing_tab.tab_id != tab_id
+            and not outgoing_tab.is_loading
+            and editor_view
+            and not getattr(editor_view.editor, "read_only", False)
+        ):
             current_text = editor_view.get_text()
-            if current_text is not None:
+            if current_text is not None and not current_text.startswith("⏳ Loading"):
                 outgoing_tab.full_content = current_text
             if outgoing_tab.is_dirty and file_controller:
                 file_controller.perform_autosave(outgoing_tab.tab_id)
 
+        t_flush = time.time() - t_switch_0
+
         # 2. Activate incoming tab
         incoming_tab = self.state.activate_tab(tab_id)
         if not incoming_tab:
+            print(f"[LOG][TAB_SWITCH][WARN] incoming_tab {tab_id} not found in state!")
             return
 
         MediaAssetManager().set_active_session(incoming_tab.media_session_id)
@@ -430,6 +443,8 @@ class LayoutController:
         # 3. Hydrate EditorView
         if editor_view:
             editor_view.set_text(incoming_tab.full_content)
+
+        t_editor = time.time() - t_switch_0
 
         # 4. Hydrate FilePathBar
         if file_path_bar:
@@ -445,34 +460,81 @@ class LayoutController:
         # 6. Hydrate Preview
         if preview:
             base_dir = os.path.dirname(incoming_tab.in_path) if incoming_tab.in_path else None
-            is_heavy = len(incoming_tab.full_content) > 10000 or "```mermaid" in incoming_tab.full_content
-
             words = len(incoming_tab.full_content.split())
             chars = len(incoming_tab.full_content)
             preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
-            if is_heavy:
-                incoming_tab.is_loading = True
-                if tab_bar and hasattr(tab_bar, "render_tabs"):
-                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+            has_cache = bool(incoming_tab.cached_preview_md)
+            print(f"[LOG][TAB_SWITCH] Tab '{incoming_tab.title}' has cached preview: {has_cache} (len={len(incoming_tab.cached_preview_md) if has_cache else 0})")
 
-                async def _async_hydrate():
-                    try:
-                        preview.update_preview(incoming_tab.full_content, base_dir=base_dir)
-                    except Exception as e:
-                        print(f"[DEBUG] Preview hydration error: {e}")
-                    finally:
-                        incoming_tab.is_loading = False
-                        if tab_bar and hasattr(tab_bar, "render_tabs"):
-                            tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
-                        try:
-                            self.page.update()
-                        except Exception:
-                            pass
-
-                asyncio.create_task(_async_hydrate())
+            if incoming_tab.cached_preview_md:
+                # 0ms Instant Hydration from RAM cache: zero disk I/O, zero base64 re-encoding, zero UI block!
+                preview.set_processed_content(
+                    incoming_tab.cached_preview_md,
+                    incoming_tab.full_content,
+                    base_dir=base_dir,
+                    session_id=incoming_tab.media_session_id,
+                )
+                print(f"[LOG][TAB_SWITCH] 0ms Instant RAM preview applied for '{incoming_tab.title}' in {time.time() - t_switch_0:.3f}s")
             else:
-                preview.update_preview(incoming_tab.full_content, base_dir=base_dir)
+                is_heavy = (
+                    len(incoming_tab.full_content) > 10000
+                    or "```mermaid" in incoming_tab.full_content
+                    or "![" in incoming_tab.full_content
+                )
+                print(f"[LOG][TAB_SWITCH] No cache, is_heavy={is_heavy}. Launching hydration...")
+
+                if is_heavy:
+                    incoming_tab.is_loading = True
+                    if tab_bar and hasattr(tab_bar, "render_tabs"):
+                        tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+                    async def _async_hydrate():
+                        t_h0 = time.time()
+                        try:
+                            is_dark = getattr(preview, "_is_dark", False)
+                            palette_name = getattr(preview, "_palette_name", "Deep Ocean")
+                            processed_md = await process_markdown_media_async(
+                                incoming_tab.full_content,
+                                base_dir=base_dir,
+                                is_dark=is_dark,
+                                palette_name=palette_name,
+                                session_id=incoming_tab.media_session_id,
+                            )
+                            incoming_tab.cached_preview_md = processed_md
+                            print(f"[LOG][TAB_SWITCH] Async hydration computed in {time.time() - t_h0:.3f}s (cached_len={len(processed_md)})")
+
+                            # UI CONCURRENCY GUARD: Only mutate preview widget if incoming_tab is STILL the active tab
+                            if self.state.active_tab_id == incoming_tab.tab_id:
+                                preview.set_processed_content(
+                                    processed_md,
+                                    incoming_tab.full_content,
+                                    base_dir=base_dir,
+                                    session_id=incoming_tab.media_session_id,
+                                )
+                                try:
+                                    self.page.update()
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            print(f"[DEBUG] Preview hydration error: {e}")
+                        finally:
+                            incoming_tab.is_loading = False
+                            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                            try:
+                                self.page.update()
+                            except Exception:
+                                pass
+
+                    asyncio.create_task(_async_hydrate())
+                else:
+                    preview.update_preview(
+                        incoming_tab.full_content,
+                        base_dir=base_dir,
+                        session_id=incoming_tab.media_session_id,
+                    )
+                    print(f"[LOG][TAB_SWITCH] Standard preview applied for '{incoming_tab.title}' in {time.time() - t_switch_0:.3f}s")
 
         # 7. Update Window Title
         from src.__version__ import __version__
@@ -539,10 +601,14 @@ class LayoutController:
         preview = self.app_controls.get("preview")
         file_path_bar = self.app_controls.get("file_path_bar")
 
+        # 1. Trích xuất media_session_id TRƯỚC KHI close_tab
+        tab_to_close = self.state.find_tab_by_id(tab_id)
+        sid = tab_to_close.media_session_id if tab_to_close else None
+
         self.state.close_tab(tab_id)
 
         if file_controller:
-            file_controller.clear_tab_draft(tab_id)
+            file_controller.clear_tab_draft(tab_id, media_session_id=sid)
             file_controller.save_tab_session()
 
         if len(self.state.tabs) == 0:

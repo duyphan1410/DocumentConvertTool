@@ -2,16 +2,16 @@
 
 **Mã định danh**: `PERF-001`  
 **Ngày khởi tạo**: 29/08/2026  
-**Nhánh dự kiến thực hiện**: `feat/duy-DDMMYYYY-base64-cache-lru-eviction`  
+**Nhánh dự kiến thực hiện**: `feat/duy-01092026-base64-cache-lru-eviction`  
 **Phân loại**: Performance / Memory Management  
 **Mức độ ưu tiên**: Medium (Technical Debt & Long-running Stability)  
-**Trạng thái**: 🟡 Pending  
+**Trạng thái**: 🟢 Completed (v1.8.3)  
 
 ---
 
 ## 1. Hiện trạng & Phân tích nguyên nhân gốc (Problem Statement)
 
-Tại file `src/ui_flet/views/preview_view.py` (dòng 23):
+Tại file `src/ui_flet/views/preview_view.py` (dòng 25):
 ```python
 _BASE64_CACHE: dict[str, str] = {}
 ```
@@ -26,70 +26,44 @@ _BASE64_CACHE: dict[str, str] = {}
 
 ---
 
-## 2. Thiết kế giải pháp kỹ thuật (Proposed Architecture)
+## 2. Thiết kế giải pháp kỹ thuật (Architecture & RFC-001 Refinement)
 
-### 2.1. Thành phần 1: Bounded LRU Cache (Giới hạn dung lượng tối đa)
-Chuyển đổi `_BASE64_CACHE` sang `collections.OrderedDict` thread-safe:
-
+### 2.1. Cấu trúc Cache Key chuẩn hóa (Tuple Key)
+Tránh hoàn toàn lỗi substring matching và hiển thị sai kích thước:
 ```python
-import collections
-import threading
+# Tuple[str, str, int, int]
+# (session_id or "", file_path, effective_width, quality)
+```
+- **Xóa chính xác theo Session**: `keys_to_delete = [k for k in _BASE64_CACHE if k[0] == session_id]`. Khi purge `tab_1`, chỉ xóa đúng `tab_1`, không ảnh hưởng `tab_10` hay `tab_11`.
+- **Phân biệt kích thước & chất lượng**: `effective_width = target_width if target_width is not None else max_width`. Đảm bảo thumbnail (400px) và modal xem lớn (1200px) có key cache riêng biệt.
+- **Auto-detect Session ID**: Dùng `pathlib.Path(file_path).parts` kết hợp hằng số `PREVIEW_MEDIA_DIR_NAME = "preview_media"` để trích xuất `session_id` an toàn độc lập OS (`\\` vs `/`).
 
+### 2.2. Khắc phục Circular Dependency (Observer / Cleanup Hook Pattern)
+Để bảo toàn kiến trúc 3-Tier (Service layer không import ngược UI layer):
+1. `MediaAssetManager` (Service Layer) cung cấp phương thức `register_cleanup_hook(cls, hook)` và lưu danh sách `_cleanup_hooks`.
+2. Khi `MediaAssetManager.clear_session(session_id)` chạy, nó kích hoạt toàn bộ các registered cleanup hooks đã đăng ký.
+3. `preview_view.py` (UI Layer) chỉ đăng ký hàm `purge_session_base64_cache`:
+   ```python
+   MediaAssetManager.register_cleanup_hook(purge_session_base64_cache)
+   ```
+
+### 2.3. Bounded LRU Cache & Thread Safety
+```python
 MAX_BASE64_CACHE_ENTRIES = 128
-_BASE64_CACHE: collections.OrderedDict[str, str] = collections.OrderedDict()
+_BASE64_CACHE: collections.OrderedDict[tuple[str, str, int, int], str] = collections.OrderedDict()
 _BASE64_CACHE_LOCK = threading.Lock()
-
-def image_to_base64_uri(file_path: str, max_width: int = 650, quality: int = 70) -> str:
-    with _BASE64_CACHE_LOCK:
-        if file_path in _BASE64_CACHE:
-            _BASE64_CACHE.move_to_end(file_path)
-            return _BASE64_CACHE[file_path]
-
-    # ... [Nén ảnh bằng Pillow] ...
-
-    with _BASE64_CACHE_LOCK:
-        _BASE64_CACHE[file_path] = uri
-        _BASE64_CACHE.move_to_end(file_path)
-        while len(_BASE64_CACHE) > MAX_BASE64_CACHE_ENTRIES:
-            _BASE64_CACHE.popitem(last=False)  # Xóa phần tử ít dùng nhất (LRU)
-    return uri
 ```
-
-### 2.2. Thành phần 2: Scoped Session Purge Hook (Dọn dẹp theo Tab Session)
-Cung cấp hàm xóa triệt để cache của một session khi tab bị đóng:
-
-```python
-def purge_session_base64_cache(session_id: str):
-    """Xóa tất cả các entry Base64 thuộc session_id chỉ định khi đóng tab."""
-    if not session_id:
-        return
-    with _BASE64_CACHE_LOCK:
-        keys_to_delete = [k for k in _BASE64_CACHE if session_id in k]
-        for k in keys_to_delete:
-            _BASE64_CACHE.pop(k, None)
-```
-
-Liên kết hàm này với `MediaAssetManager.cleanup_session(session_id)` và `FileController.close_tab(tab_id)`.
+- Tra cứu & Cập nhật LRU (`move_to_end`, `popitem(last=False)`) an toàn trong single lock block.
+- Nén ảnh Pillow thực hiện ngoài lock để tối ưu đa luồng.
 
 ---
 
-## 3. Kế hoạch triển khai & Các file ảnh hưởng
-
-1. **`src/ui_flet/views/preview_view.py`**:
-   - Thay `_BASE64_CACHE` bằng `OrderedDict` + `_BASE64_CACHE_LOCK`.
-   - Cập nhật `image_to_base64_uri()` và bổ sung `purge_session_base64_cache()`.
-2. **`src/services/media_asset_manager.py`**:
-   - Gọi `purge_session_base64_cache(session_id)` trong `cleanup_session()`.
-3. **`tests/test_preview_view.py`** (hoặc bài test mới):
-   - Viết unit test kiểm tra:
-     - Cache không vượt quá 128 phần tử khi nạp 200 ảnh ảo.
-     - Kiểm tra `purge_session_base64_cache()` xóa đúng các key liên quan khi đóng tab.
-
----
-
-## 4. Tiêu chí nghiệm thu (Acceptance Criteria)
+## 3. Tiêu chí nghiệm thu (Acceptance Criteria)
 
 - [ ] `_BASE64_CACHE` không bao giờ vượt quá `MAX_BASE64_CACHE_ENTRIES` (128 mục).
-- [ ] Khi đóng một tab chứa ảnh, toàn bộ entry trong RAM tương ứng với `session_id` đó được giải phóng 100%.
-- [ ] Thread-safe: Không xảy ra `RuntimeError: dictionary changed size during iteration` khi nhiều tác vụ async đọc/ghi cache đồng thời.
-- [ ] Toàn bộ 113+ unit test tiếp tục Pass và không ảnh hưởng đến thời gian nạp 0ms của các tab đang mở.
+- [ ] Khi đóng một tab chứa ảnh, toàn bộ entry trong RAM tương ứng với `session_id` đó được giải phóng 100% qua observer hook.
+- [ ] Purge `tab_1` không xóa nhầm `tab_10` hoặc `tab_11`.
+- [ ] Thumbnail và ảnh phóng to của cùng 1 file không bị ghi đè hay trả về nhầm độ phân giải.
+- [ ] Không có circular dependency giữa Service và UI layers.
+- [ ] Thread-safe: 100% pass với concurrency tests.
+

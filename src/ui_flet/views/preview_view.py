@@ -22,7 +22,9 @@ from src.i18n import t
 import threading
 from src.services.media_asset_manager import MediaAssetManager
 
-_BASE64_CACHE: dict[str, str] = {}
+MAX_BASE64_CACHE_ENTRIES = 128
+_BASE64_CACHE: collections.OrderedDict[tuple[str, str, int, int], str] = collections.OrderedDict()
+_BASE64_CACHE_LOCK = threading.Lock()
 MAX_MERMAID_CACHE_SIZE = 128
 _MERMAID_CACHE: collections.OrderedDict[tuple[str, bool], str] = collections.OrderedDict()
 _MERMAID_CACHE_LOCK = threading.Lock()
@@ -194,17 +196,45 @@ def process_markdown_mermaid(content: str, is_dark: bool = False, palette_name: 
 
 
 
-def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_width: int = 650, quality: int = 70) -> str:
+def _resolve_session_id_from_path(file_path: str, session_id: Optional[str] = None) -> str:
+    """
+    Extracts session_id from explicit argument or auto-detects from file path
+    containing MediaAssetManager.PREVIEW_MEDIA_DIR_NAME using OS-agnostic pathlib parts.
+    """
+    if session_id:
+        return session_id
+    try:
+        parts = pathlib.Path(file_path).parts
+        from src.services.media_asset_manager import PREVIEW_MEDIA_DIR_NAME
+        if PREVIEW_MEDIA_DIR_NAME in parts:
+            idx = parts.index(PREVIEW_MEDIA_DIR_NAME)
+            if idx + 1 < len(parts):
+                return parts[idx + 1]
+    except Exception:
+        pass
+    return ""
+
+
+def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_width: int = 650, quality: int = 70, session_id: Optional[str] = None) -> str:
     """
     Converts a local image file path into an ultra-lightweight base64 data URI.
-    Uses PIL to downscale according to target_width/max_width and compress to optimized JPEG/PNG,
+    Uses PIL to downscale according to max_width (or target_width alias) and compress to optimized JPEG/PNG,
     reducing multi-megabyte payloads by 96% so Flutter renders immediately without freezing.
+
+    Cache Entry Lifecycle:
+    - Entries with session_id != "" are evicted immediately when tab/session closes via purge_session_base64_cache().
+    - Entries with session_id == "" (external images outside session) are bounded by MAX_BASE64_CACHE_ENTRIES LRU eviction.
     """
     limit_w = target_width if target_width is not None else max_width
     limit_w = max(50, min(1200, limit_w))
-    cache_key = f"{file_path}_{limit_w}"
-    if cache_key in _BASE64_CACHE:
-        return _BASE64_CACHE[cache_key]
+    sid = _resolve_session_id_from_path(file_path, session_id)
+    cache_key = (sid, file_path, limit_w, quality)
+
+    with _BASE64_CACHE_LOCK:
+        if cache_key in _BASE64_CACHE:
+            _BASE64_CACHE.move_to_end(cache_key)
+            return _BASE64_CACHE[cache_key]
+
     try:
         from PIL import Image
         import io
@@ -237,7 +267,12 @@ def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_
                     raw_bytes = buf.getvalue()
                     encoded_data = base64.b64encode(raw_bytes).decode("ascii")
                     uri = f"data:{mime_type};base64,{encoded_data}"
-                    _BASE64_CACHE[cache_key] = uri
+
+                    with _BASE64_CACHE_LOCK:
+                        _BASE64_CACHE[cache_key] = uri
+                        _BASE64_CACHE.move_to_end(cache_key)
+                        while len(_BASE64_CACHE) > MAX_BASE64_CACHE_ENTRIES:
+                            _BASE64_CACHE.popitem(last=False)
                     return uri
             except (PermissionError, OSError):
                 time.sleep(0.05)
@@ -248,11 +283,38 @@ def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_
         with open(file_path, "rb") as f:
             encoded_data = base64.b64encode(f.read()).decode("ascii")
         uri = f"data:{mime_type};base64,{encoded_data}"
-        _BASE64_CACHE[cache_key] = uri
+        with _BASE64_CACHE_LOCK:
+            _BASE64_CACHE[cache_key] = uri
+            _BASE64_CACHE.move_to_end(cache_key)
+            while len(_BASE64_CACHE) > MAX_BASE64_CACHE_ENTRIES:
+                _BASE64_CACHE.popitem(last=False)
         return uri
     except Exception as e:
         print(f"[DEBUG] Failed to convert image '{file_path}' to base64: {e}")
         return file_path
+
+
+def purge_session_base64_cache(session_id: str):
+    """
+    Purges all base64 cache entries matching the specified session_id exactly.
+    Executes in a single atomic lock block to guarantee thread safety.
+    """
+    if not session_id:
+        return
+    with _BASE64_CACHE_LOCK:
+        keys_to_delete = [k for k in _BASE64_CACHE if k[0] == session_id]
+        for k in keys_to_delete:
+            _BASE64_CACHE.pop(k, None)
+
+
+def clear_base64_cache():
+    """Clears all entries in the base64 cache. Primarily for testing and system resets."""
+    with _BASE64_CACHE_LOCK:
+        _BASE64_CACHE.clear()
+
+
+# Module-level observer hook registration to avoid repeated registrations
+MediaAssetManager.register_cleanup_hook(purge_session_base64_cache)
 
 
 def clean_html_tags_for_preview(content: str) -> str:
@@ -386,7 +448,7 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
                 resolved_path = candidate
 
         if os.path.exists(resolved_path):
-            base64_uri = image_to_base64_uri(resolved_path, target_width=target_w)
+            base64_uri = image_to_base64_uri(resolved_path, target_width=target_w, session_id=session_id)
             img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
             result = result.replace(tok.raw_token, img_rendered, 1)
         elif tok.raw_token.strip().startswith(("<img", "<p")):
@@ -452,7 +514,7 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
                 resolved_path = candidate
 
         if os.path.exists(resolved_path):
-            base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path, target_w)
+            base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path, target_w, 650, 70, session_id)
             replacements[tok.raw_token] = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
             if progress_callback:
                 try:

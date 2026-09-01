@@ -381,17 +381,16 @@ def process_markdown_timestamps(content: str) -> str:
     return content
 
 
-def format_preview_image_token(alt_text: str, uri: str, align: str = "", tok_start: int = -1) -> str:
-    """Formats markdown image with optional alignment HTML block and interactive click link for rich preview rendering."""
-    if tok_start >= 0:
-        md_img = f"[![{alt_text}]({uri})](imgaction://select?start={tok_start})"
-    else:
-        md_img = f"![{alt_text}]({uri})"
+def format_preview_image_token(alt_text: str, uri: str, align: str = "", tok_start: int = -1, original_src: str = "", idx: int = -1) -> str:
+    """Formats markdown image with optional alignment wrapper and interactive click link for rich preview rendering."""
+    import urllib.parse
+    click_src = original_src or uri
+    encoded_src = urllib.parse.quote(click_src)
+    action_url = f"imgaction://select?src={encoded_src}&idx={idx}&start={tok_start}"
+    md_img = f"[![{alt_text}]({uri})]({action_url})"
     align_norm = (align or "").lower().strip()
-    if align_norm == "center":
-        return f'<div align="center">\n\n{md_img}\n\n</div>'
-    elif align_norm == "right":
-        return f'<div align="right">\n\n{md_img}\n\n</div>'
+    if align_norm in ("center", "right", "left"):
+        return f'<p align="{align_norm}">{md_img}</p>'
     return md_img
 
 
@@ -412,11 +411,13 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
 
     tokens = find_all_image_tokens(content)
-    img_count = 0
-    result = content
+    total_imgs = len(tokens)
+    if total_imgs == 0:
+        return content
 
-    for tok in tokens:
-        img_count += 1
+    rendered_tokens = []
+
+    for idx, tok in enumerate(tokens):
         uri = tok.src
         alt_text = tok.alt or "image"
 
@@ -436,9 +437,8 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
         target_w = max(50, min(1200, target_w))
 
         if uri.startswith(("http://", "https://", "data:")):
-            if tok.raw_token.strip().startswith(("<img", "<p")):
-                img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
-                result = result.replace(tok.raw_token, img_rendered, 1)
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
             continue
 
         resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir, session_id=session_id)
@@ -449,14 +449,21 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
 
         if os.path.exists(resolved_path):
             base64_uri = image_to_base64_uri(resolved_path, target_width=target_w, session_id=session_id)
-            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
-            result = result.replace(tok.raw_token, img_rendered, 1)
-        elif tok.raw_token.strip().startswith(("<img", "<p")):
-            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
-            result = result.replace(tok.raw_token, img_rendered, 1)
+            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
+        else:
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
+
+    # Apply replacements from end to start by slice to guarantee 0 collisions across multiple identical images
+    result = content
+    for idx in reversed(range(len(tokens))):
+        tok = tokens[idx]
+        rendered = rendered_tokens[idx]
+        result = result[:tok.start] + rendered + result[tok.end:]
 
     t_elapsed = time.time() - t0
-    print(f"[BENCHMARK] Processed {img_count} preview image links to Base64 in {t_elapsed:.3f}s")
+    print(f"[BENCHMARK] Processed {total_imgs} preview image links to Base64 in {t_elapsed:.3f}s")
     return result
 
 
@@ -481,9 +488,9 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
     if total_imgs == 0:
         return content
 
-    replacements = {}
+    rendered_tokens = []
 
-    for idx, tok in enumerate(tokens, 1):
+    for idx, tok in enumerate(tokens):
         uri = tok.src
         alt_text = tok.alt or "image"
 
@@ -503,8 +510,8 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
         target_w = max(50, min(1200, target_w))
 
         if uri.startswith(("http://", "https://", "data:")):
-            if tok.raw_token.strip().startswith(("<img", "<p")):
-                replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start)
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
             continue
 
         resolved_path = asset_mgr.resolve_uri(uri, base_dir=base_dir, session_id=session_id)
@@ -515,19 +522,24 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
 
         if os.path.exists(resolved_path):
             base64_uri = await asyncio.to_thread(image_to_base64_uri, resolved_path, target_w, 650, 70, session_id)
-            replacements[tok.raw_token] = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start)
+            img_rendered = format_preview_image_token(alt_text, base64_uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
             if progress_callback:
                 try:
-                    progress_callback(idx, total_imgs)
+                    progress_callback(idx + 1, total_imgs)
                 except Exception:
                     pass
             await asyncio.sleep(0.005)
-        elif tok.raw_token.strip().startswith(("<img", "<p")):
-            replacements[tok.raw_token] = format_preview_image_token(alt_text, uri, tok.align)
+        else:
+            img_rendered = format_preview_image_token(alt_text, uri, tok.align, tok_start=tok.start, original_src=tok.src, idx=idx)
+            rendered_tokens.append(img_rendered)
 
+    # Apply replacements from end to start by slice to guarantee 0 collisions across multiple identical images
     result = content
-    for old_token, new_token in replacements.items():
-        result = result.replace(old_token, new_token)
+    for idx in reversed(range(len(tokens))):
+        tok = tokens[idx]
+        rendered = rendered_tokens[idx]
+        result = result[:tok.start] + rendered + result[tok.end:]
 
     t_elapsed = time.time() - t0
     print(f"[BENCHMARK] Processed {total_imgs} preview image links to Base64 asynchronously in {t_elapsed:.3f}s")
@@ -557,6 +569,7 @@ class MarkdownPreview(ft.Container):
         self._palette_name = "Violet Cyberpunk"
         self._base_dir = None
         self._session_id = None
+        self._saved_scroll_offset: float = 0.0
 
 
 
@@ -626,6 +639,7 @@ class MarkdownPreview(ft.Container):
             controls=[self.markdown_row],
             scroll=ft.ScrollMode.AUTO,
             expand=True,
+            on_scroll=self._on_scroll_changed,
         )
 
         self.content = ft.Column(
@@ -738,7 +752,36 @@ class MarkdownPreview(ft.Container):
         """Sets callback to dynamically get active workspace directory for link resolution."""
         self._get_workspace_path = get_workspace_path
 
+    def _on_scroll_changed(self, e):
+        """Tracks the current scroll offset of the preview column."""
+        try:
+            self._saved_scroll_offset = float(getattr(e, "pixels", 0) or 0)
+        except Exception:
+            pass
 
+    def save_scroll(self):
+        """Snapshot current scroll position for later restoration."""
+        # Already tracked continuously via on_scroll; no-op needed here.
+        pass
+
+    def restore_scroll(self):
+        """Restores the preview scroll to the last known position after any rebuild."""
+        try:
+            offset = self._saved_scroll_offset
+            if offset > 0 and hasattr(self.scroll_column, "scroll_to"):
+                page = getattr(self.scroll_column, "page", None)
+                if page:
+                    import asyncio
+                    import inspect
+                    res = self.scroll_column.scroll_to(offset=offset, duration=0)
+                    if inspect.iscoroutine(res):
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(res)
+                        except RuntimeError:
+                            pass
+        except Exception:
+            pass
 
     def _on_watch_video_clicked(self, e):
         """Launches the in-app player for the detected YouTube video in the current document."""
@@ -812,49 +855,215 @@ class MarkdownPreview(ft.Container):
             self._detected_video_title = None
             self.btn_watch_video.visible = False
 
+    def _trigger_fake_link_click(self, url: str):
+        """Dispatches link click event for interactive image click in live preview."""
+        class FakeEvent:
+            def __init__(self, data):
+                self.data = data
+        self._on_markdown_link_clicked(FakeEvent(url))
+
+    def _handle_image_tap_down(self, e, action_url: str):
+        """Extracts tap coordinates and triggers fake link click."""
+        gx = None
+        gy = None
+        if hasattr(e, "global_position") and e.global_position:
+            gx = getattr(e.global_position, "x", None) or getattr(e.global_position, "dx", None)
+            gy = getattr(e.global_position, "y", None) or getattr(e.global_position, "dy", None)
+        if gx is None and hasattr(e, "global_x"):
+            gx = getattr(e, "global_x", None)
+            gy = getattr(e, "global_y", None)
+
+        url_with_pos = action_url
+        if gx is not None and gy is not None:
+            url_with_pos += f"&click_x={int(gx)}&click_y={int(gy)}"
+        self._trigger_fake_link_click(url_with_pos)
+
+    def _render_processed_content(self, processed_md: str):
+        """Renders processed markdown, decomposing aligned images into native Flet Rows for pixel-perfect centering without tables or borders."""
+        if not processed_md or not processed_md.strip():
+            self.markdown.value = "*No content to preview.*"
+            self.scroll_column.controls = [self.markdown_row]
+            return
+
+        # Pattern matching preview image tokens formatted with optional alignment
+        # Handles <p align="center">...[!...](...)...</p> or <p align="center"><img ... /></p> or [!...](...)
+        img_block_pattern = re.compile(
+            r'(?:<p\s+align=["\'](center|right|left)["\']>\s*)?'
+            r'(\[?!\[([^\]]*)\]\(([^)]+)\)(?:\]\((imgaction://[^\)]+)\))?)'
+            r'(?:\s*</p>)?',
+            re.IGNORECASE
+        )
+
+        matches = list(img_block_pattern.finditer(processed_md))
+        if not matches:
+            self.markdown.value = processed_md
+            self.scroll_column.controls = [self.markdown_row]
+            return
+
+        new_controls = []
+        last_end = 0
+
+        for img_idx, m in enumerate(matches):
+            align = (m.group(1) or "").lower().strip()
+            alt = m.group(3) or "image"
+            src = m.group(4) or ""
+            action_url = m.group(5) or ""
+
+            # Text chunk before this image
+            if m.start() > last_end:
+                text_chunk = processed_md[last_end:m.start()].strip()
+                if text_chunk:
+                    md_ctrl = ft.Markdown(
+                        value=text_chunk,
+                        selectable=True,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                        code_theme=self.markdown.code_theme,
+                        md_style_sheet=self.markdown.md_style_sheet,
+                        soft_line_break=True,
+                        on_tap_link=self._on_markdown_link_clicked,
+                    )
+                    new_controls.append(md_ctrl)
+
+            # Determine row alignment
+            if align == "center":
+                main_align = ft.MainAxisAlignment.CENTER
+            elif align == "right":
+                main_align = ft.MainAxisAlignment.END
+            else:
+                main_align = ft.MainAxisAlignment.START
+
+            img_ctrl = ft.Image(
+                src=src,
+                fit=ft.BoxFit.CONTAIN,
+                border_radius=4,
+            )
+
+            if action_url:
+                target_url = action_url
+                gd = ft.GestureDetector(
+                    content=img_ctrl,
+                    mouse_cursor=ft.MouseCursor.CLICK,
+                    on_tap_down=lambda e, u=target_url: self._handle_image_tap_down(e, u),
+                )
+                img_container = ft.Container(
+                    content=gd,
+                    key=f"preview_img_{img_idx}",
+                    border_radius=4,
+                    tooltip=f"{alt} (Nhấn để chỉnh sửa)",
+                    padding=ft.Padding(0, 4, 0, 4),
+                )
+            else:
+                img_container = ft.Container(
+                    content=img_ctrl,
+                    key=f"preview_img_{img_idx}",
+                    border_radius=4,
+                    tooltip=alt,
+                    padding=ft.Padding(0, 4, 0, 4),
+                )
+
+            new_controls.append(ft.Row([img_container], key=f"preview_row_{img_idx}", alignment=main_align))
+            last_end = m.end()
+
+        # Remaining trailing text chunk
+        if last_end < len(processed_md):
+            text_chunk = processed_md[last_end:].strip()
+            if text_chunk:
+                md_ctrl = ft.Markdown(
+                    value=text_chunk,
+                    selectable=True,
+                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                    code_theme=self.markdown.code_theme,
+                    md_style_sheet=self.markdown.md_style_sheet,
+                    soft_line_break=True,
+                    on_tap_link=self._on_markdown_link_clicked,
+                )
+                new_controls.append(md_ctrl)
+
+        self.scroll_column.controls = new_controls if new_controls else [self.markdown_row]
+
+    def scroll_to_image(self, idx: int = 0):
+        """Smoothly scrolls the preview pane to the specified image index."""
+        try:
+            if hasattr(self.scroll_column, "scroll_to"):
+                res = self.scroll_column.scroll_to(
+                    scroll_key=f"preview_img_{idx}",
+                    duration=250,
+                    curve=ft.AnimationCurve.EASE_OUT,
+                )
+                import asyncio
+                import inspect
+                if inspect.iscoroutine(res):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(res)
+                    except RuntimeError:
+                        pass
+        except Exception as ex:
+            print(f"[DEBUG] scroll_to_image error: {ex}")
+
     def set_content(self, markdown_text: str, base_dir: str = None, session_id: str | None = None):
         """Updates preview with processed markdown content, using cache if text hasn't changed."""
         self._base_dir = base_dir
         self._session_id = session_id
         if not markdown_text or not markdown_text.strip():
-            self.markdown.value = "*No content to preview.*"
-            self.markdown_text = ""
-            self._last_raw_text = ""
-            self._cached_processed_text = "*No content to preview.*"
-            self.detect_youtube_video("")
-        else:
-            if markdown_text != self._last_raw_text:
-                self._last_raw_text = markdown_text
-                self._cached_processed_text = process_markdown_media(
-                    markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
-                )
-                self.detect_youtube_video(markdown_text)
+            if self._last_raw_text != "":
+                self.markdown.value = "*No content to preview.*"
+                self.scroll_column.controls = [self.markdown_row]
+                self.markdown_text = ""
+                self._last_raw_text = ""
+                self._cached_processed_text = "*No content to preview.*"
+                self.detect_youtube_video("")
+                try:
+                    if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                        self.scroll_column.update()
+                except Exception:
+                    pass
+            return
 
-            self.markdown.value = self._cached_processed_text
+        # Cache Guard: If text is unchanged, do not rebuild controls to keep scroll position 100% stable
+        if markdown_text == self._last_raw_text and self._cached_processed_text:
+            return
+
+        self._last_raw_text = markdown_text
+        self._cached_processed_text = process_markdown_media(
+            markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
+        )
+        self.detect_youtube_video(markdown_text)
+        self._render_processed_content(self._cached_processed_text)
 
         try:
-            if hasattr(self.markdown, "page") and self.markdown.page:
-                self.markdown.update()
+            if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                self.scroll_column.update()
             if self.page:
                 self.update()
         except Exception:
             pass
 
+        # Restore scroll AFTER all control updates are flushed to Flutter,
+        # so the scroll_to command is the last instruction Flutter processes.
+        self.restore_scroll()
 
     def set_processed_content(self, processed_md: str, raw_text: str, base_dir: str = None, session_id: str | None = None):
         """Sets pre-computed processed markdown directly in 0ms without re-parsing images or re-encoding Base64."""
         self._base_dir = base_dir
         self._session_id = session_id
+        if raw_text == self._last_raw_text and processed_md == self._cached_processed_text:
+            return
         self._last_raw_text = raw_text
         self._cached_processed_text = processed_md
-        self.markdown.value = processed_md
+        self._render_processed_content(processed_md)
         if hasattr(self, "detect_youtube_video"):
             self.detect_youtube_video(raw_text)
         try:
+            if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                self.scroll_column.update()
             if self.page:
                 self.update()
         except Exception:
             pass
+
+        # Restore scroll AFTER all control updates are flushed to Flutter.
+        self.restore_scroll()
 
     def update_preview(self, markdown_text: str, base_dir: str = None, session_id: str | None = None):
         """Alias method for update_preview compatibility."""
@@ -883,10 +1092,10 @@ class MarkdownPreview(ft.Container):
                     # Only apply if user hasn't switched theme again in the meantime
                     if self._is_dark == cur_dark and self._palette_name == cur_palette:
                         self._cached_processed_text = processed
-                        self.markdown.value = processed
+                        self._render_processed_content(processed)
                         try:
-                            if self.markdown.page:
-                                self.markdown.update()
+                            if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                                self.scroll_column.update()
                         except Exception:
                             pass
                 except Exception as ex:
@@ -951,10 +1160,8 @@ class MarkdownPreview(ft.Container):
             table_head_text_style=ft.TextStyle(weight=ft.FontWeight.BOLD, color=text_primary),
         )
 
-        try:
-            self.update()
-        except Exception:
-            pass
+        if self._cached_processed_text:
+            self._render_processed_content(self._cached_processed_text)
 
         try:
             self.update()

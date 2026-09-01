@@ -69,6 +69,7 @@ class WordModule(BaseDocumentModule):
                             virtual_uri = asset_mgr.register_image(image_bytes, filename)
 
                             # Extract extent width if available in Word Drawing XML
+                            width_str = ""
                             cx_match = re.search(r'(?:wp:extent|a:ext)\s+[^>]*?cx=["\'](\d+)["\']', xml)
                             if cx_match:
                                 try:
@@ -84,9 +85,26 @@ class WordModule(BaseDocumentModule):
                                             width_pct = 50
                                         elif abs(width_pct - 75) <= 3:
                                             width_pct = 75
-                                        return f'<img src="{virtual_uri}" alt="image" width="{width_pct}%" />'
+                                        width_str = f'{width_pct}%'
                                 except Exception:
                                     pass
+
+                            # Determine paragraph alignment if present
+                            para_align = ""
+                            if block.alignment is not None:
+                                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                                if block.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+                                    para_align = "center"
+                                elif block.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+                                    para_align = "right"
+
+                            if para_align or width_str:
+                                w_attr = f' width="{width_str}"' if width_str else ""
+                                img_tag = f'<img src="{virtual_uri}" alt="image"{w_attr} />'
+                                if para_align:
+                                    return f'<p align="{para_align}">{img_tag}</p>'
+                                return img_tag
+
                             return f"![image]({virtual_uri})"
                     except Exception as e:
                         print(f"[DEBUG] Failed to extract run image with rId {rId}: {e}")
@@ -319,6 +337,14 @@ class WordModule(BaseDocumentModule):
         from src.services.media_asset_manager import MediaAssetManager
         asset_mgr = MediaAssetManager()
 
+        # Preprocess multi-line image wrapper blocks into single-line tokens so line loop processes them atomically
+        markdown_content = re.sub(
+            r'<(p|div|center)(?:\s+[^>]*?)?>\s*(<img\s+[^>]*?>|!\[[^\]]*\]\([^\)]+\))\s*</\1>',
+            lambda m: m.group(0).replace("\r", " ").replace("\n", " "),
+            markdown_content,
+            flags=re.IGNORECASE
+        )
+
         lines = markdown_content.splitlines()
         doc = Document()
         style = doc.styles["Normal"]
@@ -330,7 +356,7 @@ class WordModule(BaseDocumentModule):
             line = lines[i].rstrip("\r\n")
 
             # Image check (Fast string pre-check before running token parser)
-            if "!" in line or "<img" in line:
+            if "!" in line or "<img" in line or "<p" in line or "<div" in line or "<center" in line:
                 from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
                 img_tokens = find_all_image_tokens(line)
                 if img_tokens:

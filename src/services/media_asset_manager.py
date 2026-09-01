@@ -1,9 +1,16 @@
 import os
 import hashlib
 import shutil
+from typing import Callable
+
+PREVIEW_MEDIA_DIR_NAME = "preview_media"
+
 
 class MediaAssetManager:
     _instance = None
+    _cleanup_hooks: list[Callable[[str], None]] = []
+
+    PREVIEW_MEDIA_DIR_NAME = PREVIEW_MEDIA_DIR_NAME
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -11,12 +18,18 @@ class MediaAssetManager:
             cls._instance._init_manager()
         return cls._instance
 
+    @classmethod
+    def register_cleanup_hook(cls, hook: Callable[[str], None]):
+        """Registers a callback hook fn(session_id: str) invoked when a session is cleared."""
+        if hook not in cls._cleanup_hooks:
+            cls._cleanup_hooks.append(hook)
+
     def _init_manager(self):
         # Resolve AppData cache directory
         appdata_dir = os.getenv('APPDATA')
         if not appdata_dir:
             appdata_dir = os.path.join(os.path.expanduser("~"), ".config")
-        self.cache_dir = os.path.join(appdata_dir, "DocConvert", "cache", "preview_media")
+        self.cache_dir = os.path.join(appdata_dir, "DocConvert", "cache", PREVIEW_MEDIA_DIR_NAME)
         os.makedirs(self.cache_dir, exist_ok=True)
         self.current_session_id = None
         self.current_session_dir = None
@@ -33,7 +46,7 @@ class MediaAssetManager:
             self._session_hashes[session_id] = {}
 
     def clear_session(self, session_id: str):
-        """Removes the cache folder for the specified session_id."""
+        """Removes the cache folder for the specified session_id and notifies registered cleanup hooks."""
         if not session_id:
             return
         session_dir = os.path.join(self.cache_dir, session_id)
@@ -46,6 +59,18 @@ class MediaAssetManager:
         if self.current_session_id == session_id:
             self.current_session_id = None
             self.current_session_dir = None
+
+        # Notify all registered cleanup hooks (e.g. preview base64 memory cache)
+        for hook in self._cleanup_hooks:
+            try:
+                hook(session_id)
+            except Exception as e:
+                print(f"[WARNING] MediaAssetManager: Cleanup hook failed for session '{session_id}': {e}")
+                try:
+                    from src.utils.logger import log_error
+                    log_error(e, context_info=f"MediaAssetManager.clear_session:{session_id}")
+                except Exception:
+                    pass
 
     def start_session(self, file_path: str) -> str:
         """

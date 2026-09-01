@@ -164,6 +164,7 @@ class WelcomeView(ft.Container):
         on_open_folder: Optional[Callable] = None,
         on_create_blank: Optional[Callable] = None,
         on_import_youtube: Optional[Callable] = None,
+        on_open_model_hub: Optional[Callable] = None,
         on_open_help: Optional[Callable] = None,
         **kwargs,
     ):
@@ -172,6 +173,7 @@ class WelcomeView(ft.Container):
         self.on_open_folder = on_open_folder
         self.on_create_blank = on_create_blank
         self.on_import_youtube = on_import_youtube
+        self.on_open_model_hub = on_open_model_hub
         self.on_open_help = on_open_help
 
         self.expand = True
@@ -244,7 +246,17 @@ class WelcomeView(ft.Container):
             self.card_youtube,
         ]
 
-        # ── 3. Quick Help CTA ────────────────────────────────────────────────
+        # ── 3. Quick Help & Model Hub CTA ────────────────────────────────────
+        self.btn_model_hub = ft.TextButton(
+            t("welcome.btn_model_hub"),
+            icon=ft.Icons.AUTO_AWESOME_MOSAIC_ROUNDED,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=8, right=12, bottom=8),
+            ),
+            on_click=self._on_model_hub_click,
+        )
+
         self.btn_help = ft.TextButton(
             t("welcome.btn_help"),
             icon=ft.Icons.HELP_OUTLINE_ROUNDED,
@@ -272,7 +284,11 @@ class WelcomeView(ft.Container):
                         spacing=12,
                     ),
                     ft.Container(height=4),
-                    self.btn_help,
+                    ft.Row(
+                        controls=[self.btn_model_hub, self.btn_help],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=8,
+                    ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -307,6 +323,10 @@ class WelcomeView(ft.Container):
     def _on_youtube_click(self, e):
         if self.on_import_youtube:
             self.on_import_youtube(e)
+
+    def _on_model_hub_click(self, e):
+        if self.on_open_model_hub:
+            self.on_open_model_hub(e)
 
     def _on_help_click(self, e):
         if self.on_open_help:

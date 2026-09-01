@@ -21,6 +21,7 @@ class SettingsView(ft.Container):
         "Appearance": "settings.cat_appearance",
         "Editor": "settings.cat_editor",
         "Conversion": "settings.cat_conversion",
+        "AI Models": "settings.cat_models",
         "About": "settings.cat_about",
     }
     _CATEGORIES = list(_CATEGORIES_KEYS.keys())
@@ -37,6 +38,7 @@ class SettingsView(ft.Container):
         on_word_wrap_changed: Optional[Callable] = None,
         on_language_changed: Optional[Callable] = None,
         on_sidebar_position_changed: Optional[Callable] = None,
+        on_open_model_hub: Optional[Callable] = None,
         on_apply: Optional[Callable] = None,
         on_discard: Optional[Callable] = None,
         on_close: Optional[Callable] = None,
@@ -53,6 +55,7 @@ class SettingsView(ft.Container):
         self._on_word_wrap_changed = on_word_wrap_changed
         self._on_language_changed = on_language_changed
         self._on_sidebar_position_changed = on_sidebar_position_changed
+        self._on_open_model_hub = on_open_model_hub
         self._on_apply = on_apply
         self._on_discard = on_discard
         self._on_close = on_close
@@ -118,8 +121,8 @@ class SettingsView(ft.Container):
                 ),
                 on_click=lambda e, c=cat: self._select_category(c),
                 style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=6),
-                    padding=ft.Padding(left=10, top=6, right=10, bottom=6),
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=ft.Padding(left=12, top=8, right=14, bottom=8),
                 ),
             )
             self._nav_buttons[cat] = btn
@@ -127,7 +130,7 @@ class SettingsView(ft.Container):
 
         self._left_nav = ft.Container(
             content=ft.Column(nav_items, spacing=4, scroll=ft.ScrollMode.AUTO),
-            width=160,
+            width=210,
             padding=ft.Padding(left=0, top=4, right=10, bottom=0),
         )
 
@@ -496,11 +499,43 @@ class SettingsView(ft.Container):
             dd.label_style = ft.TextStyle(color=self._accent_primary, size=12)
         return dd
 
+    def _build_ai_models_panel(self) -> ft.Column:
+        from src.ui_flet.components.model_hub_dialog import build_model_hub_view
+        from src.ui_flet.theme import is_theme_dark
+
+        palette_name = getattr(self._state, "current_palette", "Violet Cyberpunk") if self._state else "Violet Cyberpunk"
+        mode_name = getattr(self._state, "current_theme_mode", "Dark") if self._state else "Dark"
+        is_dark = is_theme_dark(mode_name)
+
+        hub_content = build_model_hub_view(
+            page=self.page,
+            current_palette=palette_name,
+            is_dark=is_dark,
+            is_embedded=True,
+        )
+
+        return ft.Column(
+            [
+                self._section_title(t("settings.cat_models")),
+                ft.Text(
+                    t("settings.desc_models"),
+                    size=12,
+                    color=ft.Colors.OUTLINE,
+                ),
+                ft.Container(height=6),
+                hub_content,
+            ],
+            spacing=8,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
     def _category_icon(self, category: str) -> str:
         return {
             "Appearance": ft.Icons.PALETTE_OUTLINED,
             "Editor": ft.Icons.EDIT_NOTE_OUTLINED,
             "Conversion": ft.Icons.TRANSFORM,
+            "AI Models": ft.Icons.AUTO_AWESOME_MOSAIC_ROUNDED,
             "About": ft.Icons.INFO_OUTLINE,
         }.get(category, ft.Icons.SETTINGS_OUTLINED)
 
@@ -511,6 +546,7 @@ class SettingsView(ft.Container):
             "Appearance": self._build_appearance_panel,
             "Editor": self._build_editor_panel,
             "Conversion": self._build_conversion_panel,
+            "AI Models": self._build_ai_models_panel,
             "About": self._build_about_panel,
         }
         builder = panels.get(category, self._build_appearance_panel)
@@ -521,7 +557,7 @@ class SettingsView(ft.Container):
             is_active = cat == category
             btn.style = ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=8),
-                padding=ft.Padding(left=12, top=10, right=12, bottom=10),
+                padding=ft.Padding(left=12, top=8, right=14, bottom=8),
                 bgcolor=ft.Colors.PRIMARY_CONTAINER if is_active else None,
                 color=ft.Colors.ON_PRIMARY_CONTAINER if is_active else None,
             )

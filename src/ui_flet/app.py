@@ -188,6 +188,7 @@ class DocumentConvertApp:
             on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
             on_create_blank=lambda e: self._on_create_blank_note(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
+            on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_open_help=lambda e: self._show_help_view(),
         )
 
@@ -204,6 +205,7 @@ class DocumentConvertApp:
             on_word_wrap_changed=lambda e: self.settings_controller.on_word_wrap_changed(e),
             on_language_changed=lambda e: self.settings_controller.on_language_changed(e),
             on_sidebar_position_changed=lambda e: self.settings_controller.on_sidebar_position_changed(e),
+            on_open_model_hub=lambda: self._open_model_hub_dialog(),
             on_apply=lambda e: self.settings_controller.apply_all(e),
             on_discard=lambda e: self.settings_controller.discard_all(e),
             on_close=lambda e: self._show_editor_view(auto_select_edit=False),
@@ -227,6 +229,7 @@ class DocumentConvertApp:
             on_browse_out=lambda e: self.file_controller.trigger_browse_output(e),
             on_clear_editor=lambda e: self.editor_controller.clear_editor(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
+            on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_format_action=lambda p, s: self.editor_controller.on_format_action(p, s),
             on_heading_change=lambda lvl: self.editor_controller.on_heading_change(lvl),
             on_toggle_search=lambda e: self.search_controller.toggle_search_panel(e),
@@ -670,6 +673,14 @@ class DocumentConvertApp:
                 self._show_image_context_menu_at(win_w / 2 + 30, 160)
             except Exception as ex:
                 print(f"[DEBUG] _handle_preview_image_clicked error: {ex}")
+
+    def _open_model_hub_dialog(self):
+        """Displays the AI Model Hub & Marketplace Modal."""
+        from src.ui_flet.components.model_hub_dialog import show_model_hub_dialog
+        show_model_hub_dialog(
+            self.page,
+            current_palette=self.state.current_palette,
+        )
 
 
 def main(page: ft.Page):

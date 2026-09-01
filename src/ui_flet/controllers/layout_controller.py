@@ -650,6 +650,9 @@ class LayoutController:
             if file_path_bar:
                 file_path_bar.set_in_path("")
                 file_path_bar.set_out_path("")
+            if ribbon_bar and hasattr(ribbon_bar, "update_mode_options"):
+                def_mode = getattr(self.state, "default_mode", "MD -> Excel")
+                ribbon_bar.update_mode_options("", preferred_mode=def_mode)
 
             has_workspace = bool(getattr(self.state, "workspace_folder", "") and os.path.exists(self.state.workspace_folder))
             if not has_workspace:

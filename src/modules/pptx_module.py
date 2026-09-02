@@ -517,6 +517,7 @@ class PPTXModule(BaseDocumentModule):
                 MSO_AUTO_SIZE = None
                 PP_ALIGN = None
             from src.services.media_asset_manager import MediaAssetManager
+            from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
 
             asset_mgr = MediaAssetManager()
             prs = pptx.Presentation()
@@ -767,10 +768,11 @@ class PPTXModule(BaseDocumentModule):
                             pending_chart_type = None
                         continue
 
-                    # 3. Markdown Image Detection (![alt](path))
-                    img_match = re.match(r"^!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)$", stripped, re.IGNORECASE)
-                    if img_match:
-                        img_uri = img_match.group(2)
+                    # 3. Image Detection (Markdown ![alt](path) and HTML <img...> / <p align="...">)
+                    img_tokens = find_all_image_tokens(stripped) if ("!" in stripped or "<img" in stripped or "<p" in stripped or "<div" in stripped or "<center" in stripped) else []
+                    if img_tokens:
+                        tok = img_tokens[0]
+                        img_uri = tok.src
                         out_dir = os.path.dirname(out_path) if out_path else None
                         resolved = asset_mgr.resolve_uri(img_uri, base_dir=out_dir)
                         if not os.path.exists(resolved) and img_uri and os.path.exists(img_uri):
@@ -782,7 +784,32 @@ class PPTXModule(BaseDocumentModule):
                                     slide, top_offset, start_top_offset, max_slide_top, prs,
                                     title_text, notes_text, blank_layout, Inches, Pt, PP_ALIGN, Inches(3.8)
                                 )
-                                slide.shapes.add_picture(resolved, Inches(0.8), top_offset, width=Inches(7.0))
+                                # Calculate picture width based on token width if specified
+                                pic_w = Inches(7.0)
+                                if tok.width:
+                                    if tok.width.endswith("%"):
+                                        try:
+                                            pct = float(tok.width.rstrip("%"))
+                                            pic_w = Inches(min(8.0, max(1.0, 8.0 * (pct / 100.0))))
+                                        except Exception:
+                                            pic_w = Inches(7.0)
+                                    else:
+                                        try:
+                                            px_val = float(tok.width.rstrip("px"))
+                                            pic_w = Inches(min(8.0, max(1.0, px_val / 96.0)))
+                                        except Exception:
+                                            pic_w = Inches(7.0)
+
+                                # Calculate horizontal alignment
+                                slide_w = getattr(prs, "slide_width", Inches(13.333))
+                                if tok.align == "center":
+                                    left_pos = max(Inches(0.5), (slide_w - pic_w) / 2)
+                                elif tok.align == "right":
+                                    left_pos = max(Inches(0.5), slide_w - pic_w - Inches(0.8))
+                                else:
+                                    left_pos = Inches(0.8)
+
+                                slide.shapes.add_picture(resolved, left_pos, top_offset, width=pic_w)
                                 top_offset += Inches(3.8)
                             except Exception as ex:
                                 print(f"[DEBUG] Failed to insert picture in PPTX export: {ex}")

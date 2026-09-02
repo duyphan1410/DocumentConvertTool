@@ -271,7 +271,7 @@ class DocumentConvertApp:
             on_clear=lambda e: self.editor_controller.clear_editor(e),
             on_open_file=lambda e: self.file_controller.trigger_browse_input(e),
             on_save_md=lambda e: self.file_controller.trigger_save_markdown(e),
-            on_image_context_changed=lambda tok: self.ribbon_bar.set_image_context(tok),
+            on_image_context_changed=lambda tok: self._on_image_context_changed(tok),
         )
         self.editor_view.set_image_action_handlers(
             on_preset=lambda preset: self._on_image_size_preset(preset),
@@ -658,19 +658,93 @@ class DocumentConvertApp:
         if hasattr(self, "editor_view"):
             self.editor_view._dismissed_token_raw = None
 
+    def _on_image_context_changed(self, tok):
+        self.ribbon_bar.set_image_context(tok)
+
     def _handle_preview_image_clicked(self, url: str):
         """Handles user clicking directly on an image in Live Document Preview."""
         import urllib.parse
+        from src.ui_flet.helpers.image_token_helper import find_all_image_tokens
+
         parsed = urllib.parse.urlparse(url)
         params = urllib.parse.parse_qs(parsed.query)
+        src_list = params.get("src", [])
+        idx_list = params.get("idx", [])
         start_list = params.get("start", [])
-        if start_list:
+
+        target_src = urllib.parse.unquote(src_list[0]) if src_list else ""
+        target_idx = int(idx_list[0]) if idx_list else -1
+        start_offset = int(start_list[0]) if start_list else -1
+        click_x_list = params.get("click_x", [])
+        click_y_list = params.get("click_y", [])
+        click_x = float(click_x_list[0]) if click_x_list else None
+        click_y = float(click_y_list[0]) if click_y_list else None
+
+        raw_val = self.editor_view.editor.value or ""
+        tokens = find_all_image_tokens(raw_val)
+
+        target_tok = None
+        # 1. Match by token index if in range
+        if 0 <= target_idx < len(tokens):
+            candidate = tokens[target_idx]
+            if not target_src or (os.path.basename(candidate.src) == os.path.basename(target_src)):
+                target_tok = candidate
+
+        # 2. Match by exact or normalized src
+        if not target_tok and target_src:
+            clean_target = target_src.strip().replace("\\", "/")
+            for t in tokens:
+                t_src = t.src.strip().replace("\\", "/")
+                if t_src == clean_target or os.path.basename(t_src) == os.path.basename(clean_target):
+                    target_tok = t
+                    break
+
+        # 3. Match by offset range in editor.value
+        if not target_tok and start_offset >= 0:
+            for t in tokens:
+                if t.start <= start_offset <= t.end:
+                    target_tok = t
+                    break
+
+        # 4. Fallback to closest token by offset
+        if not target_tok and tokens and start_offset >= 0:
+            target_tok = min(tokens, key=lambda t: abs(t.start - start_offset))
+
+        if target_tok:
             try:
-                start_offset = int(start_list[0])
-                self.editor_view.focus_and_select_image_at_offset(start_offset)
-                # Show the Explorer-style context menu right next to the preview
+                # Only update internal tracking state without updating the editor widget.
+                # Calling editor.selection + editor.update() causes Flutter to scroll the
+                # editor's cursor into view, which drags the entire layout and makes the
+                # preview scroll position jump. We bypass this by setting suppression flag.
+                self.editor_view._suppress_image_detection = True
+                self.editor_view.selection_start = target_tok.start
+                self.editor_view.selection_end = target_tok.end
+                self.editor_view._dismissed_token_raw = None
+                self.editor_view.pinned_image_token = target_tok
+                self.editor_view.active_image_token = target_tok
+                self.editor_view._suppress_image_detection = False
+
+                # Update ribbon context without touching editor scroll
+                self.ribbon_bar.set_image_context(target_tok)
+
+                # Show the Explorer-style context menu right next to the clicked image location without moving the preview scroll
                 win_w = getattr(self.page.window, "width", 1000) or 1000
-                self._show_image_context_menu_at(win_w / 2 + 30, 160)
+                win_h = getattr(self.page.window, "height", 800) or 800
+                if click_x is not None and click_y is not None:
+                    menu_x = min(max(20, click_x - 60), win_w - 240)
+                    # If clicking near bottom of screen, open menu upward above cursor
+                    if click_y > win_h - 260:
+                        menu_y = max(40, click_y - 220)
+                    else:
+                        menu_y = max(60, click_y + 10)
+                else:
+                    menu_x = win_w / 2 + 30
+                    menu_y = 200
+
+                self._show_image_context_menu_at(menu_x, menu_y)
+                # Restore preview scroll position after page.update() in the overlay rendering
+                if hasattr(self, "preview"):
+                    self.preview.restore_scroll()
             except Exception as ex:
                 print(f"[DEBUG] _handle_preview_image_clicked error: {ex}")
 

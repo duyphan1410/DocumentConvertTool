@@ -55,6 +55,21 @@ def _parse_html_attributes(tag_content: str) -> dict[str, str]:
     return attrs
 
 
+def _extract_align_value(attrs: dict[str, str], default_tag: str = "") -> str:
+    """Extracts alignment ('left', 'center', 'right') from tag attributes or style declaration."""
+    if default_tag.lower() == "center":
+        return "center"
+    align = (attrs.get("align", "") or "").strip().lower()
+    if align in ("left", "center", "right"):
+        return align
+    style = attrs.get("style", "").lower()
+    if style:
+        m = re.search(r'text-align\s*:\s*(left|center|right)', style)
+        if m:
+            return m.group(1).lower()
+    return ""
+
+
 def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
     """
     Scans the document text and extracts all image tokens (both Markdown and HTML).
@@ -65,19 +80,21 @@ def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
 
     tokens: List[ImageTokenInfo] = []
 
-    # 1. HTML Image tag pattern (handles optional surrounding <p align="...">...</p>)
-    # Non-greedy match for <p align="...">...<img ...>...</p> or standalone <img ...>
-    html_p_img_pattern = re.compile(
-        r'<p\s+([^>]*?)>\s*(<img\s+[^>]*?>)\s*</p>',
+    # 1. HTML Image tag pattern wrapped in <p>, <div>, or <center>
+    # Handles: <p align="...">...<img ...>...</p>, <div align="...">...<img ...>...</div>, <center><img ...></center>
+    html_wrapper_img_pattern = re.compile(
+        r'<(p|div|center)(?:\s+([^>]*?))?>\s*(<img\s+[^>]*?>)\s*</\1>',
         re.IGNORECASE | re.DOTALL
     )
-    for m in html_p_img_pattern.finditer(text):
-        p_attrs = _parse_html_attributes(m.group(1))
-        img_str = m.group(2)
+    for m in html_wrapper_img_pattern.finditer(text):
+        tag_name = m.group(1).lower()
+        tag_attrs_str = m.group(2) or ""
+        parent_attrs = _parse_html_attributes(tag_attrs_str)
+        img_str = m.group(3)
         img_attrs = _parse_html_attributes(img_str)
         src = img_attrs.get("src", "")
         if src:
-            align = p_attrs.get("align", img_attrs.get("align", ""))
+            align = _extract_align_value(parent_attrs, default_tag=tag_name) or _extract_align_value(img_attrs)
             tokens.append(ImageTokenInfo(
                 raw_token=m.group(0),
                 start=m.start(),
@@ -86,19 +103,47 @@ def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
                 alt=img_attrs.get("alt", ""),
                 width=img_attrs.get("width", ""),
                 height=img_attrs.get("height", ""),
-                align=align.lower(),
+                align=align,
                 is_html=True,
             ))
 
-    # Standalone <img> tags (not already captured inside <p align="...">)
+    # 2. Markdown Image pattern wrapped in <p>, <div>, or <center>
+    # Handles: <p align="...">![alt](src)</p>, <div align="...">![alt](src)</div>, <center>![alt](src)</center>
+    html_wrapper_md_pattern = re.compile(
+        r'<(p|div|center)(?:\s+([^>]*?))?>\s*(!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\)\"\']+?))(?:\s+[\"\']([^\"\']*)[\"\'])?\s*\))\s*</\1>',
+        re.IGNORECASE | re.DOTALL
+    )
+    for m in html_wrapper_md_pattern.finditer(text):
+        if any(tok.start <= m.start() and m.end() <= tok.end for tok in tokens):
+            continue
+        tag_name = m.group(1).lower()
+        tag_attrs_str = m.group(2) or ""
+        parent_attrs = _parse_html_attributes(tag_attrs_str)
+        alt = m.group(4) or ""
+        src = (m.group(5) or m.group(6) or "").strip()
+        align = _extract_align_value(parent_attrs, default_tag=tag_name)
+        if src:
+            tokens.append(ImageTokenInfo(
+                raw_token=m.group(0),
+                start=m.start(),
+                end=m.end(),
+                src=src,
+                alt=alt,
+                width="",
+                height="",
+                align=align,
+                is_html=True,
+            ))
+
+    # 3. Standalone <img> tags (not already captured inside a wrapper)
     html_img_pattern = re.compile(r'<img\s+[^>]*?>', re.IGNORECASE)
     for m in html_img_pattern.finditer(text):
-        # Check if already encompassed by an existing <p> token
         if any(tok.start <= m.start() and m.end() <= tok.end for tok in tokens):
             continue
         img_attrs = _parse_html_attributes(m.group(0))
         src = img_attrs.get("src", "")
         if src:
+            align = _extract_align_value(img_attrs)
             tokens.append(ImageTokenInfo(
                 raw_token=m.group(0),
                 start=m.start(),
@@ -107,20 +152,19 @@ def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
                 alt=img_attrs.get("alt", ""),
                 width=img_attrs.get("width", ""),
                 height=img_attrs.get("height", ""),
-                align=img_attrs.get("align", "").lower(),
+                align=align,
                 is_html=True,
             ))
 
-    # 2. Markdown Image pattern: ![alt](url) or ![alt](url "title")
+    # 4. Standalone Markdown Image pattern: ![alt](url) or ![alt](url "title")
     md_img_pattern = re.compile(
-        r'!\[([^\]]*)\]\(\s*([^\s\)\"]+)(?:\s+[\"\']([^\"\']*)[\"\'])?\s*\)'
+        r'!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\)\"\']+?))(?:\s+[\"\']([^\"\']*)[\"\'])?\s*\)'
     )
     for m in md_img_pattern.finditer(text):
-        # Check if inside an existing HTML block
         if any(tok.start <= m.start() and m.end() <= tok.end for tok in tokens):
             continue
         alt = m.group(1)
-        src = m.group(2)
+        src = (m.group(2) or m.group(3) or "").strip()
         tokens.append(ImageTokenInfo(
             raw_token=m.group(0),
             start=m.start(),

@@ -9,6 +9,7 @@ from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.components.floating_image_toolbar import FloatingImageToolbar
 from src.ui_flet.helpers.image_token_helper import (
     ImageTokenInfo,
+    find_all_image_tokens,
     find_image_token_at_offset,
     generate_image_token,
 )
@@ -672,7 +673,7 @@ class EditorView:
             self.on_editor_changed(None)
 
     def insert_image_token(self, token: str):
-        """Inserts an image Markdown token into the editor, replacing selection if any, without leaving adjacent text highlighted."""
+        """Inserts an image Markdown token into the editor, selects it cleanly, and activates image context immediately."""
         val = self.editor.value or ""
         start = self.selection_start if self.selection_start is not None else len(val)
         end = self.selection_end if self.selection_end is not None else start
@@ -680,16 +681,33 @@ class EditorView:
         start = max(0, min(start, len(val)))
         end = max(start, min(end, len(val)))
 
+        # Safety Check: Prevent inserting into the middle of an existing image token
+        tokens = find_all_image_tokens(val)
+        for t in tokens:
+            if (t.start < start < t.end) or (t.start < end < t.end):
+                if not (start == t.start and end == t.end):
+                    mid = (t.start + t.end) // 2
+                    if start < mid:
+                        start = t.start
+                        end = t.start
+                    else:
+                        start = t.end
+                        end = t.end
+                break
+
         prefix_nl = "\n" if start > 0 and val[start - 1] != "\n" else ""
         suffix_nl = "\n" if end < len(val) and val[end] != "\n" else ""
         block_token = f"{prefix_nl}{token}{suffix_nl}"
 
         new_val = val[:start] + block_token + val[end:]
-        new_pos = start + len(block_token)
+        token_start = start + len(prefix_nl)
+        token_end = token_start + len(token)
 
         self.editor.value = new_val
-        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
-        self.selection_start, self.selection_end = new_pos, new_pos
+        self.selection_start, self.selection_end = token_start, token_end
+        self.editor.selection = ft.TextSelection(base_offset=token_start, extent_offset=token_end)
+
+        self.check_image_context()
 
         try:
             if self.editor.page:

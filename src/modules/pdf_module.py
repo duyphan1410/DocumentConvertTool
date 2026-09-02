@@ -1273,6 +1273,30 @@ class PDFModule(BaseDocumentModule):
             height: auto;
             border-radius: 4px;
         }
+        p[align="center"], div[align="center"], center {
+            text-align: center;
+        }
+        p[align="right"], div[align="right"] {
+            text-align: right;
+        }
+        p[align="left"], div[align="left"] {
+            text-align: left;
+        }
+        p[align="center"] img, div[align="center"] img, center img, img[align="center"] {
+            display: inline-block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        p[align="right"] img, div[align="right"] img, img[align="right"] {
+            display: inline-block;
+            margin-left: auto;
+            margin-right: 0;
+        }
+        p[align="left"] img, div[align="left"] img, img[align="left"] {
+            display: inline-block;
+            margin-left: 0;
+            margin-right: auto;
+        }
         hr {
             border: 0;
             border-top: 1px solid #d0d7de;

@@ -55,22 +55,39 @@ class TestModelManager(unittest.TestCase):
         self.assertEqual(drive, "D:")
 
     @patch("src.services.model_manager.get_models_dir")
-    def test_is_model_installed_and_verify_files(self, mock_get_models_dir):
-        """Tests Layer 1 verification with valid and incomplete files."""
+    def test_is_model_installed_and_verify_files_sha256(self, mock_get_models_dir):
+        """Tests Layer 1 verification with valid SHA256 and corrupted files."""
         mock_get_models_dir.return_value = self.temp_dir
         model_dir = os.path.join(self.temp_dir, "whisper-tiny")
         os.makedirs(model_dir, exist_ok=True)
 
-        # Incomplete -> should be False
+        # 1. Incomplete files -> should be False
         self.assertFalse(is_model_installed("whisper-tiny"))
 
-        # Create all required files
+        # 2. Create corrupt files (invalid SHA256)
         for fname in ["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"]:
-            with open(os.path.join(model_dir, fname), "w") as f:
-                f.write("mock_content")
+            with open(os.path.join(model_dir, fname), "wb") as f:
+                f.write(b"corrupt_content_bytes")
 
+        # Files exist on disk (>0 bytes) so is_model_installed is True, but SHA256 mismatch -> verify_model_files MUST return False
         self.assertTrue(is_model_installed("whisper-tiny"))
-        self.assertTrue(verify_model_files("whisper-tiny"))
+        self.assertFalse(verify_model_files("whisper-tiny"))
+
+        # 3. Inject mock expected_sha256 matching our test content
+        import hashlib
+        valid_hash = hashlib.sha256(b"correct_bytes").hexdigest()
+        with patch.dict(AVAILABLE_MODELS["whisper-tiny"].expected_sha256, {
+            "model.bin": valid_hash,
+            "config.json": valid_hash,
+            "vocabulary.txt": valid_hash,
+            "tokenizer.json": valid_hash,
+        }):
+            for fname in ["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"]:
+                with open(os.path.join(model_dir, fname), "wb") as f:
+                    f.write(b"correct_bytes")
+
+            self.assertTrue(verify_model_files("whisper-tiny"))
+            self.assertTrue(is_model_installed("whisper-tiny"))
 
     @patch("src.services.model_manager.get_models_dir")
     def test_storage_usage_calculation(self, mock_get_models_dir):

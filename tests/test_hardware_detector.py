@@ -83,6 +83,18 @@ class TestHardwareDetector(unittest.TestCase):
         self.assertEqual(recommend_model(hw), "whisper-tiny")
         self.assertIn("CPU/Integrated Graphics", hw.get_summary_text())
 
+    def test_recommendation_ram_query_failure_fallback(self):
+        """When RAM info cannot be detected (0.0 GB), safely recommend whisper-tiny."""
+        hw = HardwareInfo(
+            cpu_name="Unknown CPU",
+            cpu_cores=1,
+            ram_total_gb=0.0,
+            ram_free_gb=0.0,
+            has_nvidia_gpu=False,
+            cuda_usable=False,
+        )
+        self.assertEqual(recommend_model(hw), "whisper-tiny")
+
     @patch("src.services.hardware_detector._query_gpu_nvml")
     @patch("src.services.hardware_detector._query_gpu_nvidia_smi")
     @patch("src.services.hardware_detector._get_ram_info")

@@ -124,7 +124,27 @@ class ExplorerContextMenu:
 
     def __init__(self, page: ft.Page):
         self.page = page
-        self._overlay_container: Optional[ft.Container] = None
+        self._backdrop_gesture = ft.GestureDetector(
+            on_tap=self.hide,
+            on_secondary_tap=self.hide,
+            expand=True,
+        )
+        self._menu_stack = ft.Stack(
+            controls=[self._backdrop_gesture],
+            expand=True,
+        )
+        self._overlay_container: ft.Container = ft.Container(
+            content=self._menu_stack,
+            expand=True,
+            left=0,
+            top=0,
+            right=0,
+            bottom=0,
+            visible=False,
+        )
+        if hasattr(self.page, "overlay") and self._overlay_container not in self.page.overlay:
+            self.page.overlay.append(self._overlay_container)
+
         self._submenu_card: Optional[ft.Container] = None
         self._is_showing: bool = False
         self._menu_x: float = 0
@@ -132,14 +152,17 @@ class ExplorerContextMenu:
         self._menu_width: float = 220
         self.on_dismiss: Optional[Callable[[], None]] = None
 
-    def hide(self, e=None):
-        """Dismisses the context menu and any active submenu from the page overlay."""
-        if self._overlay_container and self._overlay_container in self.page.overlay:
-            self.page.overlay.remove(self._overlay_container)
-            self._overlay_container = None
+    def hide(self, e=None, update_page: bool = True):
+        """Dismisses the context menu and any active submenu without full-page re-rendering."""
+        if self._is_showing or (self._overlay_container and self._overlay_container.visible):
             self._submenu_card = None
             self._is_showing = False
-            self.page.update()
+            if self._overlay_container:
+                self._overlay_container.visible = False
+                try:
+                    self._overlay_container.update()
+                except Exception:
+                    pass
             if hasattr(self, "on_dismiss") and self.on_dismiss:
                 try:
                     self.on_dismiss()
@@ -149,11 +172,13 @@ class ExplorerContextMenu:
     def _hide_submenu(self):
         """Hides only the secondary flyout submenu if open."""
         if self._overlay_container and self._submenu_card:
-            stack: ft.Stack = self._overlay_container.content
-            if self._submenu_card in stack.controls:
-                stack.controls.remove(self._submenu_card)
+            if self._submenu_card in self._menu_stack.controls:
+                self._menu_stack.controls.remove(self._submenu_card)
                 self._submenu_card = None
-                self.page.update()
+                try:
+                    self._overlay_container.update()
+                except Exception:
+                    pass
 
     def show_file_menu(
         self,
@@ -168,7 +193,7 @@ class ExplorerContextMenu:
         on_batch_convert: Optional[Callable[[str], None]] = None,
     ):
         """Opens right-click menu for a file node with smart 2-tier Quick Convert and Archive Batch Convert."""
-        self.hide()
+        self.hide(update_page=False)
 
         name = os.path.basename(file_path)
         ext = os.path.splitext(name)[1].lower()
@@ -333,12 +358,14 @@ class ExplorerContextMenu:
             top=sub_pos_y,
         )
 
-        stack: ft.Stack = self._overlay_container.content
-        if len(stack.controls) > 2:
-            stack.controls[2] = self._submenu_card
+        if len(self._menu_stack.controls) > 2:
+            self._menu_stack.controls[2] = self._submenu_card
         else:
-            stack.controls.append(self._submenu_card)
-        self.page.update()
+            self._menu_stack.controls.append(self._submenu_card)
+        try:
+            self._overlay_container.update()
+        except Exception:
+            pass
 
     def show_folder_menu(
         self,
@@ -352,7 +379,7 @@ class ExplorerContextMenu:
         on_batch_convert: Optional[Callable[[str], None]] = None,
     ):
         """Opens right-click menu for a directory node."""
-        self.hide()
+        self.hide(update_page=False)
 
         items: List[ft.Control] = []
 
@@ -405,7 +432,7 @@ class ExplorerContextMenu:
         on_refresh: Optional[Callable] = None,
     ):
         """Opens sleek floating dropdown menu for Explorer Header when compact."""
-        self.hide()
+        self.hide(update_page=False)
 
         items: List[ft.Control] = []
         if on_collapse_all:
@@ -454,7 +481,7 @@ class ExplorerContextMenu:
         on_reveal: Optional[Callable[[str], None]] = None,
     ):
         """Opens right-click context menu for workspace document tab."""
-        self.hide()
+        self.hide(update_page=False)
         items: List[ft.Control] = [
             ContextMenuItem(
                 title=t("tab.close"),
@@ -527,7 +554,7 @@ class ExplorerContextMenu:
         on_reset_image: Callable[[], None],
     ):
         """Opens contextual popup menu for an image with 2-tier submenus matching Explorer styling."""
-        self.hide()
+        self.hide(update_page=False)
 
         src_name = os.path.basename(getattr(image_info, "src", "")) or getattr(image_info, "alt", "") or "Image"
         if len(src_name) > 16:
@@ -701,9 +728,14 @@ class ExplorerContextMenu:
             top=sub_y,
         )
 
-        stack: ft.Stack = self._overlay_container.content
-        stack.controls.append(self._submenu_card)
-        self.page.update()
+        if len(self._menu_stack.controls) > 2:
+            self._menu_stack.controls[2] = self._submenu_card
+        else:
+            self._menu_stack.controls.append(self._submenu_card)
+        try:
+            self._overlay_container.update()
+        except Exception:
+            pass
 
     def _show_image_align_submenu(self, image_info, on_align_preset: Callable[[str], None]):
         """Displays flyout submenu for image alignment presets with active selection highlight."""
@@ -775,9 +807,14 @@ class ExplorerContextMenu:
             top=sub_y,
         )
 
-        stack: ft.Stack = self._overlay_container.content
-        stack.controls.append(self._submenu_card)
-        self.page.update()
+        if len(self._menu_stack.controls) > 2:
+            self._menu_stack.controls[2] = self._submenu_card
+        else:
+            self._menu_stack.controls.append(self._submenu_card)
+        try:
+            self._overlay_container.update()
+        except Exception:
+            pass
 
     def _render_menu(self, x: float, y: float, items: List[ft.Control]):
         self._menu_width = 230
@@ -822,26 +859,17 @@ class ExplorerContextMenu:
             top=pos_y,
         )
 
-        # Backdrop overlay to capture click outside and dismiss
-        self._overlay_container = ft.Container(
-            content=ft.Stack(
-                [
-                    ft.GestureDetector(
-                        on_tap=self.hide,
-                        on_secondary_tap=self.hide,
-                        expand=True,
-                    ),
-                    menu_card,
-                ],
-                expand=True,
-            ),
-            expand=True,
-            left=0,
-            top=0,
-            right=0,
-            bottom=0,
-        )
+        # Re-attach to overlay if needed
+        if hasattr(self.page, "overlay") and self._overlay_container not in self.page.overlay:
+            self.page.overlay.append(self._overlay_container)
 
-        self.page.overlay.append(self._overlay_container)
+        self._menu_stack.controls = [self._backdrop_gesture, menu_card]
+        self._overlay_container.visible = True
         self._is_showing = True
-        self.page.update()
+        print(f"[DEBUG][CONTEXT_MENU] _render_menu at ({pos_x}, {pos_y}), items={item_count}, overlay_mounted={self._overlay_container in getattr(self.page, 'overlay', [])}")
+        try:
+            self._overlay_container.update()
+            print(f"[DEBUG][CONTEXT_MENU] _overlay_container.update() succeeded smoothly")
+        except Exception as ex:
+            print(f"[DEBUG][CONTEXT_MENU] _overlay_container.update() failed: {ex}, falling back to page.update()")
+            self.page.update()

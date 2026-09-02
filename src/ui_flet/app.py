@@ -5,9 +5,11 @@ Pure Orchestrator connecting AppState, WorkspaceView, and specialized Controller
 
 import os
 import asyncio
+from typing import Optional, Callable, Any
 import flet as ft
 
 from src.i18n import t, set_locale
+from src.ui_flet.helpers.image_token_helper import ImageTokenInfo
 
 # Force document modules to load and register
 from src.core.registry import ModuleRegistry
@@ -415,6 +417,13 @@ class DocumentConvertApp:
             on_open_folder=lambda e: self.conversion_controller.open_converted_folder(e),
         )
 
+        # Central Context Menu mounted at startup in page.overlay
+        from src.ui_flet.components.context_menu import ExplorerContextMenu
+        self.context_menu = ExplorerContextMenu(self.page)
+        self.explorer_view.context_menu = self.context_menu
+        self.workspace_tab_bar.context_menu = self.context_menu
+        self._image_context_menu = self.context_menu
+
         # 2. Control Registry Dict
         app_controls = {
             "file_path_bar": self.file_path_bar,
@@ -634,16 +643,16 @@ class DocumentConvertApp:
     def _handle_image_dialog_apply(self, tok, width, height, align, alt, src):
         self.editor_view.apply_image_size(tok, width=width, height=height, align=align, alt=alt, src=src)
 
-    def _show_image_context_menu_at(self, x: float, y: float):
+    def _show_image_context_menu_at(self, x: float, y: float, image_token: Optional[ImageTokenInfo] = None):
         """Displays the Explorer-style floating context menu for the currently selected image."""
-        tok = getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
+        tok = image_token or getattr(self.editor_view, "pinned_image_token", None) or getattr(self.editor_view, "active_image_token", None)
         if not tok:
             return
-        if not hasattr(self, "_image_context_menu") or not self._image_context_menu:
+        if not hasattr(self, "context_menu") or not self.context_menu:
             from src.ui_flet.components.context_menu import ExplorerContextMenu
-            self._image_context_menu = ExplorerContextMenu(self.page)
-        self._image_context_menu.on_dismiss = self._on_image_menu_dismissed
-        self._image_context_menu.show_image_menu(
+            self.context_menu = ExplorerContextMenu(self.page)
+        self.context_menu.on_dismiss = self._on_image_menu_dismissed
+        self.context_menu.show_image_menu(
             x=x,
             y=y,
             image_info=tok,
@@ -657,6 +666,8 @@ class DocumentConvertApp:
     def _on_image_menu_dismissed(self):
         if hasattr(self, "editor_view"):
             self.editor_view._dismissed_token_raw = None
+        if hasattr(self, "preview"):
+            self.preview.restore_scroll()
 
     def _on_image_context_changed(self, tok):
         self.ribbon_bar.set_image_context(tok)
@@ -712,21 +723,6 @@ class DocumentConvertApp:
 
         if target_tok:
             try:
-                # Only update internal tracking state without updating the editor widget.
-                # Calling editor.selection + editor.update() causes Flutter to scroll the
-                # editor's cursor into view, which drags the entire layout and makes the
-                # preview scroll position jump. We bypass this by setting suppression flag.
-                self.editor_view._suppress_image_detection = True
-                self.editor_view.selection_start = target_tok.start
-                self.editor_view.selection_end = target_tok.end
-                self.editor_view._dismissed_token_raw = None
-                self.editor_view.pinned_image_token = target_tok
-                self.editor_view.active_image_token = target_tok
-                self.editor_view._suppress_image_detection = False
-
-                # Update ribbon context without touching editor scroll
-                self.ribbon_bar.set_image_context(target_tok)
-
                 # Show the Explorer-style context menu right next to the clicked image location without moving the preview scroll
                 win_w = getattr(self.page.window, "width", 1000) or 1000
                 win_h = getattr(self.page.window, "height", 800) or 800
@@ -741,10 +737,8 @@ class DocumentConvertApp:
                     menu_x = win_w / 2 + 30
                     menu_y = 200
 
-                self._show_image_context_menu_at(menu_x, menu_y)
-                # Restore preview scroll position after page.update() in the overlay rendering
-                if hasattr(self, "preview"):
-                    self.preview.restore_scroll()
+                print(f"[DEBUG][APP_IMAGE_CLICK] matched target_tok={target_tok.src}, menu_pos=({menu_x}, {menu_y})")
+                self._show_image_context_menu_at(menu_x, menu_y, target_tok)
             except Exception as ex:
                 print(f"[DEBUG] _handle_preview_image_clicked error: {ex}")
 

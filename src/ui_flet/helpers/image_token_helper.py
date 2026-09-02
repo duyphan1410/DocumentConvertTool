@@ -110,7 +110,7 @@ def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
     # 2. Markdown Image pattern wrapped in <p>, <div>, or <center>
     # Handles: <p align="...">![alt](src)</p>, <div align="...">![alt](src)</div>, <center>![alt](src)</center>
     html_wrapper_md_pattern = re.compile(
-        r'<(p|div|center)(?:\s+([^>]*?))?>\s*(!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\)\"\']+?))(?:\s+[\"\']([^\"\']*)[\"\'])?\s*\))\s*</\1>',
+        r'<(p|div|center)(?:\s+([^>]*?))?>\s*(!\[([^\]]*)\]\(\s*(?:<([^>]+)>|((?:\\\(|\\\)|[^\(\)\s]|\((?:\\\(|\\\)|[^\(\)\s])*\))+))(?:\s+["\']([^"\']*)["\'])?\s*\))\s*</\1>',
         re.IGNORECASE | re.DOTALL
     )
     for m in html_wrapper_md_pattern.finditer(text):
@@ -158,7 +158,7 @@ def find_all_image_tokens(text: str) -> List[ImageTokenInfo]:
 
     # 4. Standalone Markdown Image pattern: ![alt](url) or ![alt](url "title")
     md_img_pattern = re.compile(
-        r'!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\)\"\']+?))(?:\s+[\"\']([^\"\']*)[\"\'])?\s*\)'
+        r'!\[([^\]]*)\]\(\s*(?:<([^>]+)>|((?:\\\(|\\\)|[^\(\)\s]|\((?:\\\(|\\\)|[^\(\)\s])*\))+))(?:\s+["\']([^"\']*)["\'])?\s*\)'
     )
     for m in md_img_pattern.finditer(text):
         if any(tok.start <= m.start() and m.end() <= tok.end for tok in tokens):

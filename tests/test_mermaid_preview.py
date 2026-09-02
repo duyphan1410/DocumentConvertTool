@@ -105,13 +105,13 @@ class TestMermaidPreview(unittest.TestCase):
         preview = MarkdownPreview()
         md = "# Diagram\n```mermaid\ngraph TD\n    A-->B\n```"
         preview.set_content(md)
-        self.assertIn("![Mermaid Diagram](", preview.markdown.value)
+        self.assertIn("![Mermaid Diagram](", preview._cached_processed_text)
 
         # Toggle palette / theme to dark
         palette = {"text_accent_primary": "#60a5fa", "border_color": "#374151", "bg_component": "#1f2937", "bg_header": "#111827"}
         preview.apply_palette(palette, is_dark=True)
         self.assertTrue(preview._is_dark)
-        self.assertIn("![Mermaid Diagram](", preview.markdown.value)
+        self.assertIn("![Mermaid Diagram](", preview._cached_processed_text)
 
     def test_export_pipeline_renders_mermaid_as_image(self):
         from src.core.converters import prepare_markdown_for_export

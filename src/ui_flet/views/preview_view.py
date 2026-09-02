@@ -132,7 +132,18 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
                         return md_img
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="ignore").strip()
-            first_err_line = err_body.split("\n")[0] if err_body else f"HTTP {e.code}"
+            is_html_or_server_err = (
+                e.code in (429, 500, 502, 503, 504)
+                or err_body.lower().startswith(("<html", "<!doctype", "error 5", "error 429"))
+            )
+            if is_html_or_server_err:
+                # Server busy / rate-limited: fallback to direct URL without caching as syntax error
+                encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
+                return f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
+
+            # Genuine Syntax error from mermaid parser
+            clean_err = re.sub(r'<[^>]+>', '', err_body).strip()
+            first_err_line = clean_err.split("\n")[0] if clean_err else f"HTTP {e.code}"
             fallback_res = f"> ⚠️ **Mermaid Syntax Error**: `{first_err_line[:90]}`\n\n```mermaid\n{code}\n```"
             with _MERMAID_CACHE_LOCK:
                 if len(_MERMAID_CACHE) >= MAX_MERMAID_CACHE_SIZE:
@@ -144,8 +155,7 @@ def render_mermaid_diagram(code: str, is_dark: bool = False, palette_name: str =
             try:
                 # Fallback to direct URL if network timeout on fetch
                 encoded_payload = encode_mermaid_payload(clean_code, is_dark=is_dark, palette_name=palette_name)
-                md_img = f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
-                return md_img
+                return f"![Mermaid Diagram](https://mermaid.ink/img/{encoded_payload}?bgColor={bg_hex})"
             except Exception:
                 return f"```mermaid\n{code}\n```"
 
@@ -753,35 +763,72 @@ class MarkdownPreview(ft.Container):
         self._get_workspace_path = get_workspace_path
 
     def _on_scroll_changed(self, e):
-        """Tracks the current scroll offset of the preview column."""
+        """Tracks the current scroll offset of the preview column, guarding against spurious layout resets."""
+        if getattr(self, "_is_restoring_scroll", False):
+            return
         try:
-            self._saved_scroll_offset = float(getattr(e, "pixels", 0) or 0)
-        except Exception:
-            pass
+            px = float(getattr(e, "pixels", 0) or 0)
+            ev_type = getattr(e, "event_type", None)
+            if ev_type in (ft.ScrollType.USER, ft.ScrollType.UPDATE, ft.ScrollType.END, ft.ScrollType.START):
+                if px > 0:
+                    self._saved_scroll_offset = px
+            print(f"[DEBUG][PREVIEW_SCROLL] event_type={ev_type}, pixels={px:.1f}, saved_offset={getattr(self, '_saved_scroll_offset', 0.0):.1f}")
+        except Exception as ex:
+            print(f"[DEBUG][PREVIEW_SCROLL] error: {ex}")
 
     def save_scroll(self):
         """Snapshot current scroll position for later restoration."""
-        # Already tracked continuously via on_scroll; no-op needed here.
         pass
 
-    def restore_scroll(self):
-        """Restores the preview scroll to the last known position after any rebuild."""
+    def restore_scroll(self, target_offset: Optional[float] = None):
+        """Restores the preview scroll to the exact last known pixel offset after content changes."""
         try:
-            offset = self._saved_scroll_offset
-            if offset > 0 and hasattr(self.scroll_column, "scroll_to"):
-                page = getattr(self.scroll_column, "page", None)
-                if page:
-                    import asyncio
-                    import inspect
-                    res = self.scroll_column.scroll_to(offset=offset, duration=0)
-                    if inspect.iscoroutine(res):
-                        try:
-                            loop = asyncio.get_running_loop()
-                            loop.create_task(res)
-                        except RuntimeError:
-                            pass
-        except Exception:
-            pass
+            offset = target_offset if target_offset is not None else getattr(self, "_saved_scroll_offset", 0.0)
+            print(f"[DEBUG][PREVIEW_RESTORE] attempting restore to offset={offset:.1f}")
+            if offset <= 0:
+                print(f"[DEBUG][PREVIEW_RESTORE] skipped (offset <= 0)")
+                return
+
+            if not hasattr(self.scroll_column, "scroll_to"):
+                print(f"[DEBUG][PREVIEW_RESTORE] skipped (no scroll_to)")
+                return
+
+            page = getattr(self.scroll_column, "page", None)
+            if not page:
+                print(f"[DEBUG][PREVIEW_RESTORE] skipped (no page mounted)")
+                return
+
+            import asyncio
+            import inspect
+
+            self._is_restoring_scroll = True
+            self._saved_scroll_offset = offset
+
+            async def _async_restore():
+                try:
+                    # Immediate restore on frame 0, followed by progressive layout checks
+                    for delay in (0.0, 0.02, 0.06, 0.15, 0.35):
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        print(f"[DEBUG][PREVIEW_RESTORE] executing scroll_to(offset={offset:.1f})")
+                        res = self.scroll_column.scroll_to(offset=offset, duration=0)
+                        if inspect.iscoroutine(res):
+                            await res
+                except Exception as ex:
+                    print(f"[DEBUG][PREVIEW_RESTORE] error: {ex}")
+                finally:
+                    await asyncio.sleep(0.05)
+                    self._saved_scroll_offset = offset
+                    self._is_restoring_scroll = False
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_async_restore())
+            except RuntimeError:
+                self._is_restoring_scroll = False
+        except Exception as ex:
+            print(f"[DEBUG][PREVIEW_RESTORE] error: {ex}")
+            self._is_restoring_scroll = False
 
     def _on_watch_video_clicked(self, e):
         """Launches the in-app player for the detected YouTube video in the current document."""
@@ -862,8 +909,18 @@ class MarkdownPreview(ft.Container):
                 self.data = data
         self._on_markdown_link_clicked(FakeEvent(url))
 
-    def _handle_image_tap_down(self, e, action_url: str):
-        """Extracts tap coordinates and triggers fake link click."""
+    def _save_tap_position(self, e, action_url: str):
+        """Records tap coordinates on pointer down without premature gesture termination."""
+        if "idx=" in action_url:
+            try:
+                import urllib.parse
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(action_url).query)
+                idx_v = qs.get("idx", [-1])[0]
+                if int(idx_v) >= 0:
+                    self._last_active_image_idx = int(idx_v)
+            except Exception:
+                pass
+
         gx = None
         gy = None
         if hasattr(e, "global_position") and e.global_position:
@@ -872,6 +929,23 @@ class MarkdownPreview(ft.Container):
         if gx is None and hasattr(e, "global_x"):
             gx = getattr(e, "global_x", None)
             gy = getattr(e, "global_y", None)
+        self._last_tap_pos = (gx, gy)
+
+    def _handle_image_tap(self, e, action_url: str):
+        """Extracts tap coordinates on clean release and triggers context menu."""
+        gx, gy = getattr(self, "_last_tap_pos", (None, None))
+        if gx is None and hasattr(e, "global_position") and e.global_position:
+            gx = getattr(e.global_position, "x", None) or getattr(e.global_position, "dx", None)
+            gy = getattr(e.global_position, "y", None) or getattr(e.global_position, "dy", None)
+
+        saved = getattr(self, "_saved_scroll_offset", 0.0)
+        print(f"[DEBUG][IMAGE_CLICK] action_url={action_url}, click_pos=({gx}, {gy}), current_saved_offset={saved:.1f}")
+
+        # Protect and restore scroll offset immediately before menu overlay displays
+        if saved > 0:
+            self._is_restoring_scroll = True
+            self._saved_scroll_offset = saved
+            self.restore_scroll(target_offset=saved)
 
         url_with_pos = action_url
         if gx is not None and gy is not None:
@@ -886,10 +960,9 @@ class MarkdownPreview(ft.Container):
             return
 
         # Pattern matching preview image tokens formatted with optional alignment
-        # Handles <p align="center">...[!...](...)...</p> or <p align="center"><img ... /></p> or [!...](...)
         img_block_pattern = re.compile(
             r'(?:<p\s+align=["\'](center|right|left)["\']>\s*)?'
-            r'(\[?!\[([^\]]*)\]\(([^)]+)\)(?:\]\((imgaction://[^\)]+)\))?)'
+            r'(\[?!\[([^\]]*)\]\(((?:\\\(|\\\)|[^\(\)\s]|\((?:\\\(|\\\)|[^\(\)\s])*\))+)\)(?:\]\((imgaction://[^\)]+)\))?)'
             r'(?:\s*</p>)?',
             re.IGNORECASE
         )
@@ -898,9 +971,10 @@ class MarkdownPreview(ft.Container):
         if not matches:
             self.markdown.value = processed_md
             self.scroll_column.controls = [self.markdown_row]
-            return
+            return False
 
-        new_controls = []
+        # Build parsed item descriptors: ("text", content) or ("img", idx, align, src, alt, action_url)
+        items = []
         last_end = 0
 
         for img_idx, m in enumerate(matches):
@@ -913,16 +987,7 @@ class MarkdownPreview(ft.Container):
             if m.start() > last_end:
                 text_chunk = processed_md[last_end:m.start()].strip()
                 if text_chunk:
-                    md_ctrl = ft.Markdown(
-                        value=text_chunk,
-                        selectable=True,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                        code_theme=self.markdown.code_theme,
-                        md_style_sheet=self.markdown.md_style_sheet,
-                        soft_line_break=True,
-                        on_tap_link=self._on_markdown_link_clicked,
-                    )
-                    new_controls.append(md_ctrl)
+                    items.append(("text", text_chunk))
 
             # Determine row alignment
             if align == "center":
@@ -932,54 +997,100 @@ class MarkdownPreview(ft.Container):
             else:
                 main_align = ft.MainAxisAlignment.START
 
-            img_ctrl = ft.Image(
-                src=src,
-                fit=ft.BoxFit.CONTAIN,
-                border_radius=4,
-            )
-
-            if action_url:
-                target_url = action_url
-                gd = ft.GestureDetector(
-                    content=img_ctrl,
-                    mouse_cursor=ft.MouseCursor.CLICK,
-                    on_tap_down=lambda e, u=target_url: self._handle_image_tap_down(e, u),
-                )
-                img_container = ft.Container(
-                    content=gd,
-                    key=f"preview_img_{img_idx}",
-                    border_radius=4,
-                    tooltip=f"{alt} (Nhấn để chỉnh sửa)",
-                    padding=ft.Padding(0, 4, 0, 4),
-                )
-            else:
-                img_container = ft.Container(
-                    content=img_ctrl,
-                    key=f"preview_img_{img_idx}",
-                    border_radius=4,
-                    tooltip=alt,
-                    padding=ft.Padding(0, 4, 0, 4),
-                )
-
-            new_controls.append(ft.Row([img_container], key=f"preview_row_{img_idx}", alignment=main_align))
+            items.append(("img", img_idx, main_align, src, alt, action_url))
             last_end = m.end()
 
         # Remaining trailing text chunk
         if last_end < len(processed_md):
             text_chunk = processed_md[last_end:].strip()
             if text_chunk:
-                md_ctrl = ft.Markdown(
-                    value=text_chunk,
+                items.append(("text", text_chunk))
+
+        # Check if smooth in-place update can be performed to avoid full widget tree recreation and visual flicker
+        existing_controls = self.scroll_column.controls or []
+        can_in_place = (len(existing_controls) == len(items) and len(items) > 0)
+        if can_in_place:
+            for ctrl, item in zip(existing_controls, items):
+                if item[0] == "text" and not isinstance(ctrl, ft.Markdown):
+                    can_in_place = False
+                    break
+                elif item[0] == "img" and not isinstance(ctrl, ft.Row):
+                    can_in_place = False
+                    break
+
+        if can_in_place:
+            for ctrl, item in zip(existing_controls, items):
+                if item[0] == "text":
+                    if ctrl.value != item[1]:
+                        ctrl.value = item[1]
+                elif item[0] == "img":
+                    img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
+                    ctrl.alignment = main_align
+                    if ctrl.controls and isinstance(ctrl.controls[0], ft.Container):
+                        container = ctrl.controls[0]
+                        container.tooltip = f"{alt} (Nhấn để chỉnh sửa)" if action_url else alt
+                        img_ctrl = None
+                        if isinstance(container.content, ft.GestureDetector):
+                            img_ctrl = container.content.content
+                            if action_url:
+                                target_url = action_url
+                                container.content.on_tap_down = lambda e, u=target_url: self._save_tap_position(e, u)
+                                container.content.on_tap = lambda e, u=target_url: self._handle_image_tap(e, u)
+                        elif isinstance(container.content, ft.Image):
+                            img_ctrl = container.content
+
+                        if isinstance(img_ctrl, ft.Image):
+                            if img_ctrl.src != src:
+                                img_ctrl.src = src
+            return True
+
+        # Fallback: construct new controls tree
+        new_controls = []
+        for item in items:
+            if item[0] == "text":
+                new_controls.append(ft.Markdown(
+                    value=item[1],
                     selectable=True,
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
                     code_theme=self.markdown.code_theme,
                     md_style_sheet=self.markdown.md_style_sheet,
                     soft_line_break=True,
                     on_tap_link=self._on_markdown_link_clicked,
+                ))
+            elif item[0] == "img":
+                img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
+                img_ctrl = ft.Image(
+                    src=src,
+                    fit=ft.BoxFit.CONTAIN,
+                    border_radius=4,
                 )
-                new_controls.append(md_ctrl)
+                if action_url:
+                    target_url = action_url
+                    gd = ft.GestureDetector(
+                        content=img_ctrl,
+                        mouse_cursor=ft.MouseCursor.CLICK,
+                        on_tap_down=lambda e, u=target_url: self._save_tap_position(e, u),
+                        on_tap=lambda e, u=target_url: self._handle_image_tap(e, u),
+                    )
+                    img_container = ft.Container(
+                        content=gd,
+                        key=f"preview_img_{img_idx}",
+                        border_radius=4,
+                        tooltip=f"{alt} (Nhấn để chỉnh sửa)",
+                        padding=ft.Padding(0, 4, 0, 4),
+                    )
+                else:
+                    img_container = ft.Container(
+                        content=img_ctrl,
+                        key=f"preview_img_{img_idx}",
+                        border_radius=4,
+                        tooltip=alt,
+                        padding=ft.Padding(0, 4, 0, 4),
+                    )
+                new_controls.append(ft.Row([img_container], key=f"preview_row_{img_idx}", alignment=main_align))
 
         self.scroll_column.controls = new_controls if new_controls else [self.markdown_row]
+        return False
 
     def scroll_to_image(self, idx: int = 0):
         """Smoothly scrolls the preview pane to the specified image index."""
@@ -1024,24 +1135,22 @@ class MarkdownPreview(ft.Container):
         if markdown_text == self._last_raw_text and self._cached_processed_text:
             return
 
+        curr_offset = getattr(self, "_saved_scroll_offset", 0.0)
         self._last_raw_text = markdown_text
         self._cached_processed_text = process_markdown_media(
             markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
         )
         self.detect_youtube_video(markdown_text)
-        self._render_processed_content(self._cached_processed_text)
+        is_in_place = self._render_processed_content(self._cached_processed_text)
 
         try:
             if hasattr(self.scroll_column, "page") and self.scroll_column.page:
                 self.scroll_column.update()
-            if self.page:
-                self.update()
         except Exception:
             pass
 
-        # Restore scroll AFTER all control updates are flushed to Flutter,
-        # so the scroll_to command is the last instruction Flutter processes.
-        self.restore_scroll()
+        if curr_offset > 0:
+            self.restore_scroll(target_offset=curr_offset)
 
     def set_processed_content(self, processed_md: str, raw_text: str, base_dir: str = None, session_id: str | None = None):
         """Sets pre-computed processed markdown directly in 0ms without re-parsing images or re-encoding Base64."""
@@ -1049,21 +1158,20 @@ class MarkdownPreview(ft.Container):
         self._session_id = session_id
         if raw_text == self._last_raw_text and processed_md == self._cached_processed_text:
             return
+        curr_offset = getattr(self, "_saved_scroll_offset", 0.0)
         self._last_raw_text = raw_text
         self._cached_processed_text = processed_md
-        self._render_processed_content(processed_md)
+        is_in_place = self._render_processed_content(processed_md)
         if hasattr(self, "detect_youtube_video"):
             self.detect_youtube_video(raw_text)
         try:
             if hasattr(self.scroll_column, "page") and self.scroll_column.page:
                 self.scroll_column.update()
-            if self.page:
-                self.update()
         except Exception:
             pass
 
-        # Restore scroll AFTER all control updates are flushed to Flutter.
-        self.restore_scroll()
+        if curr_offset > 0:
+            self.restore_scroll(target_offset=curr_offset)
 
     def update_preview(self, markdown_text: str, base_dir: str = None, session_id: str | None = None):
         """Alias method for update_preview compatibility."""

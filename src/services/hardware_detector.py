@@ -97,8 +97,8 @@ def _get_ram_info() -> tuple[float, float]:
     except Exception as e:
         logger.debug(f"Direct Windows RAM query failed: {e}")
         
-    # Fallback to general estimation
-    return 8.0, 4.0
+    # Safe fallback if query fails (0.0 means unknown)
+    return 0.0, 0.0
 
 
 def _query_gpu_nvml() -> Optional[dict]:

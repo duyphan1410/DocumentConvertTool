@@ -92,3 +92,17 @@ OK
 | `tests/test_model_hub_ui.py` | **[MỚI]** Bộ kiểm thử cho UI Model Hub và First-time Dialog. |
 | `docs/roadmaps/whisper_feature_plan.md` | Bản đặc tả kiến trúc, phân công ma trận 2 người và lộ trình thực hiện. |
 | `docs/archive/20260901_whisper_model_hub_and_hardware_orchestrator.md` | **[MỚI]** Tài liệu kỹ thuật lưu trữ chính thức của Pha 1. |
+
+---
+
+## 5. Ghi Chú Vận Hành & Bảo Trì (Model SHA256 Maintenance Policy)
+
+> [!IMPORTANT]
+> **Quy trình bảo trì mã băm SHA256 (`AVAILABLE_MODELS.expected_sha256`)**:
+> - Mã băm SHA256 trong `model_manager.py` gắn chặt với commit/revision hiện tại của kho `Systran/faster-whisper-*` trên Hugging Face Hub.
+> - **Khi nào cần cập nhật**:
+>   1. Khi Systran re-upload hoặc phát hành bản weights mới (được re-convert bằng CTranslate2 mới hơn).
+>   2. Khi dự án bổ sung model mới (ví dụ `whisper-medium` hoặc `whisper-large-v3`).
+>   3. Khi có phản hồi từ người dùng về việc tải model bị báo lỗi `corrupted` liên tục dù mạng ổn định.
+> - **Cách kiểm tra nhanh**: Chạy lệnh kiểm tra hash qua HuggingFace Hub API để cập nhật lại từ điển `expected_sha256` tương ứng trong `src/services/model_manager.py`.
+

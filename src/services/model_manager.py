@@ -4,14 +4,17 @@ Manages AI Model Hub Marketplace models, asynchronous downloads from HuggingFace
 dynamic drive space monitoring, local lifecycle (storage, deletion, cleanup),
 and 2-Layer verification (File integrity & Independent runtime test).
 """
-from dataclasses import dataclass, field
+import asyncio
+import hashlib
+import logging
 import os
-from pathlib import Path
 import shutil
 import sys
 import threading
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
-import logging
+
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -36,9 +39,10 @@ class ModelMetadata:
     ])
     description_vi: str = ""
     description_en: str = ""
+    expected_sha256: dict[str, str] = field(default_factory=dict)
 
 
-# Official Systran faster-whisper models for v1.9.0
+# Official Systran faster-whisper models for v1.9.0 with verified HuggingFace SHA256 checksums
 AVAILABLE_MODELS: dict[str, ModelMetadata] = {
     "whisper-tiny": ModelMetadata(
         model_id="whisper-tiny",
@@ -52,6 +56,12 @@ AVAILABLE_MODELS: dict[str, ModelMetadata] = {
         required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
         description_vi="Siêu nhẹ, xử lý tức thì, phù hợp máy cấu hình yếu hoặc ghi chú ngắn.",
         description_en="Ultra lightweight, near-instant, ideal for low-spec PCs and short notes.",
+        expected_sha256={
+            "config.json": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+            "model.bin": "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
     ),
     "whisper-base": ModelMetadata(
         model_id="whisper-base",
@@ -65,6 +75,12 @@ AVAILABLE_MODELS: dict[str, ModelMetadata] = {
         required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
         description_vi="Cân bằng hoàn hảo giữa tốc độ và độ chính xác cho công việc hàng ngày.",
         description_en="Perfect balance between speed and accuracy for daily office workflows.",
+        expected_sha256={
+            "config.json": "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a",
+            "model.bin": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
     ),
     "whisper-small": ModelMetadata(
         model_id="whisper-small",
@@ -78,6 +94,12 @@ AVAILABLE_MODELS: dict[str, ModelMetadata] = {
         required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
         description_vi="Độ chính xác cao, xử lý bài giảng, hội thảo chuyên sâu và nhiều thuật ngữ.",
         description_en="High accuracy, ideal for deep seminars, lectures, and specialized terms.",
+        expected_sha256={
+            "config.json": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+            "model.bin": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
     ),
 }
 
@@ -218,10 +240,20 @@ def clean_all_models() -> bool:
     return success
 
 
+def _compute_file_sha256(filepath: str) -> str:
+    """Computes the SHA256 hex digest of a local file reading in 64KB blocks."""
+    hasher = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def verify_model_files(model_id: str) -> bool:
     """
     Layer 1 Verification: Checks that all required weight and config files
-    exist in the model directory and have valid size.
+    exist in the model directory, have non-zero size, and strictly match
+    the official HuggingFace SHA256 checksums.
     """
     meta = AVAILABLE_MODELS.get(model_id)
     if not meta:
@@ -240,6 +272,18 @@ def verify_model_files(model_id: str) -> bool:
         if os.path.getsize(fpath) == 0:
             logger.warning(f"Model {model_id} file {req_file} has 0 bytes.")
             return False
+
+        # Strict SHA256 checksum verification against HuggingFace ground truth
+        expected_hash = meta.expected_sha256.get(req_file)
+        if expected_hash:
+            actual_hash = _compute_file_sha256(fpath)
+            if actual_hash.lower() != expected_hash.lower():
+                logger.error(
+                    f"Model {model_id} file {req_file} checksum mismatch! "
+                    f"Expected: {expected_hash}, Actual: {actual_hash}"
+                )
+                print(f"[MODEL_HUB] [ERROR] File {req_file} sai mã băm SHA256 ({actual_hash[:8]} != {expected_hash[:8]}).")
+                return False
 
     return True
 
@@ -318,7 +362,7 @@ def register_model_download(model_id: str) -> threading.Event:
     """Registers an active download event before async thread execution."""
     evt = threading.Event()
     _ACTIVE_DOWNLOADS[model_id] = evt
-    _DOWNLOAD_PROGRESS[model_id] = {"pct": 0.05, "msg": "Bắt đầu kết nối..."}
+    _DOWNLOAD_PROGRESS[model_id] = {"pct": 0.05, "msg": t("model_hub.progress_starting")}
     return evt
 
 
@@ -445,3 +489,4 @@ def download_model(
     finally:
         _ACTIVE_DOWNLOADS.pop(model_id, None)
         _DOWNLOAD_PROGRESS.pop(model_id, None)
+        _PROGRESS_LISTENERS.pop(model_id, None)

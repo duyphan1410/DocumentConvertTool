@@ -106,22 +106,22 @@ def build_model_hub_view(
         is_rec = meta.model_id == rec_model_id
         is_downloading = is_model_downloading(meta.model_id)
 
-        # Badges list
+        # Badges list: If installed, display INSTALLED; if not installed but recommended, display RECOMMENDED
         badges = []
-        if is_rec:
-            badges.append(
-                ft.Container(
-                    content=ft.Text(t("model_hub.badge_recommended"), size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                    bgcolor=accent_primary,
-                    padding=ft.Padding(left=6, top=2, right=6, bottom=2),
-                    border_radius=6,
-                )
-            )
         if installed:
             badges.append(
                 ft.Container(
                     content=ft.Text(t("model_hub.badge_installed"), size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.GREEN_600,
+                    padding=ft.Padding(left=6, top=2, right=6, bottom=2),
+                    border_radius=6,
+                )
+            )
+        elif is_rec:
+            badges.append(
+                ft.Container(
+                    content=ft.Text(t("model_hub.badge_recommended"), size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    bgcolor=accent_primary,
                     padding=ft.Padding(left=6, top=2, right=6, bottom=2),
                     border_radius=6,
                 )

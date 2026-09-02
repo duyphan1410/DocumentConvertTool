@@ -525,6 +525,7 @@
   "model_hub.delete_success": "Đã xóa mô hình [{name}] và giải phóng dung lượng ổ đĩa thành công.",
   "model_hub.download_success": "Tải và xác thực model [{name}] thành công!",
   "model_hub.download_failed": "Tải model [{name}] thất bại: {error}",
+  "model_hub.progress_starting": "Bắt đầu kết nối...",
   "model_hub.progress_connecting": "Đang kết nối kho dữ liệu {repo}...",
   "model_hub.progress_downloading": "Đang tải {file} ({done}/{total} MB)...",
   "model_hub.progress_verifying": "Đang kiểm tra tính toàn vẹn...",

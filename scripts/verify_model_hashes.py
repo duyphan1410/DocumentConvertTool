@@ -3,6 +3,14 @@ import sys
 import hashlib
 import requests
 
+# Force UTF-8 encoding on Windows CI runners (prevents cp1252 UnicodeEncodeError)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Ensure project root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

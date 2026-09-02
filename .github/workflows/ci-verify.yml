@@ -25,6 +25,9 @@ jobs:
   verify-and-test:
     name: 🔍 Audit Model Hashes & Unit Tests
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
 
     steps:
       - name: 📥 Checkout Repository

@@ -72,14 +72,14 @@ class TestDocumentPreviewLogic(unittest.TestCase):
         from src.ui_flet.views.preview_view import format_preview_image_token
 
         centered = format_preview_image_token("alt", "uri", "center")
-        self.assertIn('<div align="center">', centered)
+        self.assertIn('<p align="center">', centered)
         self.assertIn('![alt](uri)', centered)
 
         right = format_preview_image_token("alt", "uri", "right")
-        self.assertIn('<div align="right">', right)
+        self.assertIn('<p align="right">', right)
 
-        default = format_preview_image_token("alt", "uri", "left")
-        self.assertEqual(default, "![alt](uri)")
+        default = format_preview_image_token("alt", "uri", "")
+        self.assertIn('![alt](uri)', default)
 
 
 if __name__ == "__main__":

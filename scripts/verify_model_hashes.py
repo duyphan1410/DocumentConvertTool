@@ -19,7 +19,7 @@ from src.services.model_manager import AVAILABLE_MODELS
 
 def verify_live_huggingface_hashes() -> bool:
     print("=" * 70)
-    print("  GITHUB ACTIONS CI — LIVE HUGGING FACE SHA256 CHECKSUM AUDITOR")
+    print("  GITHUB ACTIONS CI - LIVE HUGGING FACE SHA256 CHECKSUM AUDITOR")
     print("=" * 70)
 
     try:
@@ -36,8 +36,8 @@ def verify_live_huggingface_hashes() -> bool:
         try:
             info = api.model_info(meta.repo_id, files_metadata=True)
         except Exception as ex:
-            print(f"    [!] CRITICAL: Failed to connect to Hugging Face API ({ex})")
-            mismatches.append(f"[{mid}] API connection failed - cannot verify: {ex}")
+            print(f"    [FAIL] Failed to connect to Hugging Face API ({ex})")
+            mismatches.append(f"[{mid}] API connection failed: {ex}")
             continue
 
         # 1. Audit Git LFS binary files (model.bin) directly from API metadata (0 bytes downloaded)
@@ -49,9 +49,9 @@ def verify_live_huggingface_hashes() -> bool:
                     mismatches.append(
                         f"[{mid}] model.bin SHA256 mismatch! HuggingFace={remote_sha} vs Code={expected_sha}"
                     )
-                    print(f"    ✗ model.bin: MISMATCH (HF: {remote_sha[:8]} != Code: {expected_sha[:8]})")
+                    print(f"    [FAIL] model.bin: MISMATCH (HF: {remote_sha[:8]} != Code: {expected_sha[:8]})")
                 else:
-                    print(f"    ✓ model.bin: MATCH (LFS Metadata SHA256)")
+                    print(f"    [PASS] model.bin: MATCH (LFS Metadata SHA256)")
 
         # 2. Audit small text config files (config.json, tokenizer.json, vocabulary.txt)
         for fname in ["config.json", "tokenizer.json", "vocabulary.txt"]:
@@ -68,28 +68,28 @@ def verify_live_huggingface_hashes() -> bool:
                         mismatches.append(
                             f"[{mid}] {fname} SHA256 mismatch! HuggingFace={actual_sha} vs Code={expected_sha}"
                         )
-                        print(f"    ✗ {fname}: MISMATCH (HF: {actual_sha[:8]} != Code: {expected_sha[:8]})")
+                        print(f"    [FAIL] {fname}: MISMATCH (HF: {actual_sha[:8]} != Code: {expected_sha[:8]})")
                     else:
-                        print(f"    ✓ {fname}: MATCH (Raw SHA256)")
+                        print(f"    [PASS] {fname}: MATCH (Raw SHA256)")
                 else:
                     err_msg = f"[{mid}] Failed to fetch {fname} (HTTP {resp.status_code})"
                     mismatches.append(err_msg)
-                    print(f"    ✗ {fname}: HTTP Error {resp.status_code}")
+                    print(f"    [FAIL] {fname}: HTTP Error {resp.status_code}")
             except Exception as ex:
                 err_msg = f"[{mid}] Error downloading {fname}: {ex}"
                 mismatches.append(err_msg)
-                print(f"    ✗ {fname}: Network Exception: {ex}")
+                print(f"    [FAIL] {fname}: Network Exception: {ex}")
 
     print("\n" + "=" * 70)
     if mismatches:
-        print("❌ CRITICAL: MODEL CHECKSUM MISMATCH DETECTED!")
+        print("[CRITICAL] MODEL CHECKSUM MISMATCH DETECTED!")
         for m in mismatches:
             print(f"  - {m}")
         print("\nPlease update expected_sha256 in src/services/model_manager.py before releasing.")
         print("=" * 70)
         return False
 
-    print("✅ SUCCESS: All Model SHA256 hashes are 100% synchronized with Hugging Face!")
+    print("[OK] SUCCESS: All Model SHA256 hashes are 100% synchronized with Hugging Face!")
     print("=" * 70)
     return True
 

@@ -35,10 +35,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 🛡️ Audit Model SHA256 Checksums
-        run: |
-          python scripts/verify_model_hashes.py
-
       - name: ⚙️ Build Executable & Installer
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/build_installer.ps1

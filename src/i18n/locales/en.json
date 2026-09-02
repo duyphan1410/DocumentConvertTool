@@ -525,6 +525,7 @@
   "model_hub.delete_success": "Successfully deleted model [{name}] and freed up disk space.",
   "model_hub.download_success": "Model [{name}] downloaded and verified successfully!",
   "model_hub.download_failed": "Failed to download model [{name}]: {error}",
+  "model_hub.progress_starting": "Connecting...",
   "model_hub.progress_connecting": "Connecting to repository {repo}...",
   "model_hub.progress_downloading": "Downloading {file} ({done}/{total} MB)...",
   "model_hub.progress_verifying": "Verifying file integrity...",

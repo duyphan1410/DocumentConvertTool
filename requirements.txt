@@ -20,7 +20,7 @@ yt-dlp==2026.7.4
 pywebview==6.2.1
 # AI Offline Transcriber & Model Hub (Whisper AI)
 faster-whisper==1.2.1
-ctranslate2==4.8.1
+ctranslate2==4.8.2
 nvidia-ml-py==13.610.43
 huggingface-hub==1.28.0
 av==18.1.0

@@ -9,7 +9,7 @@ Thư mục này quản lý các hạng mục nợ kỹ thuật (Technical Debt),
 | Task ID | Tiêu đề | Phân loại | Độ ưu tiên | Trạng thái | Tài liệu chi tiết |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | `PERF-001` | Bounded LRU Cache & Session Eviction cho `_BASE64_CACHE` | Performance / Memory | Medium | 🟢 Completed (v1.8.3) | [PERF_001_base64_cache_lru_eviction.md](PERF_001_base64_cache_lru_eviction.md) |
-| `BUG-001` | Preview Scroll Jump khi Click/Resize Ảnh trong Live Preview | Bug / UX Regression | High | 🟡 In Progress | [BUG_001_preview_scroll_jump_image_click.md](BUG_001_preview_scroll_jump_image_click.md) |
+| `BUG-001` | Preview Scroll Jump khi Click/Resize Ảnh trong Live Preview | Bug / UX Stabilization | High | 🟢 Completed (v1.8.4) | [BUG_001_preview_scroll_jump_image_click.md](BUG_001_preview_scroll_jump_image_click.md) |
 
 ---
 

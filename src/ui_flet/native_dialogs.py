@@ -268,6 +268,53 @@ async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePick
     return await asyncio.to_thread(pick_image_file_sync)
 
 
+MEDIA_FILETYPES = [
+    (
+        "Audio & Video Files (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.mp4;*.mkv;*.mov;*.webm;*.avi)",
+        "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.mp4;*.mkv;*.mov;*.webm;*.avi;*.ogg",
+    ),
+    ("All Files (*.*)", "*.*"),
+]
+
+
+def pick_media_file_sync() -> str | None:
+    """Synchronous worker that opens transient Windows File Dialog for media files."""
+    ensure_tcl_tk()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_path = filedialog.askopenfilename(
+            title="Select Audio / Video File",
+            filetypes=MEDIA_FILETYPES,
+        )
+        if selected_path:
+            return os.path.normpath(selected_path)
+    except Exception as e:
+        print(f"[DEBUG] Native media filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+async def pick_media_file_async() -> str | None:
+    """Async wrapper running native media file picker dialog."""
+    return await asyncio.to_thread(pick_media_file_sync)
+
+
 def confirm_overwrite_sync(file_path: str) -> bool:
     """Prompts a native Windows messagebox asking user if they want to overwrite an existing file."""
     ensure_tcl_tk()

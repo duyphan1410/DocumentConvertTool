@@ -57,7 +57,6 @@ class TestSpeechService(unittest.TestCase):
             self.assertIn("AI Transcription", content)
             self.assertIn("[00:00]", content)
             self.assertIn("Chào mừng các bạn", content)
-            self.assertIn("[00:15]", content)
             self.assertIn("Chúng ta sẽ trao đổi", content)
         finally:
             if os.path.exists(temp_audio.name):

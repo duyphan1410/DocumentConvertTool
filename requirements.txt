@@ -15,7 +15,6 @@ beautifulsoup4==4.15.0
 Pygments==2.20.0
 PyYAML==6.0.3
 youtube-transcript-api==1.2.4
-SpeechRecognition==3.17.0
 yt-dlp==2026.7.4
 pywebview==6.2.1
 # AI Offline Transcriber & Model Hub (Whisper AI)

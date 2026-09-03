@@ -220,7 +220,7 @@ def _group_snippets_into_sentences(
     snippets: List[dict],
     group_interval_seconds: float = 15.0,
     max_interval_seconds: float = 30.0,
-    pause_threshold: float = 3.5,
+    pause_threshold: Optional[float] = None,
 ) -> Tuple[List[float], List[str]]:
     """
     Groups subtitle snippets into coherent paragraphs of complete sentences.
@@ -261,7 +261,12 @@ def _group_snippets_into_sentences(
         start = float(item.get("start", 0.0))
 
         # Check if there is a noticeable pause / silence since last snippet
-        if curr_snippets and last_item_start is not None and (start - last_item_start >= pause_threshold):
+        if (
+            curr_snippets
+            and last_item_start is not None
+            and pause_threshold is not None
+            and (start - last_item_start >= pause_threshold)
+        ):
             _flush_paragraph(paragraph_start, curr_snippets)
             curr_snippets = []
             paragraph_start = None

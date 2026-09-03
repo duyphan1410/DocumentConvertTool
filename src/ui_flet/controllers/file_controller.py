@@ -7,6 +7,7 @@ import json
 import os
 import time
 import asyncio
+from typing import Optional, List, Callable, Dict, Any
 import flet as ft
 
 from src.i18n import t
@@ -356,14 +357,80 @@ class FileController:
                 pass
 
     def trigger_youtube_import(self, e=None):
-        """Opens modal dialog to import subtitles from a YouTube URL."""
         from src.ui_flet.components.youtube_dialog import show_youtube_dialog
-        current_pal = getattr(self.state, "palette", "Violet Cyberpunk")
+
+        current_pal = self.state.current_palette
         show_youtube_dialog(
             page=self.page,
-            on_transcript_loaded=self.handle_youtube_transcript_loaded,
+            on_success=self.handle_youtube_transcript_loaded,
             current_palette=current_pal,
         )
+
+    def trigger_media_transcribe(self, e=None, default_file_path: Optional[str] = None):
+        """Opens the local Audio/Video Transcribe Dialog."""
+        from src.ui_flet.components.transcribe_dialog import show_transcribe_dialog
+
+        current_pal = self.state.current_palette
+        show_transcribe_dialog(
+            page=self.page,
+            current_palette=current_pal,
+            on_success=self.handle_media_transcript_loaded,
+            default_file_path=default_file_path,
+        )
+
+    def handle_media_transcript_loaded(self, content: str, source_path: str):
+        """Injects extracted local media Markdown transcript into editor workspace."""
+        if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
+            self.app_controls["on_show_editor"]()
+        try:
+            self.ribbon_bar.select_tab("edit", force=True)
+        except Exception:
+            pass
+
+        import re
+        base_name = os.path.basename(source_path)
+        file_stem = os.path.splitext(base_name)[0]
+        virtual_name = f"{file_stem}.md"
+
+        def_dir = get_default_output_dir()
+        self.state.in_path = ""
+        self.file_path_bar.set_in_path(f"Media: {source_path}")
+
+        # Automatically switch conversion mode to 'MD -> Markdown' (Save as MD)
+        ext = ".md"
+        preferred_mode = "MD -> Markdown"
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
+        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+
+        out_ext = MODES.get(self.state.current_mode, {"out_ext": ".md"})["out_ext"]
+        self.state.out_path = os.path.join(def_dir, f"{file_stem}{out_ext}")
+        self.file_path_bar.set_out_path(self.state.out_path)
+
+        self.state.full_content = content
+        self.state.undo_stack.clear()
+        self.state.redo_stack.clear()
+
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+        else:
+            self.editor_view.set_text(content)
+
+        self.state.undo_stack.append(self.editor_view.get_text())
+        self.state.is_dirty = True
+
+        words = len(content.split())
+        chars = len(content)
+        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+        self.preview.update_preview(content, base_dir=None)
+
+        self.footer_bar.set_status_key(
+            "status.file_loaded",
+            color=ft.Colors.GREEN_400,
+            filename=virtual_name,
+            duration="0.00",
+        )
+        self.save_current_tab_draft()
+        self.page.update()
 
     def handle_youtube_transcript_loaded(self, content: str, source_url: str):
         """Injects extracted video Markdown transcript into editor workspace (YouTube or Drive)."""

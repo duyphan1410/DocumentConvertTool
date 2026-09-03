@@ -190,6 +190,7 @@ class DocumentConvertApp:
             on_open_folder=lambda e: asyncio.create_task(self._on_open_workspace_folder(e)),
             on_create_blank=lambda e: self._on_create_blank_note(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
+            on_transcribe_media=lambda e: self.file_controller.trigger_media_transcribe(e),
             on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_open_help=lambda e: self._show_help_view(),
         )
@@ -231,6 +232,7 @@ class DocumentConvertApp:
             on_browse_out=lambda e: self.file_controller.trigger_browse_output(e),
             on_clear_editor=lambda e: self.editor_controller.clear_editor(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
+            on_transcribe_media=lambda e: self.file_controller.trigger_media_transcribe(e),
             on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_format_action=lambda p, s: self.editor_controller.on_format_action(p, s),
             on_heading_change=lambda lvl: self.editor_controller.on_heading_change(lvl),

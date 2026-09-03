@@ -32,6 +32,7 @@ class RibbonBar(ft.Container):
         on_browse_out: Optional[Callable] = None,
         on_clear_editor: Optional[Callable] = None,
         on_import_youtube: Optional[Callable] = None,
+        on_transcribe_media: Optional[Callable] = None,
         on_open_model_hub: Optional[Callable] = None,
         on_format_action: Optional[Callable[[str, str], None]] = None,
         on_heading_change: Optional[Callable[[int], None]] = None,
@@ -62,6 +63,7 @@ class RibbonBar(ft.Container):
         self.on_browse_out = on_browse_out
         self.on_clear_editor = on_clear_editor
         self.on_import_youtube = on_import_youtube
+        self.on_transcribe_media = on_transcribe_media
         self.on_open_model_hub = on_open_model_hub
         self.on_format_action = on_format_action
         self.on_heading_change = on_heading_change
@@ -176,6 +178,12 @@ class RibbonBar(ft.Container):
             icon_size=18,
             on_click=self._on_youtube_click,
         )
+        self.btn_transcribe = ft.IconButton(
+            icon=ft.Icons.MIC_ROUNDED,
+            tooltip=t("ribbon.btn_transcribe"),
+            icon_size=18,
+            on_click=self._on_transcribe_click,
+        )
         self.btn_model_hub = ft.IconButton(
             icon=ft.Icons.AUTO_AWESOME_MOSAIC_ROUNDED,
             tooltip=t("ribbon.btn_model_hub"),
@@ -280,6 +288,7 @@ class RibbonBar(ft.Container):
                 self.btn_file_save,
                 self.btn_file_clear,
                 self.btn_youtube,
+                self.btn_transcribe,
                 self.btn_model_hub,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
@@ -518,6 +527,10 @@ class RibbonBar(ft.Container):
     def _on_youtube_click(self, e):
         if self.on_import_youtube:
             self.on_import_youtube(e)
+
+    def _on_transcribe_click(self, e):
+        if self.on_transcribe_media:
+            self.on_transcribe_media(e)
 
     def _on_model_hub_click(self, e):
         if self.on_open_model_hub:

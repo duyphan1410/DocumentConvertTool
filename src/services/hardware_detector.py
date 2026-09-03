@@ -362,3 +362,6 @@ def recommend_model(hw: HardwareInfo) -> str:
 
     print(f"[DEBUG] [HARDWARE] Evaluated Recommendation -> '{rec}' for {hw.cpu_name}")
     return rec
+
+
+get_hardware_info = detect_hardware

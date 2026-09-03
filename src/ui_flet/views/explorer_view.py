@@ -55,6 +55,19 @@ EXT_CONFIG = {
     ".py": (ft.Icons.CODE_ROUNDED, ft.Colors.YELLOW_600),
     ".js": (ft.Icons.CODE_ROUNDED, ft.Colors.AMBER_300),
     ".css": (ft.Icons.STYLE_ROUNDED, ft.Colors.CYAN_400),
+    # Audio formats
+    ".mp3": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.PINK_400),
+    ".wav": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.PINK_300),
+    ".m4a": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.PURPLE_300),
+    ".flac": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.INDIGO_300),
+    ".aac": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.PINK_400),
+    ".ogg": (ft.Icons.AUDIO_FILE_ROUNDED, ft.Colors.PURPLE_400),
+    # Video formats
+    ".mp4": (ft.Icons.VIDEO_FILE_ROUNDED, ft.Colors.CYAN_400),
+    ".mkv": (ft.Icons.VIDEO_FILE_ROUNDED, ft.Colors.TEAL_300),
+    ".avi": (ft.Icons.VIDEO_FILE_ROUNDED, ft.Colors.CYAN_300),
+    ".mov": (ft.Icons.VIDEO_FILE_ROUNDED, ft.Colors.BLUE_GREY_400),
+    ".webm": (ft.Icons.VIDEO_FILE_ROUNDED, ft.Colors.LIGHT_BLUE_300),
 }
 
 

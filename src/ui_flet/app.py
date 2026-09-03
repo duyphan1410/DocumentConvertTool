@@ -232,7 +232,6 @@ class DocumentConvertApp:
             on_browse_out=lambda e: self.file_controller.trigger_browse_output(e),
             on_clear_editor=lambda e: self.editor_controller.clear_editor(e),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
-            on_transcribe_media=lambda e: self.file_controller.trigger_media_transcribe(e),
             on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_format_action=lambda p, s: self.editor_controller.on_format_action(p, s),
             on_heading_change=lambda lvl: self.editor_controller.on_heading_change(lvl),
@@ -311,7 +310,7 @@ class DocumentConvertApp:
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "")
             or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
             on_file_selected=lambda path: asyncio.create_task(
-                self.file_controller.open_file_by_path(path)
+                self._on_explorer_file_clicked(path)
             ),
         )
 
@@ -602,7 +601,14 @@ class DocumentConvertApp:
             self._show_editor_view(auto_select_edit=False)
 
     async def _on_explorer_file_clicked(self, file_path: str):
-        await self.file_controller.open_file_by_path(file_path)
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in (
+            ".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg",
+            ".mp4", ".mkv", ".avi", ".mov", ".webm",
+        ):
+            self.file_controller.trigger_media_transcribe(default_file_path=file_path)
+        else:
+            await self.file_controller.open_file_by_path(file_path)
 
     def _show_batch_converter(self, initial_source: str = ""):
         """Opens the Batch & Archive Converter modal dialog."""

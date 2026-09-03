@@ -33,6 +33,10 @@ def _get_file_icon(in_path: str, is_orphaned: bool = False) -> tuple[str, str]:
         return ft.Icons.DATA_OBJECT_OUTLINED, ft.Colors.PURPLE_400
     elif ext == ".pptx":
         return ft.Icons.CO_PRESENT_OUTLINED, ft.Colors.DEEP_ORANGE_400
+    elif ext in (".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg"):
+        return ft.Icons.AUDIO_FILE_OUTLINED, ft.Colors.PINK_400
+    elif ext in (".mp4", ".mkv", ".mov", ".avi", ".webm"):
+        return ft.Icons.VIDEO_FILE_OUTLINED, ft.Colors.CYAN_400
     return ft.Icons.INSERT_DRIVE_FILE_OUTLINED, ft.Colors.ON_SURFACE_VARIANT
 
 

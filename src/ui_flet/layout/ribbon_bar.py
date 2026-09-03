@@ -279,7 +279,6 @@ class RibbonBar(ft.Container):
                 self.btn_file_open,
                 self.btn_file_save,
                 self.btn_file_clear,
-                self.btn_youtube,
                 self.btn_model_hub,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,

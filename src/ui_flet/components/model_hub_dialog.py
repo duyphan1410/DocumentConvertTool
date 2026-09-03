@@ -93,7 +93,7 @@ def build_model_hub_view(
     cards_row = ft.Row(
         controls=[],
         spacing=12,
-        alignment=ft.MainAxisAlignment.START if is_embedded else ft.MainAxisAlignment.SPACE_BETWEEN,
+        alignment=ft.MainAxisAlignment.START,
         vertical_alignment=ft.CrossAxisAlignment.START,
         wrap=True if is_embedded else False,
     )
@@ -342,7 +342,6 @@ def build_model_hub_view(
         locale_str = getattr(page, "locale_str", "vi") if page else "vi"
 
         card = ft.Container(
-            width=270 if is_embedded else 250,
             content=ft.Column(
                 controls=[
                     ft.Row(
@@ -425,7 +424,9 @@ def build_model_hub_view(
             border=make_border(1.5 if is_rec else 1, accent_primary if is_rec else border_color),
             border_radius=8,
             padding=12,
-            height=310,
+            height=275,
+            expand=1 if not is_embedded else None,
+            width=255 if is_embedded else None,
         )
         return card
 
@@ -451,9 +452,11 @@ def build_model_hub_view(
                             size=12,
                             weight=ft.FontWeight.W_600,
                             color=text_primary,
+                            expand=True,
                         ),
                     ],
                     spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
                 ),
                 ft.Row(
                     controls=[
@@ -462,6 +465,7 @@ def build_model_hub_view(
                             t("model_hub.recommendation", model_name=rec_model.display_name),
                             size=12,
                             color=text_secondary,
+                            expand=True,
                         ),
                     ],
                     spacing=6,
@@ -469,7 +473,7 @@ def build_model_hub_view(
             ],
             spacing=4,
         ),
-        padding=12,
+        padding=10,
         bgcolor=header_bg,
         border_radius=8,
         border=make_border(1, border_color),
@@ -581,17 +585,15 @@ def build_model_hub_view(
         content=ft.Column(
             controls=[
                 hw_banner,
-                ft.Container(height=4),
+                ft.Container(height=2),
                 cards_row,
                 ft.Divider(height=1, color=border_color),
                 footer_row,
             ],
-            spacing=8,
-            scroll=ft.ScrollMode.AUTO if is_embedded else None,
-            expand=True if is_embedded else False,
+            spacing=6,
+            tight=True,
         ),
-        expand=True if is_embedded else False,
-        width=820 if not is_embedded else None,
+        width=830 if not is_embedded else None,
     )
     return root_container
 
@@ -623,6 +625,8 @@ def show_model_hub_dialog(
     dialog = ft.AlertDialog(
         modal=False,
         on_dismiss=close_dialog,
+        content_padding=ft.Padding(18, 10, 18, 12),
+        inset_padding=ft.Padding(16, 16, 16, 16),
     )
 
     content_view = build_model_hub_view(

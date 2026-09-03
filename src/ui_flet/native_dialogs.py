@@ -17,8 +17,11 @@ def enable_high_dpi_awareness():
                 pass
 
 INPUT_FILETYPES = [
-    ("Supported Documents (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml"),
+    ("Supported Documents & Media (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml;*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml;*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm"),
     ("Markdown (*.md)", "*.md"),
+    ("Audio & Video (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm"),
+    ("Audio Files (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg)", "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg"),
+    ("Video Files (*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.mp4;*.mkv;*.avi;*.mov;*.webm"),
     ("PowerPoint (*.pptx)", "*.pptx"),
     ("Excel (*.xlsx, *.xls)", "*.xlsx;*.xls"),
     ("Word (*.docx)", "*.docx"),

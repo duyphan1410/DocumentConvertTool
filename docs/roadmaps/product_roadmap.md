@@ -88,15 +88,24 @@
 
 ---
 
-### 🎙️ v1.9.0 (AI Model Hub, Offline Speech Transcriber & Format Expansion):
+### ✅ v1.9.0 (AI Model Hub, Offline Speech Transcriber & Background Transcription):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **AI Model Hub & Marketplace** | `src/ui_flet/components/model_hub_dialog.py`, `src/ui_flet/views/settings_view.py` | Giao diện quản lý tải/xóa Model AI độc lập (`tiny`, `base`, `small`, `PhoWhisper`); Tự động quét phần cứng (RAM, CPU Cores, GPU) gắn nhãn gợi ý; Quản lý dung lượng ổ cứng tại `%APPDATA%\DocConvert\models\`. *(Xem `docs/roadmaps/whisper_feature_plan.md`)*. | ⏳ Planned (Hero Feature) |
-| **Offline Audio/Video Speech Transcriber** | `src/services/whisper_service.py` | Engine `faster-whisper` + CTranslate2 (`int8`); Giải mã âm thanh đa định dạng `.mp4`, `.mp3`, `.wav`, `.m4a`; Phân đoạn Voice Activity Detection (VAD) mốc thời gian `[mm:ss]` và format Markdown có cấu trúc. | ⏳ Planned |
-| **Recent Files History** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Lưu danh sách 5–10 tệp mở gần đây (Recent Documents) có biểu tượng định dạng, đường dẫn rút gọn và hỗ trợ mở lại nhanh 1-click từ Welcome Dashboard. | ⏳ Planned |
+| **AI Model Hub & Marketplace** | `src/ui_flet/components/model_hub_dialog.py`, `src/ui_flet/views/settings_view.py` | Giao diện quản lý tải/xóa Model AI độc lập (`tiny`, `base`, `small`); Tự động quét phần cứng đa hãng (RAM, CPU Cores, GPU NVIDIA/AMD/Intel) gắn nhãn gợi ý; Quản lý dung lượng ổ cứng tại `%APPDATA%\DocConvert\models\`; Stream Chunking 64KB với Instant Cancel; Xác thực 2 lớp (File Hash + Runtime Load). *(Xem `docs/archive/20260903_whisper_feature_plan.md`)*. | ✅ Completed (v1.9.0) |
+| **Offline Audio/Video Speech Transcriber** | `src/services/whisper_service.py` | Engine `faster-whisper` + CTranslate2 (`int8`); Giải mã âm thanh đa định dạng `.mp3`, `.wav`, `.m4a`, `.flac`, `.aac`, `.ogg`, `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`; Voice Activity Detection (VAD) phân đoạn mốc thời gian `[mm:ss]`; Volume normalization -0.9 dBFS; Format Markdown có cấu trúc kèm bảng metadata quốc tế hóa (Vi/En). | ✅ Completed (v1.9.0) |
+| **Background Transcription & Smart Tab Integration** | `src/ui_flet/controllers/file_controller.py`, `src/ui_flet/components/transcribe_dialog.py` | Transcription chạy ngầm không đóng băng GUI; Tự động tạo Tab mới trong Workspace với mode "Save as .md" và autosave draft tức thì; Activity Bar Smart Context Routing (icon spinning + re-open dialog); Universal Media Container file dialog. *(Xem `docs/archive/20260903_background_transcription_and_tabs.md`)*. | ✅ Completed (v1.9.0) |
+
+---
+
+### 🚀 v1.9.1+ (Format Expansion & UX Polish):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Recent Files History** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Lưu danh sách 5-10 tệp mở gần đây (Recent Documents) có biểu tượng định dạng, đường dẫn rút gọn và hỗ trợ mở lại nhanh 1-click từ Welcome Dashboard. | ⏳ Planned |
 | **Image Sizing Dialog & Format Tab** | `src/ui_flet/views/editor_view.py`, `src/ui_flet/layout/ribbon_bar.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh trực quan (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh W/H) và bổ sung Contextual Format Tab động trên Ribbon Bar khi click vào ảnh. | ⏳ Planned |
-| **EPub eBook Engine (`.epub ↔ .md`)** | `src/modules/epub_module.py` | Đọc, phân giải cấu trúc chương sách và đóng gói sách điện tử `.epub` hai chiều với Markdown. | ⏳ Planned |
+| **EPub eBook Engine (`.epub <-> .md`)** | `src/modules/epub_module.py` | Đọc, phân giải cấu trúc chương sách và đóng gói sách điện tử `.epub` hai chiều với Markdown. | ⏳ Planned |
+| **PhoWhisper Tiếng Việt** | `src/services/whisper_service.py`, `src/ui_flet/components/model_hub_dialog.py` | Convert `vinai/PhoWhisper-base` sang CTranslate2, host trên Repo HuggingFace chính chủ, tối ưu ngữ điệu đa vùng miền Việt Nam. | ⏳ Planned |
 
 ---
 

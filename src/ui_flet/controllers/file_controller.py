@@ -65,6 +65,14 @@ class FileController:
         Loads document from file_path into the editor workspace.
         Handles multi-tab deduplication, creates new tabs or switches to existing ones.
         """
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in (
+            ".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg",
+            ".mp4", ".mkv", ".avi", ".mov", ".webm",
+        ):
+            self.trigger_media_transcribe(default_file_path=file_path)
+            return
+
         # 1. Multi-Tab Deduplication Guard: If file is already open, switch to that tab
         existing_tab = self.state.find_tab_by_path(file_path)
         if existing_tab:
@@ -378,69 +386,131 @@ class FileController:
             default_file_path=default_file_path,
         )
 
-    def handle_media_transcript_loaded(self, content: str, source_path: str):
-        """Injects extracted local media Markdown transcript into editor workspace."""
-        if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
-            self.app_controls["on_show_editor"]()
+    def _open_or_create_transcript_tab(self, virtual_name: str, content: str, source_label: str):
+        """
+        Non-intrusive Tab creation with disambiguation for extracted transcripts.
+        If current active tab is clean/untitled, updates it directly.
+        Otherwise creates a background tab without stealing focus.
+        """
+        import re
+        import os
+        from src.ui_flet.constants import MODES, get_default_output_dir, EDITOR_DISPLAY_LIMIT
+
+        # 1. Disambiguate tab title
+        existing_titles = [t.title for t in self.state.tabs] if self.state.tabs else []
+        stem, ext = os.path.splitext(virtual_name)
+        final_name = virtual_name
+        counter = 1
+        while final_name in existing_titles:
+            final_name = f"{stem} ({counter}){ext}"
+            counter += 1
+
+        active_tab = self.state.get_active_tab()
+        is_active_clean = (
+            active_tab is None
+            or (not active_tab.full_content or not active_tab.full_content.strip())
+        )
+
+        def_dir = get_default_output_dir()
+        file_stem = os.path.splitext(final_name)[0]
+        out_path = os.path.join(def_dir, f"{file_stem}.md")
+
+        if is_active_clean:
+            if active_tab is None:
+                active_tab = self.state.create_tab(
+                    title=final_name,
+                    mode="MD -> Markdown",
+                    in_path="",
+                    out_path=out_path,
+                    content=content,
+                    activate=True,
+                )
+            else:
+                # Update current active tab directly
+                active_tab.title = final_name
+                active_tab.full_content = content
+                active_tab.in_path = ""
+                active_tab.out_path = out_path
+                active_tab.current_mode = "MD -> Markdown"
+            active_tab.is_dirty = True
+
+            if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
+                self.app_controls["on_show_editor"]()
+            try:
+                self.ribbon_bar.select_tab("edit", force=True)
+            except Exception:
+                pass
+
+            self.file_path_bar.set_in_path(source_label)
+            self.ribbon_bar.update_mode_options(".md", preferred_mode="MD -> Markdown")
+            self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+            self.file_path_bar.set_out_path(out_path)
+
+            self.state.full_content = content
+            self.state.undo_stack.clear()
+            self.state.redo_stack.clear()
+
+            if len(content) > EDITOR_DISPLAY_LIMIT:
+                self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+            else:
+                self.editor_view.set_text(content)
+
+            self.state.undo_stack.append(self.editor_view.get_text())
+            self.state.is_dirty = True
+
+            words = len(content.split())
+            chars = len(content)
+            self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+            self.preview.update_preview(content, base_dir=None)
+
+            tab_bar = self.app_controls.get("workspace_tab_bar")
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+            self.footer_bar.set_status_key(
+                "status.file_loaded",
+                color=ft.Colors.GREEN_400,
+                filename=final_name,
+                duration="0.00",
+            )
+            self.perform_autosave(tab_id=active_tab.tab_id)
+        else:
+            # Create new background tab without stealing active typing focus
+            new_tab = self.state.create_tab(
+                title=final_name,
+                mode="MD -> Markdown",
+                in_path="",
+                out_path=out_path,
+                content=content,
+                activate=False,
+            )
+            new_tab.is_dirty = True
+            tab_bar = self.app_controls.get("workspace_tab_bar")
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
+            self.footer_bar.set_status_key(
+                "status.file_loaded",
+                color=ft.Colors.GREEN_400,
+                filename=final_name,
+                duration="0.00",
+            )
+            self.perform_autosave(tab_id=new_tab.tab_id)
+
         try:
-            self.ribbon_bar.select_tab("edit", force=True)
+            self.page.update()
         except Exception:
             pass
 
-        import re
+    def handle_media_transcript_loaded(self, content: str, source_path: str, title: Optional[str] = None):
+        """Injects extracted local media Markdown transcript into editor workspace."""
         base_name = os.path.basename(source_path)
         file_stem = os.path.splitext(base_name)[0]
         virtual_name = f"{file_stem}.md"
+        self._open_or_create_transcript_tab(virtual_name, content, f"Media: {source_path}")
 
-        def_dir = get_default_output_dir()
-        self.state.in_path = ""
-        self.file_path_bar.set_in_path(f"Media: {source_path}")
-
-        # Automatically switch conversion mode to 'MD -> Markdown' (Save as MD)
-        ext = ".md"
-        preferred_mode = "MD -> Markdown"
-        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
-        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
-
-        out_ext = MODES.get(self.state.current_mode, {"out_ext": ".md"})["out_ext"]
-        self.state.out_path = os.path.join(def_dir, f"{file_stem}{out_ext}")
-        self.file_path_bar.set_out_path(self.state.out_path)
-
-        self.state.full_content = content
-        self.state.undo_stack.clear()
-        self.state.redo_stack.clear()
-
-        if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
-        else:
-            self.editor_view.set_text(content)
-
-        self.state.undo_stack.append(self.editor_view.get_text())
-        self.state.is_dirty = True
-
-        words = len(content.split())
-        chars = len(content)
-        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-        self.preview.update_preview(content, base_dir=None)
-
-        self.footer_bar.set_status_key(
-            "status.file_loaded",
-            color=ft.Colors.GREEN_400,
-            filename=virtual_name,
-            duration="0.00",
-        )
-        self.save_current_tab_draft()
-        self.page.update()
-
-    def handle_youtube_transcript_loaded(self, content: str, source_url: str):
+    def handle_youtube_transcript_loaded(self, content: str, source_url: str, title: Optional[str] = None):
         """Injects extracted video Markdown transcript into editor workspace (YouTube or Drive)."""
-        if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
-            self.app_controls["on_show_editor"]()
-        try:
-            self.ribbon_bar.select_tab("edit", force=True)
-        except Exception:
-            pass
-
         from src.services.drive_service import is_drive_url, extract_drive_file_id
         from src.services.youtube_service import extract_video_id
         import re
@@ -455,59 +525,21 @@ class FileController:
             source_label = f"YouTube: {source_url}"
             fallback_stem = f"youtube_{vid_id}"
 
-        def_dir = get_default_output_dir()
-
         # Extract title from markdown header for meaningful default filename
         first_line = content.splitlines()[0] if content else ""
         if first_line.startswith("# "):
             title_candidate = first_line[2:].strip()
             safe_title = re.sub(r'[\\/*?"<>|]', "", title_candidate)
             safe_title = re.sub(r'\s+', "_", safe_title).strip("_")[:60]
+        elif title:
+            safe_title = re.sub(r'[\\/*?"<>|]', "", title)
+            safe_title = re.sub(r'\s+', "_", safe_title).strip("_")[:60]
         else:
             safe_title = ""
 
         file_stem = safe_title if safe_title else fallback_stem
         virtual_name = f"{file_stem}.md"
-
-        self.state.in_path = ""
-        self.file_path_bar.set_in_path(source_label)
-
-        # Automatically switch conversion mode to 'MD -> Markdown' (Save as MD)
-        ext = ".md"
-        preferred_mode = "MD -> Markdown"
-        self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
-        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
-
-        out_ext = MODES.get(self.state.current_mode, {"out_ext": ".md"})["out_ext"]
-        self.state.out_path = os.path.join(def_dir, f"{file_stem}{out_ext}")
-        self.file_path_bar.set_out_path(self.state.out_path)
-
-        self.state.full_content = content
-        self.state.undo_stack.clear()
-        self.state.redo_stack.clear()
-
-        if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
-        else:
-            self.editor_view.set_text(content)
-
-        self.state.undo_stack.append(self.editor_view.get_text())
-        self.state.is_dirty = True
-
-        words = len(content.split())
-        chars = len(content)
-        self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-        self.preview.update_preview(content, base_dir=None)
-
-        self.footer_bar.set_status_key(
-            "status.file_loaded",
-            color=ft.Colors.GREEN_400,
-            filename=virtual_name,
-            duration="0.00",
-        )
-        self.footer_bar.set_processing(False)
-        self.perform_autosave()
-        self.page.update()
+        self._open_or_create_transcript_tab(virtual_name, content, source_label)
 
     def trigger_save_markdown(self, e=None):
         """Asynchronously triggers Save As dialog for Markdown content."""
@@ -667,6 +699,7 @@ class FileController:
                     manifest = json.load(f)
                 if manifest.get("tabs") and len(manifest["tabs"]) > 0:
                     return True
+                return False
             except Exception:
                 pass
         if os.path.exists(DRAFTS_DIR):
@@ -699,8 +732,19 @@ class FileController:
         res = await asyncio.to_thread(self._sync_load_all_draft_data)
         if not res or not res.get("tabs"):
             self.footer_bar.set_status(t("status.ready"), color=ft.Colors.ON_SURFACE_VARIANT)
-            if workspace_view and hasattr(workspace_view, "show_welcome"):
-                workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
+            has_workspace = bool(
+                getattr(self.state, "workspace_folder", "")
+                and os.path.exists(self.state.workspace_folder)
+            )
+            if has_workspace:
+                if workspace_view and hasattr(workspace_view, "show_editor"):
+                    workspace_view.show_editor(ribbon_bar=self.ribbon_bar, auto_select_edit=False)
+                folder_name = os.path.basename(self.state.workspace_folder) or self.state.workspace_folder
+                from src.__version__ import __version__
+                self.page.title = f"{folder_name} — Document Converter v{__version__}"
+            else:
+                if workspace_view and hasattr(workspace_view, "show_welcome"):
+                    workspace_view.show_welcome(ribbon_bar=self.ribbon_bar)
             try:
                 self.page.update()
             except Exception:
@@ -740,7 +784,7 @@ class FileController:
 
         ext = os.path.splitext(active_tab.in_path)[1].lower() if active_tab.in_path else ""
         def_mode = getattr(self.state, "default_mode", "")
-        self.ribbon_bar.update_mode_options(ext, preferred_mode=def_mode or active_tab.current_mode)
+        self.ribbon_bar.update_mode_options(ext, preferred_mode=active_tab.current_mode or def_mode)
         active_tab.current_mode = self.ribbon_bar.mode_dropdown.value
 
         if active_tab.out_path:

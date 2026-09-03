@@ -307,6 +307,19 @@ class DocumentConvertApp:
             active_tab=getattr(self.state, "active_activity_tab", "explorer"),
         )
 
+        from src.services.transcription_manager import TranscriptionJobManager, TranscriptionJob
+        manager = TranscriptionJobManager.get_instance()
+        try:
+            manager.set_event_loop(asyncio.get_running_loop())
+        except Exception:
+            pass
+
+        def _on_global_job_changed(job: Optional[TranscriptionJob]):
+            is_running = job is not None
+            self.activity_bar.set_item_loading("youtube", is_running)
+
+        manager.subscribe_global(_on_global_job_changed)
+
         self.quick_open_dialog = QuickOpenDialog(
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "")
             or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
@@ -545,9 +558,17 @@ class DocumentConvertApp:
         )
 
     def _show_editor_view(self, auto_select_edit: bool = True):
-        self._check_settings_unsaved(
-            lambda: self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar, auto_select_edit=auto_select_edit)
-        )
+        def _apply():
+            self.workspace_view.show_editor(ribbon_bar=self.ribbon_bar, auto_select_edit=auto_select_edit)
+            if self.state.workspace_folder and os.path.exists(self.state.workspace_folder) and not self.state.active_tab:
+                from src.__version__ import __version__
+                folder_name = os.path.basename(self.state.workspace_folder) or self.state.workspace_folder
+                self.page.title = f"{folder_name} — Document Converter v{__version__}"
+                try:
+                    self.page.update()
+                except Exception:
+                    pass
+        self._check_settings_unsaved(_apply)
 
     def _show_settings_view(self):
         self.workspace_view.show_settings(ribbon_bar=self.ribbon_bar)
@@ -608,7 +629,13 @@ class DocumentConvertApp:
         elif tab_name == "search":
             self.quick_open_dialog.show(self.page)
         elif tab_name == "youtube":
-            self.file_controller.trigger_youtube_import(None)
+            from src.services.transcription_manager import TranscriptionJobManager
+            mgr = TranscriptionJobManager.get_instance()
+            local_job = mgr.get_active_job(job_types=["local_media", "local_audio", "local_video"])
+            if local_job:
+                self.file_controller.trigger_media_transcribe(default_file_path=local_job.source)
+            else:
+                self.file_controller.trigger_youtube_import(None)
 
     async def _on_open_workspace_folder(self, e=None):
         folder = await pick_directory_async(self.page, self.file_picker_in)

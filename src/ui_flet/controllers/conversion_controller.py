@@ -24,9 +24,11 @@ class ConversionController:
     def __init__(self, page: ft.Page, state: AppState, app_controls: dict):
         self.page = page
         self.state = state
-        self.editor_view = app_controls["editor_view"]
-        self.file_path_bar = app_controls["file_path_bar"]
-        self.footer_bar = app_controls["footer_bar"]
+        self.app_controls = app_controls
+        self.editor_view = app_controls.get("editor_view")
+        self.file_path_bar = app_controls.get("file_path_bar")
+        self.footer_bar = app_controls.get("footer_bar")
+        self.ribbon_bar = app_controls.get("ribbon_bar")
         self._active_tasks = set()
 
     def on_convert_clicked(self, e=None):
@@ -64,8 +66,11 @@ class ConversionController:
     async def _async_check_file_and_convert(self, out_path: str):
         if os.path.exists(out_path):
             # Reveal File Path Bar if hidden so user can inspect or change destination path
-            if not self.file_path_bar.container.visible:
+            if hasattr(self.file_path_bar, "container") and not self.file_path_bar.container.visible:
                 self.file_path_bar.container.visible = True
+                self.state.show_path_bar = True
+                if self.ribbon_bar and hasattr(self.ribbon_bar, "set_path_bar_visible"):
+                    self.ribbon_bar.set_path_bar_visible(True)
                 try:
                     self.file_path_bar.container.update()
                 except Exception:
@@ -144,6 +149,9 @@ class ConversionController:
             if hasattr(self, "file_path_bar") and self.file_path_bar:
                 if hasattr(self.file_path_bar, "container") and not self.file_path_bar.container.visible:
                     self.file_path_bar.container.visible = True
+                    self.state.show_path_bar = True
+                    if self.ribbon_bar and hasattr(self.ribbon_bar, "set_path_bar_visible"):
+                        self.ribbon_bar.set_path_bar_visible(True)
 
                 val = getattr(getattr(self.file_path_bar, "out_path_text", None), "value", "") or ""
                 try:

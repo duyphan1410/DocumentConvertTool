@@ -467,7 +467,7 @@ class LayoutController:
         if ribbon_bar:
             ext = os.path.splitext(incoming_tab.in_path)[1].lower() if incoming_tab.in_path else ""
             def_mode = getattr(self.state, "default_mode", "")
-            ribbon_bar.update_mode_options(ext, preferred_mode=def_mode or incoming_tab.current_mode)
+            ribbon_bar.update_mode_options(ext, preferred_mode=incoming_tab.current_mode or def_mode)
 
         # 6. Hydrate Preview
         if preview:

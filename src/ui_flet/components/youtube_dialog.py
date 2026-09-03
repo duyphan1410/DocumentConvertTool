@@ -2,7 +2,7 @@
 Video Transcript Import Dialog for Flet UI.
 Supports both YouTube and Google Drive video URLs.
 Extracts subtitles from YouTube or transcribes speech using local Whisper AI models.
-No Google Speech API — only local offline AI or YouTube's built-in captions.
+Integrates with TranscriptionJobManager for non-blocking background execution, cancellation, and progress streaming.
 """
 import asyncio
 from typing import Callable, Optional
@@ -11,18 +11,22 @@ import flet as ft
 from src.i18n import t
 from src.services.youtube_service import extract_video_id, fetch_youtube_transcript
 from src.services.drive_service import is_drive_url, extract_drive_file_id
+from src.services.transcription_manager import TranscriptionJobManager, TranscriptionJob, JobStatus
 from src.ui_flet.theme import PALETTES, resolve_color, get_style_color
 
 
 def show_youtube_dialog(
     page: ft.Page,
-    on_transcript_loaded: Callable[[str, str], None],
+    on_transcript_loaded: Optional[Callable[[str, str], None]] = None,
+    on_success: Optional[Callable[[str, str], None]] = None,
     current_palette: str = "Violet Cyberpunk",
 ):
     """
     Displays modal dialog to import video subtitles/transcript as Markdown.
     Accepts YouTube URLs and Google Drive video URLs.
+    Non-blocking: runs in background and allows resume / cancel.
     """
+    callback_success = on_success or on_transcript_loaded
     page.overlay[:] = [c for c in page.overlay if not isinstance(c, ft.AlertDialog)]
 
     is_dark = page.theme_mode != ft.ThemeMode.LIGHT
@@ -31,6 +35,12 @@ def show_youtube_dialog(
     text_primary = get_style_color("text_primary", is_dark)
     text_secondary = get_style_color("text_secondary", is_dark)
     accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
+
+    manager = TranscriptionJobManager.get_instance()
+    try:
+        manager.set_event_loop(asyncio.get_running_loop())
+    except Exception:
+        pass
 
     url_input = ft.TextField(
         label=t("youtube.url_label"),
@@ -69,8 +79,29 @@ def show_youtube_dialog(
         width=220,
     )
 
-    progress_ring = ft.ProgressRing(width=18, height=18, stroke_width=2.5, visible=False)
+    progress_ring = ft.ProgressRing(width=16, height=16, stroke_width=2.5, visible=False)
+    progress_bar = ft.ProgressBar(
+        value=None,
+        visible=False,
+        color=accent_primary,
+        bgcolor=ft.Colors.with_opacity(0.15, accent_primary),
+    )
     status_text = ft.Text("", size=12, color=accent_primary, visible=False, expand=True)
+
+    # Info banner when queued behind another job
+    queue_banner = ft.Container(
+        visible=False,
+        content=ft.Row(
+            controls=[
+                ft.Icon(ft.Icons.HOURGLASS_TOP_ROUNDED, color=ft.Colors.BLUE_400, size=18),
+                ft.Text("", size=12, color=ft.Colors.BLUE_300, expand=True),
+            ],
+            spacing=8,
+        ),
+        bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.BLUE_400),
+        border_radius=6,
+        padding=ft.Padding(left=10, top=7, right=10, bottom=7),
+    )
 
     # Banner shown when no Whisper model is installed
     no_model_banner = ft.Container(
@@ -99,24 +130,6 @@ def show_youtube_dialog(
         visible=False,
     )
 
-    def _show_inline_error(msg: str):
-        status_text.color = ft.Colors.RED_400
-        status_text.value = msg
-        status_text.visible = True
-        page.update()
-
-    def _show_status(msg: str):
-        status_text.color = accent_primary
-        status_text.value = msg
-        status_text.visible = True
-        progress_ring.visible = True
-        page.update()
-
-    def _show_no_model_banner():
-        no_model_banner.visible = True
-        btn_open_hub.visible = True
-        page.update()
-
     btn_fetch = ft.ElevatedButton(
         t("youtube.btn_fetch"),
         icon=ft.Icons.DOWNLOAD_ROUNDED,
@@ -131,18 +144,83 @@ def show_youtube_dialog(
         t("youtube.btn_cancel"),
     )
 
+    btn_cancel_job = ft.TextButton(
+        "Cancel Task",
+        icon=ft.Icons.CANCEL_ROUNDED,
+        style=ft.ButtonStyle(color=ft.Colors.RED_400),
+        visible=False,
+    )
+
     status_row = ft.Row(
         controls=[progress_ring, status_text],
         alignment=ft.MainAxisAlignment.START,
         spacing=8,
     )
 
+    tracked_job: Optional[TranscriptionJob] = None
+
+    def _ui_job_listener(job: TranscriptionJob):
+        if not dialog.open:
+            return
+        if job.status == JobStatus.RUNNING:
+            progress_bar.visible = True
+            progress_ring.visible = True
+            progress_bar.value = job.progress if job.progress > 0 else None
+            status_text.value = job.stage_message or "Processing..."
+            status_text.color = accent_primary
+            status_text.visible = True
+            btn_fetch.disabled = True
+            btn_cancel_job.visible = True
+        elif job.status == JobStatus.QUEUED:
+            queue_banner.content.controls[1].value = f"Queued: Waiting for worker ({job.display_name})"
+            queue_banner.visible = True
+            btn_fetch.disabled = True
+            btn_cancel_job.visible = True
+        elif job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            progress_bar.visible = False
+            progress_ring.visible = False
+            btn_cancel_job.visible = False
+            btn_fetch.disabled = False
+            url_input.disabled = False
+            if job.status == JobStatus.FAILED:
+                status_text.value = job.error_message or "Failed"
+                status_text.color = ft.Colors.RED_400
+                status_text.visible = True
+            elif job.status == JobStatus.CANCELLED:
+                status_text.value = "Task cancelled"
+                status_text.color = text_secondary
+                status_text.visible = True
+            elif job.status == JobStatus.COMPLETED:
+                close_dialog()
+                return
+
+        try:
+            page.update()
+        except Exception:
+            pass
+
     def close_dialog(e=None):
+        if tracked_job:
+            tracked_job.unsubscribe(_ui_job_listener)
         dialog.open = False
         try:
             page.update()
         except Exception:
             pass
+
+    def on_cancel_job_click(e):
+        if tracked_job:
+            manager.cancel_job(tracked_job.job_id)
+            btn_cancel_job.visible = False
+            status_text.value = "Cancelled"
+            status_text.color = text_secondary
+            progress_bar.visible = False
+            progress_ring.visible = False
+            btn_fetch.disabled = False
+            url_input.disabled = False
+            page.update()
+
+    btn_cancel_job.on_click = on_cancel_job_click
 
     def _open_model_hub(e=None):
         close_dialog()
@@ -155,18 +233,15 @@ def show_youtube_dialog(
     btn_open_hub.on_click = _open_model_hub
 
     def _clean_and_set_url(text: str) -> bool:
-        """Normalizes YouTube or Drive URL in the text field. Returns True if recognized."""
         if not text:
             return False
         clean = text.strip()
 
-        # Drive URL
         if is_drive_url(clean):
             url_input.value = clean
             url_input.error_text = None
             return True
 
-        # YouTube URL/ID
         vid = extract_video_id(clean)
         if vid:
             if "youtube.com" in clean or "youtu.be" in clean:
@@ -197,7 +272,6 @@ def show_youtube_dialog(
         except Exception as ex:
             print(f"[DEBUG] Clipboard paste error: {ex}")
 
-    # Auto-populate if clipboard already contains a valid link
     try:
         from src.utils.clipboard import get_clipboard_text
         initial_clip = get_clipboard_text(page)
@@ -213,186 +287,150 @@ def show_youtube_dialog(
         on_click=paste_from_clipboard,
     )
 
-    async def on_fetch_clicked(e):
+    # Attach to existing running/queued YouTube/Drive job if present
+    active_yt_job = manager.get_active_job(job_types=["youtube", "drive"])
+    if active_yt_job:
+        tracked_job = active_yt_job
+        tracked_job.subscribe(_ui_job_listener)
+        url_input.value = active_yt_job.source
+        url_input.disabled = True
+        btn_fetch.disabled = True
+        btn_cancel_job.visible = True
+        progress_bar.visible = True
+        progress_ring.visible = True
+        progress_bar.value = active_yt_job.progress if active_yt_job.progress > 0 else None
+        status_text.value = active_yt_job.stage_message or "Processing..."
+        status_text.visible = True
+
+    def _execute_transcription_task(job: TranscriptionJob, progress_cb: Callable[[str, float], None]):
+        url = job.source
+        lang_choice = lang_dropdown.value
+        preferred_langs = ["vi", "en"] if lang_choice == "vi" else (["en", "vi"] if lang_choice == "en" else ["vi", "en"])
+        speech_lang = "vi" if lang_choice == "vi" else ("en" if lang_choice == "en" else None)
+        include_ts = chk_timestamps.value
+        allow_trans = chk_auto_translate.value
+
+        # Google Drive URL
+        if is_drive_url(url):
+            progress_cb(t("drive.downloading_audio"), 0.1)
+
+            def _drive_status_cb(stage: str, *args):
+                if job.cancel_event.is_set():
+                    return
+                if stage == "download_progress" and len(args) >= 2:
+                    dl, tot = args[0], args[1]
+                    pct = (dl / tot) if tot > 0 else 0.0
+                    dl_mb, tot_mb = dl / (1024 * 1024), tot / (1024 * 1024)
+                    msg = t("drive.download_progress", downloaded=f"{dl_mb:.1f}", total=f"{tot_mb:.1f}", percent=int(pct * 100))
+                    progress_cb(msg, min(0.1 + pct * 0.4, 0.5))
+                elif stage == "preprocessing":
+                    progress_cb(t("speech.preprocessing"), 0.6)
+                elif stage == "transcribing":
+                    from src.services.whisper_service import get_best_installed_model
+                    mid = get_best_installed_model()
+                    from src.services.model_manager import AVAILABLE_MODELS
+                    meta = AVAILABLE_MODELS.get(mid)
+                    mname = meta.display_name if meta else (mid or "Whisper")
+                    progress_cb(t("speech.transcribing_with_model", model_name=mname), 0.8)
+
+            from src.services.drive_service import transcribe_drive_video
+            return transcribe_drive_video(url, speech_lang, include_ts, _drive_status_cb)
+
+        # YouTube URL
+        else:
+            progress_cb(t("youtube.fetching"), 0.15)
+            success, md_content, err_code, _detected_lang = fetch_youtube_transcript(
+                url_or_id=url,
+                preferred_languages=preferred_langs,
+                include_timestamps=include_ts,
+                allow_auto_translate=allow_trans,
+            )
+            if success:
+                return True, md_content, None
+
+            # Fallback to Whisper speech transcription
+            if err_code in ("ERR_NO_SUBTITLES", "ERR_EMPTY_SUBTITLES") and chk_speech_fallback.value:
+                from src.services.whisper_service import get_best_installed_model
+                model_id = get_best_installed_model()
+                if model_id:
+                    from src.services.model_manager import AVAILABLE_MODELS
+                    model_meta = AVAILABLE_MODELS.get(model_id)
+                    model_name = model_meta.display_name if model_meta else model_id
+                    progress_cb(t("speech.transcribing_with_model", model_name=model_name), 0.4)
+
+                    def _yt_status_cb(stage: str, *args):
+                        if job.cancel_event.is_set():
+                            return
+                        if stage == "preprocessing":
+                            progress_cb(t("speech.preprocessing"), 0.5)
+                        elif stage == "transcribing":
+                            progress_cb(t("speech.transcribing_with_model", model_name=model_name), 0.8)
+
+                    from src.services.speech_service import transcribe_youtube_speech
+                    return transcribe_youtube_speech(
+                        url_or_id=url,
+                        language=speech_lang,
+                        include_timestamps=include_ts,
+                        status_callback=_yt_status_cb,
+                    )
+                else:
+                    return False, "", "ERR_NO_LOCAL_MODEL"
+
+            return success, md_content, err_code
+
+    def on_fetch_clicked(e):
         url = url_input.value.strip() if url_input.value else ""
         if not url:
             url_input.error_text = t("youtube.invalid_url")
             page.update()
             return
 
-        # Reset UI state
         url_input.error_text = None
         no_model_banner.visible = False
         btn_open_hub.visible = False
         btn_fetch.disabled = True
-        btn_cancel.disabled = True
-
-        # Language preference
-        lang_choice = lang_dropdown.value
-        if lang_choice == "vi":
-            preferred_langs = ["vi", "en"]
-            speech_lang = "vi"
-        elif lang_choice == "en":
-            preferred_langs = ["en", "vi"]
-            speech_lang = "en"
-        else:
-            preferred_langs = ["vi", "en"]
-            speech_lang = None  # Auto-detect language in Whisper
-
-        include_ts = chk_timestamps.value
-        allow_trans = chk_auto_translate.value
-
-        success = False
-        md_content = ""
-        err_code = None
-
-        loop = asyncio.get_running_loop()
-
-        def _update_status_safe(text: str):
-            def _apply():
-                status_text.value = text
-                status_text.visible = True
-                progress_ring.visible = True
-                page.update()
-            loop.call_soon_threadsafe(_apply)
-
-        # ── BRANCH: Google Drive URL ──────────────────────────────────────────
-        if is_drive_url(url):
-            file_id = extract_drive_file_id(url)
-            if not file_id:
-                url_input.error_text = t("drive.invalid_url")
-                btn_fetch.disabled = False
-                btn_cancel.disabled = False
-                page.update()
-                return
-
-            _show_status(t("drive.downloading_audio"))
-
-            def _drive_status_cb(stage: str, *args):
-                if stage == "download_progress" and len(args) >= 2:
-                    dl, tot = args[0], args[1]
-                    dl_mb = dl / (1024 * 1024)
-                    tot_mb = tot / (1024 * 1024)
-                    pct = int((dl / tot) * 100) if tot > 0 else 0
-                    msg = t("drive.download_progress", downloaded=f"{dl_mb:.1f}", total=f"{tot_mb:.1f}", percent=pct)
-                    _update_status_safe(msg)
-                elif stage == "preprocessing":
-                    _update_status_safe(t("speech.preprocessing"))
-                elif stage == "transcribing":
-                    from src.services.speech_service import get_best_installed_model
-                    mid = get_best_installed_model()
-                    from src.services.model_manager import AVAILABLE_MODELS
-                    meta = AVAILABLE_MODELS.get(mid)
-                    mname = meta.display_name if meta else (mid or "Whisper")
-                    _update_status_safe(t("speech.transcribing_with_model", model_name=mname))
-
-            from src.services.drive_service import transcribe_drive_video
-            success, md_content, err_code = await asyncio.to_thread(
-                transcribe_drive_video,
-                url,
-                speech_lang,
-                include_ts,
-                _drive_status_cb,
-            )
-
-        # ── BRANCH: YouTube URL ───────────────────────────────────────────────
-        else:
-            video_id = extract_video_id(url)
-            if not video_id:
-                url_input.error_text = t("youtube.invalid_url")
-                btn_fetch.disabled = False
-                btn_cancel.disabled = False
-                page.update()
-                return
-
-            # 1. Try standard YouTube subtitles first
-            _show_status(t("youtube.fetching"))
-            success, md_content, err_code, _detected_lang = await asyncio.to_thread(
-                fetch_youtube_transcript,
-                url_or_id=url,
-                preferred_languages=preferred_langs,
-                include_timestamps=include_ts,
-                allow_auto_translate=allow_trans,
-            )
-
-            # 2. Fallback: local Whisper transcription (if subs not found and checkbox enabled)
-            if not success and err_code in ("ERR_NO_SUBTITLES", "ERR_EMPTY_SUBTITLES") and chk_speech_fallback.value:
-                from src.services.speech_service import get_best_installed_model
-                model_id = get_best_installed_model()
-
-                if model_id:
-                    from src.services.model_manager import AVAILABLE_MODELS
-                    model_meta = AVAILABLE_MODELS.get(model_id)
-                    model_name = model_meta.display_name if model_meta else model_id
-                    _show_status(t("speech.transcribing_with_model", model_name=model_name))
-
-                    def _yt_status_cb(stage: str, *args):
-                        if stage == "preprocessing":
-                            _update_status_safe(t("speech.preprocessing"))
-                        elif stage == "transcribing":
-                            _update_status_safe(t("speech.transcribing_with_model", model_name=model_name))
-
-                    from src.services.speech_service import transcribe_youtube_speech
-                    sp_success, sp_md, sp_err = await asyncio.to_thread(
-                        transcribe_youtube_speech,
-                        url_or_id=url,
-                        language=speech_lang,
-                        include_timestamps=include_ts,
-                        status_callback=_yt_status_cb,
-                    )
-                    if sp_success:
-                        success = True
-                        md_content = sp_md
-                        err_code = None
-                    else:
-                        err_code = sp_err
-                else:
-                    # No local model installed — show banner, don't silently fall back
-                    err_code = "ERR_NO_LOCAL_MODEL"
-
-        # ── Restore buttons ───────────────────────────────────────────────────
-        btn_fetch.disabled = False
-        btn_cancel.disabled = False
-        progress_ring.visible = False
-        status_text.visible = False
-
-        # ── Error handling ────────────────────────────────────────────────────
-        if not success:
-            if err_code == "ERR_NO_LOCAL_MODEL":
-                _show_no_model_banner()
-                _show_inline_error(t("speech.no_model_installed"))
-            elif err_code in ("ERR_NO_SUBTITLES", "ERR_EMPTY_SUBTITLES"):
-                _show_inline_error(t("youtube.no_subs_found"))
-            elif err_code == "ERR_NO_SPEECH_DETECTED":
-                _show_inline_error(t("youtube.no_speech_detected"))
-            elif err_code in ("ERR_INVALID_URL", "ERR_INVALID_VIDEO_ID"):
-                url_input.error_text = t("youtube.invalid_url")
-                page.update()
-            elif err_code == "ERR_INVALID_DRIVE_URL":
-                url_input.error_text = t("drive.invalid_url")
-                page.update()
-            elif err_code == "ERR_DRIVE_ACCESS_DENIED":
-                _show_inline_error(t("drive.access_denied"))
-            elif err_code == "ERR_DRIVE_NOT_FOUND":
-                _show_inline_error(t("drive.not_found"))
-            elif err_code == "ERR_DRIVE_TOO_LARGE":
-                _show_inline_error(t("drive.too_large"))
-            elif err_code == "ERR_VIDEO_UNAVAILABLE":
-                _show_inline_error(t("youtube.video_unavailable"))
-            elif err_code == "ERR_AUDIO_DOWNLOAD_FAILED":
-                _show_inline_error(t("youtube.audio_download_failed"))
-            else:
-                _show_inline_error(err_code or "Unknown Error")
-            return
-
-        # ── Success ───────────────────────────────────────────────────────────
-        dialog.open = False
+        btn_cancel_job.visible = True
+        progress_bar.visible = True
+        progress_ring.visible = True
+        status_text.value = "Starting..."
+        status_text.visible = True
         page.update()
 
-        if on_transcript_loaded:
-            on_transcript_loaded(md_content, url)
+        def _on_job_success(content: str, source_url: str, title: str):
+            if callback_success:
+                callback_success(content, source_url)
 
-    btn_fetch.on_click = lambda e: asyncio.create_task(on_fetch_clicked(e))
+        def _on_job_error(err_msg: str):
+            if err_msg == "ERR_NO_LOCAL_MODEL":
+                no_model_banner.visible = True
+                btn_open_hub.visible = True
+                status_text.value = t("speech.no_model_installed")
+                status_text.color = ft.Colors.RED_400
+            else:
+                status_text.value = err_msg
+                status_text.color = ft.Colors.RED_400
+            progress_bar.visible = False
+            progress_ring.visible = False
+            btn_fetch.disabled = False
+            btn_cancel_job.visible = False
+            try:
+                page.update()
+            except Exception:
+                pass
+
+        nonlocal tracked_job
+        job = manager.submit_job(
+            job_type="drive" if is_drive_url(url) else "youtube",
+            source=url,
+            display_name=url,
+            execution_fn=_execute_transcription_task,
+            on_success=_on_job_success,
+            on_error=_on_job_error,
+        )
+        tracked_job = job
+        job.subscribe(_ui_job_listener)
+
+    btn_fetch.on_click = on_fetch_clicked
     btn_cancel.on_click = close_dialog
 
     dialog = ft.AlertDialog(
@@ -428,8 +466,10 @@ def show_youtube_dialog(
                     chk_auto_translate,
                     chk_speech_fallback,
                     ft.Container(height=4),
+                    progress_bar,
                     no_model_banner,
                     btn_open_hub,
+                    queue_banner,
                     status_row,
                 ],
                 tight=True,
@@ -439,6 +479,7 @@ def show_youtube_dialog(
             padding=10,
         ),
         actions=[
+            btn_cancel_job,
             btn_cancel,
             btn_fetch,
         ],

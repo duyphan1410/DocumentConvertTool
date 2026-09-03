@@ -35,6 +35,14 @@ class ActivityBarItem(ft.Container):
             animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
         )
 
+        self.spinner = ft.ProgressRing(
+            width=30,
+            height=30,
+            stroke_width=2.0,
+            color=ft.Colors.PRIMARY,
+            visible=False,
+        )
+
         self.icon_btn = ft.IconButton(
             icon=icon,
             icon_size=20,
@@ -47,12 +55,25 @@ class ActivityBarItem(ft.Container):
             on_click=self._handle_click,
         )
 
+        self.icon_stack = ft.Stack(
+            controls=[
+                ft.Container(
+                    content=self.spinner,
+                    alignment=ft.alignment.Alignment(0.0, 0.0),
+                    width=40,
+                    height=40,
+                ),
+                self.icon_btn,
+            ],
+            alignment=ft.alignment.Alignment(0.0, 0.0),
+        )
+
         super().__init__(
             content=ft.Row(
                 [
                     self.indicator,
                     ft.Container(
-                        content=self.icon_btn,
+                        content=self.icon_stack,
                         expand=True,
                         alignment=ft.alignment.Alignment(0.0, 0.0),
                     ),
@@ -65,6 +86,14 @@ class ActivityBarItem(ft.Container):
             alignment=ft.alignment.Alignment(0.0, 0.0),
             **kwargs,
         )
+
+    def set_loading(self, is_loading: bool):
+        self.spinner.visible = is_loading
+        try:
+            if self.page:
+                self.spinner.update()
+        except Exception:
+            pass
 
     def set_active(self, is_active: bool):
         self._is_active = is_active
@@ -167,6 +196,12 @@ class ActivityBar(ft.Container):
         self._active_tab = tab_name if is_open else ""
         for name, item in self._items.items():
             item.set_active(name == self._active_tab if is_open else False)
+
+    def set_item_loading(self, item_name: str, is_loading: bool):
+        """Toggle animated spinner on an ActivityBar item."""
+        item = self._items.get(item_name)
+        if item:
+            item.set_loading(is_loading)
 
     def get_active_tab(self) -> str:
         return self._active_tab

@@ -343,20 +343,21 @@ def transcribe_file(
         base_name = os.path.basename(file_path)
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
         duration_str = format_timestamp(total_duration) if total_duration > 0 else "N/A"
+        from src.i18n import t
 
         md_lines = [
             f"# {os.path.splitext(base_name)[0]}",
             "",
-            "| Thông tin | Chi tiết |",
+            f"| {t('transcript.info_table_info')} | {t('transcript.info_table_detail')} |",
             "| :--- | :--- |",
-            f"| **Tệp nguồn** | `{base_name}` ({file_size_mb:.1f} MB) |",
-            f"| **Mô hình AI** | {model_name} (`{target_model_id}`) |",
-            f"| **Ngôn ngữ** | {lang_display} |",
-            f"| **Thời lượng** | {duration_str} |",
+            f"| **{t('transcript.info_source_file')}** | `{base_name}` ({file_size_mb:.1f} MB) |",
+            f"| **{t('transcript.info_ai_model')}** | {model_name} (`{target_model_id}`) |",
+            f"| **{t('transcript.info_language')}** | {lang_display} |",
+            f"| **{t('transcript.info_duration')}** | {duration_str} |",
             "",
             "---",
             "",
-            "## Nội dung nhận diện (Speech Transcript)",
+            f"## {t('transcript.section_speech_transcript')}",
             "",
         ]
 

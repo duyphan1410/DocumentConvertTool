@@ -113,64 +113,6 @@ class ExcelModule(BaseDocumentModule):
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
 
-        from src.core.converters import parse_inline
-        from openpyxl.cell.rich_text import CellRichText, TextBlock
-        from openpyxl.cell.text import InlineFont
-
-        # Nested helper to apply inline styling (bold, italic, links, etc.)
-        def format_excel_cell(cell, md_text: str, is_heading: bool = False):
-            if not md_text:
-                cell.value = ""
-                return
-
-            segments = parse_inline(md_text)
-            if not segments:
-                cell.value = ""
-                return
-
-            # Check if there is styling
-            has_formatting = any(s.bold or s.italic or s.strike or s.underline or s.code or s.url for s in segments) or is_heading
-            if not has_formatting:
-                cell.value = "".join(s.text for s in segments)
-                return
-
-            hyperlink_url = None
-            for s in segments:
-                if s.url:
-                    hyperlink_url = s.url
-                    break
-
-            blocks = []
-            for s in segments:
-                is_bold = s.bold or is_heading
-                sz = 13 if is_heading else (10 if s.code else 11)
-                
-                if is_bold or s.italic or s.strike or s.underline or s.code:
-                    font = InlineFont(
-                        b=is_bold,
-                        i=s.italic,
-                        strike=s.strike,
-                        u="single" if s.underline else None,
-                        rFont="Consolas" if s.code else "Arial",
-                        sz=sz,
-                        color="A52A2A" if s.code else None
-                    )
-                    blocks.append(TextBlock(font, s.text))
-                elif s.url:
-                    font = InlineFont(
-                        u="single",
-                        color="0000FF",
-                        rFont="Arial",
-                        sz=11
-                    )
-                    blocks.append(TextBlock(font, s.text))
-                else:
-                    blocks.append(s.text)
-
-            cell.value = CellRichText(*blocks)
-            if hyperlink_url:
-                cell.hyperlink = hyperlink_url
-
         wb = Workbook()
         ws = wb.active
         # Set a clean default sheet title based on the output filename
@@ -183,8 +125,23 @@ class ExcelModule(BaseDocumentModule):
         header_fill = PatternFill("solid", fgColor="4472C4")
         header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
         body_font = Font(name="Arial", size=11)
+        heading_font = Font(name="Arial", size=13, bold=True)
         thin = Side(border_style="thin", color="D9D9D9")
         thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def clean_md_inline(text: str) -> str:
+            if not text:
+                return ""
+            # Clean HTML image tags
+            text = re.sub(r'<p[^>]*?>\s*<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>\s*</p>', r'[\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>', r'[\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?>', r'[Image]', text, flags=re.IGNORECASE)
+            text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'[\1]', text)
+            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+            text = re.sub(r'[*_~`]', '', text)
+            if text.startswith(("- ", "* ")):
+                text = "• " + text[2:]
+            return text.strip()
 
         row_idx = 1
         in_table = False
@@ -210,15 +167,12 @@ class ExcelModule(BaseDocumentModule):
                 if inner_line.endswith("|"):
                     inner_line = inner_line[:-1]
 
-                cells = [c.strip() for c in inner_line.split("|")]
-                
-                # Determine styling
+                cells = [clean_md_inline(c) for c in inner_line.split("|")]
                 is_header = not in_table
-                in_table = True  # We are in a table now
+                in_table = True
 
                 for col_idx, cell_text in enumerate(cells, start=1):
-                    cell = ws.cell(row=row_idx, column=col_idx)
-                    format_excel_cell(cell, cell_text)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=cell_text)
                     cell.border = thin_border
                     if is_header:
                         cell.fill = header_fill
@@ -229,19 +183,17 @@ class ExcelModule(BaseDocumentModule):
                         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
                 row_idx += 1
             else:
-                # Regular text row
                 in_table = False
                 cell = ws.cell(row=row_idx, column=1)
 
-                # Match heading style (# Heading, ## Heading, etc.)
                 match_heading = re.match(r"^(#{1,6})\s+(.*)", stripped)
                 if match_heading:
-                    heading_text = match_heading.group(2)
-                    heading_font = Font(name="Arial", size=13, bold=True)
-                    format_excel_cell(cell, heading_text, is_heading=True)
+                    heading_text = clean_md_inline(match_heading.group(2))
+                    cell.value = heading_text
                     cell.font = heading_font
                 else:
-                    format_excel_cell(cell, line.rstrip("\r\n"))
+                    text_val = clean_md_inline(line)
+                    cell.value = text_val
                     cell.font = body_font
 
                 cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
@@ -254,7 +206,7 @@ class ExcelModule(BaseDocumentModule):
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
             if max_len > 0:
-                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 5, 50)
+                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 5, 60)
 
         wb.save(out_path)
         return f"Exported 1 sheet successfully -> {os.path.basename(out_path)}"

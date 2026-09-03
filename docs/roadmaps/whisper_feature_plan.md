@@ -2,8 +2,8 @@
 
 **Mã định danh**: `FEAT-WHISPER-001`  
 **Phiên bản phát hành mục tiêu**: `v1.9.0 (AI-Powered Transcriber & Model Marketplace Release)`  
-**Ngày cập nhật**: 29/08/2026  
-**Trạng thái**: 🟢 Planning & Architecture Specification  
+**Ngày cập nhật**: 03/09/2026  
+**Trạng thái**: ✅ All Phases Completed  
 
 ---
 
@@ -255,5 +255,5 @@ gantt
 | :---: | :--- | :--- | :---: | :---: |
 | **Pha 1**<br>*(Tuần 1)* | **Orchestrator, Hardware Hub & 2-Layer Verification** | • Tạo nhánh `feat/duy-DDMMYYYY-whisper-model-hub`.<br>• Cài đặt & cấu hình `faster-whisper`, `ctranslate2`, `pynvml`.<br>• Viết module Hardware Detection (`pynvml`/`nvidia-smi` quét Driver, CUDA, VRAM, RAM, CPU).<br>• Xây dựng `First-time Quick Download Dialog` và `ModelHubDialog`.<br>• Xây dựng Download Manager + Quy trình Verify 2 lớp (File Hash & Runtime Test độc lập).<br>🏁 **Mốc bàn giao**: Hạ tầng tải/quản lý model và runtime load đã được test độc lập thành công. | 👤 **Duy Phan** | ✅ **Hoàn thành** |
 | **Pha 2**<br>*(Tuần 2)* | **Core AI Engine & Processing Pipeline** | • Xây dựng module `src/services/whisper_service.py` dựa trên model đã được tải sẵn ở Pha 1.<br>• Xây dựng bộ giải mã âm thanh từ `.mp4`, `.mkv`, `.mp3`, `.wav`, `.m4a`, `.flac`, `.aac`, `.webm` (PyAV).<br>• Chuẩn hóa 16kHz mono, triệt tiêu DC offset, volume normalization -0.9 dBFS.<br>• Tích hợp VAD lọc tạp âm, băm câu tự nhiên theo khoảng lặng và sinh mốc thời gian `[mm:ss]`.<br>• Format tài liệu Markdown chuẩn chỉnh có bảng metadata.<br>• Xây dựng `AudioModule` tích hợp vào hệ thống `ModuleRegistry`. | 👤 **Huy**<br>*(AI Specialist)* | ✅ **Hoàn thành** |
-| **Pha 3**<br>*(Tuần 3)* | **Tích hợp Toàn diện (E2E), QA & Đóng gói v1.9.0** | • Xây dựng `TranscribeDialog` chuyên dụng cho tệp âm thanh/video cục bộ.<br>• Kết nối Controller với `whisper_service.transcribe_file()`.<br>• Đưa kết quả nhận diện tự động mở thành Tab mới trong Studio Workspace.<br>• Tích hợp nút khởi chạy trên Ribbon Bar (`btn_transcribe`) và Welcome View (`card_transcribe`).<br>• Gỡ bỏ phụ thuộc thừa `SpeechRecognition`, cập nhật `Document Converter.spec` (`hiddenimports`).<br>• Viết bộ Unit Test `test_whisper_service.py`, bảo đảm 100% test suite (176/176 tests) passed cleanly. | 👥 **Duy Phan & Huy**<br>*(Phối hợp)* | ✅ **Hoàn thành** |
+| **Pha 3**<br>*(Tuần 3)* | **Tích hợp Toàn diện (E2E), QA & Đóng gói v1.9.0** | • Xây dựng `TranscribeDialog` chuyên dụng cho tệp âm thanh/video cục bộ với Live Progress Bar và Re-entrant Dialog.<br>• Kết nối Controller với `whisper_service.transcribe_file()` chạy ngầm không đóng băng GUI.<br>• Đưa kết quả nhận diện tự động mở thành Tab mới trong Studio Workspace với mode "Save as .md" và autosave draft tức thì.<br>• Tích hợp Activity Bar Smart Context Routing (icon spinning + re-open dialog tương ứng task type).<br>• Mở rộng `INPUT_FILETYPES` hỗ trợ toàn bộ container audio/video phổ biến (.mp3, .wav, .m4a, .flac, .aac, .ogg, .mp4, .mkv, .avi, .mov, .webm).<br>• Quốc tế hóa bảng metadata transcript (Vi/En) qua `t(...)` translation keys.<br>• Fix Ribbon Bar toggle sync khi auto-reveal File Path Bar, fix tab switch mode hydration.<br>• Viết bộ Unit Test, bảo đảm 100% test suite (181/181 tests) passed cleanly. | 👥 **Duy Phan & Huy**<br>*(Phối hợp)* | ✅ **Hoàn thành** |
 

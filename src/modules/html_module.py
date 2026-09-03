@@ -219,7 +219,7 @@ class HTMLModule(BaseDocumentModule):
                 src = match.group(2)
                 suffix = match.group(3)
                 new_src = resolve_to_base64(src)
-                return f'{prefix}src="{new_src}"{suffix}'
+                return f'{prefix}{new_src}{suffix}'
 
             # Step 1: Base64 media resolution
             t1 = time.time()

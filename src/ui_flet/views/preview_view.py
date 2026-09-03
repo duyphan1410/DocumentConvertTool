@@ -562,12 +562,14 @@ class MarkdownPreview(ft.Container):
         on_open_file: Optional[Callable[[str], None]] = None,
         get_workspace_path: Optional[Callable[[], str]] = None,
         on_image_link_clicked: Optional[Callable[[str], None]] = None,
+        on_insert_sample_table: Optional[Callable[[], None]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.on_open_file = on_open_file
         self._get_workspace_path = get_workspace_path
         self.on_image_link_clicked = on_image_link_clicked
+        self.on_insert_sample_table = on_insert_sample_table
         self.expand = True
         self.border_radius = 8
         self.padding = ft.Padding(left=8, top=4, right=8, bottom=6)
@@ -580,6 +582,8 @@ class MarkdownPreview(ft.Container):
         self._base_dir = None
         self._session_id = None
         self._saved_scroll_offset: float = 0.0
+        self._preview_mode: str = "document"  # "document" or "spreadsheet"
+        self._last_rendered_mode: str = "document"
 
 
 
@@ -784,46 +788,44 @@ class MarkdownPreview(ft.Container):
         """Restores the preview scroll to the exact last known pixel offset after content changes."""
         try:
             offset = target_offset if target_offset is not None else getattr(self, "_saved_scroll_offset", 0.0)
-            print(f"[DEBUG][PREVIEW_RESTORE] attempting restore to offset={offset:.1f}")
             if offset <= 0:
-                print(f"[DEBUG][PREVIEW_RESTORE] skipped (offset <= 0)")
                 return
 
             if not hasattr(self.scroll_column, "scroll_to"):
-                print(f"[DEBUG][PREVIEW_RESTORE] skipped (no scroll_to)")
                 return
 
             page = getattr(self.scroll_column, "page", None)
             if not page:
-                print(f"[DEBUG][PREVIEW_RESTORE] skipped (no page mounted)")
                 return
 
             import asyncio
             import inspect
+
+            # Cancel previous restore task to prevent jitter and loop fighting
+            existing_task = getattr(self, "_active_restore_task", None)
+            if existing_task and not existing_task.done():
+                existing_task.cancel()
 
             self._is_restoring_scroll = True
             self._saved_scroll_offset = offset
 
             async def _async_restore():
                 try:
-                    # Immediate restore on frame 0, followed by progressive layout checks
-                    for delay in (0.0, 0.02, 0.06, 0.15, 0.35):
-                        if delay > 0:
-                            await asyncio.sleep(delay)
-                        print(f"[DEBUG][PREVIEW_RESTORE] executing scroll_to(offset={offset:.1f})")
-                        res = self.scroll_column.scroll_to(offset=offset, duration=0)
-                        if inspect.iscoroutine(res):
-                            await res
+                    await asyncio.sleep(0.02)
+                    res = self.scroll_column.scroll_to(offset=offset, duration=100)
+                    if inspect.iscoroutine(res):
+                        await res
+                except asyncio.CancelledError:
+                    pass
                 except Exception as ex:
                     print(f"[DEBUG][PREVIEW_RESTORE] error: {ex}")
                 finally:
                     await asyncio.sleep(0.05)
-                    self._saved_scroll_offset = offset
                     self._is_restoring_scroll = False
 
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(_async_restore())
+                self._active_restore_task = loop.create_task(_async_restore())
             except RuntimeError:
                 self._is_restoring_scroll = False
         except Exception as ex:
@@ -1033,9 +1035,7 @@ class MarkdownPreview(ft.Container):
                         if isinstance(container.content, ft.GestureDetector):
                             img_ctrl = container.content.content
                             if action_url:
-                                target_url = action_url
-                                container.content.on_tap_down = lambda e, u=target_url: self._save_tap_position(e, u)
-                                container.content.on_tap = lambda e, u=target_url: self._handle_image_tap(e, u)
+                                container.content.data = action_url
                         elif isinstance(container.content, ft.Image):
                             img_ctrl = container.content
 
@@ -1068,9 +1068,10 @@ class MarkdownPreview(ft.Container):
                     target_url = action_url
                     gd = ft.GestureDetector(
                         content=img_ctrl,
+                        data=target_url,
                         mouse_cursor=ft.MouseCursor.CLICK,
-                        on_tap_down=lambda e, u=target_url: self._save_tap_position(e, u),
-                        on_tap=lambda e, u=target_url: self._handle_image_tap(e, u),
+                        on_tap_down=lambda e, u=target_url: self._save_tap_position(e, getattr(e.control, "data", "") or u),
+                        on_tap=lambda e, u=target_url: self._handle_image_tap(e, getattr(e.control, "data", "") or u),
                     )
                     img_container = ft.Container(
                         content=gd,
@@ -1112,8 +1113,235 @@ class MarkdownPreview(ft.Container):
         except Exception as ex:
             print(f"[DEBUG] scroll_to_image error: {ex}")
 
+    def set_preview_mode(self, mode: str):
+        """Switches between 'document' (standard live markdown) and 'spreadsheet' (excel/csv grid view)."""
+        if mode not in ("document", "spreadsheet"):
+            mode = "document"
+        if getattr(self, "_preview_mode", "document") != mode:
+            self._preview_mode = mode
+            if mode == "spreadsheet":
+                self.header_icon.name = ft.Icons.TABLE_CHART_ROUNDED
+                self.header_title.value = t("preview.spreadsheet_title") if t("preview.spreadsheet_title") != "preview.spreadsheet_title" else "BẢNG TÍNH EXCEL / CSV (PREVIEW)"
+                self.btn_watch_video.visible = False
+            else:
+                self.header_icon.name = ft.Icons.PREVIEW_ROUNDED
+                self.header_title.value = t("preview.title")
+
+            raw = self._last_raw_text or ""
+            self._last_raw_text = None
+            self._cached_processed_text = None
+            self.set_content(raw, base_dir=self._base_dir, session_id=self._session_id)
+
+    def _handle_insert_sample_table_click(self, e):
+        """Dispatches sample table insertion to the editor."""
+        if self.on_insert_sample_table:
+            self.on_insert_sample_table()
+
+    def _render_spreadsheet_content(self, markdown_text: str):
+        """Renders the exact simulated Excel workbook/sheet layout that ExcelModule produces."""
+        import re
+        from src.ui_flet.theme import get_style_color, resolve_color, PALETTES, make_border
+
+        palette = PALETTES.get(self._palette_name, PALETTES["Violet Cyberpunk"])
+        accent_primary = resolve_color(palette, "text_accent_primary", self._is_dark)
+        bg_card = resolve_color(palette, "bg_component", self._is_dark)
+        border_color = resolve_color(palette, "border_color", self._is_dark)
+        text_primary = get_style_color("text_primary", self._is_dark)
+        text_secondary = get_style_color("text_secondary", self._is_dark)
+        header_bg = "#1e293b" if self._is_dark else "#f1f5f9"
+        table_header_bg = "#2563eb" if self._is_dark else "#3b82f6"
+
+        def _clean_inline(text: str) -> str:
+            # Clean HTML image tags
+            text = re.sub(r'<p[^>]*?>\s*<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>\s*</p>', r'📷 [\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>', r'📷 [\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?>', r'📷 [Image]', text, flags=re.IGNORECASE)
+            text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'📷 [\1]', text)
+            # Clean links [text](url) -> text
+            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+            # Clean bold/italic/strike/code
+            text = re.sub(r'[*_~`]', '', text)
+            return text.strip()
+
+        # Parse lines into Excel grid rows
+        lines = markdown_text.splitlines() if markdown_text else []
+        sheet_rows = []
+        max_cols = 1
+        in_table = False
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                in_table = False
+                sheet_rows.append({"type": "empty", "cells": [""]})
+                continue
+
+            # Check for table separator line (|---|---|)
+            if "|" in stripped and re.match(r"^[\|\s\-:]+$", stripped):
+                in_table = True
+                continue
+
+            # Check if table row
+            if "|" in stripped:
+                inner_line = stripped
+                if inner_line.startswith("|"):
+                    inner_line = inner_line[1:]
+                if inner_line.endswith("|"):
+                    inner_line = inner_line[:-1]
+                raw_cells = [c.strip() for c in inner_line.split("|")]
+                cells = [_clean_inline(c) for c in raw_cells]
+                is_header = not in_table
+                in_table = True
+                max_cols = max(max_cols, len(cells))
+                sheet_rows.append({
+                    "type": "table_header" if is_header else "table_data",
+                    "cells": cells,
+                })
+            else:
+                in_table = False
+                match_heading = re.match(r"^(#{1,6})\s+(.*)", stripped)
+                if match_heading:
+                    level = len(match_heading.group(1))
+                    h_text = _clean_inline(match_heading.group(2))
+                    sheet_rows.append({
+                        "type": "heading",
+                        "level": level,
+                        "cells": [h_text],
+                    })
+                else:
+                    c_text = _clean_inline(stripped)
+                    sheet_rows.append({
+                        "type": "text",
+                        "cells": [c_text],
+                    })
+
+        # Remove trailing empty rows
+        while sheet_rows and sheet_rows[-1]["type"] == "empty":
+            sheet_rows.pop()
+
+        total_rows = len(sheet_rows)
+        self.doc_info_text.value = f"Excel Sheet | {total_rows} Dòng × {max_cols} Cột"
+
+        # Build Column Headers: [#] [A] [B] [C] ...
+        cols = [
+            ft.DataColumn(ft.Text("#", size=11, weight=ft.FontWeight.BOLD, color=text_secondary))
+        ]
+        for c_idx in range(max_cols):
+            col_letter = chr(65 + c_idx) if c_idx < 26 else f"C{c_idx+1}"
+            cols.append(
+                ft.DataColumn(
+                    ft.Container(
+                        content=ft.Text(col_letter, size=11, weight=ft.FontWeight.BOLD, color=accent_primary),
+                        alignment=ft.alignment.Alignment(0.0, 0.0),
+                        padding=ft.Padding(0, 2, 0, 2),
+                    )
+                )
+            )
+
+        # Build Data Rows
+        d_rows = []
+        for r_idx, row_info in enumerate(sheet_rows, start=1):
+            r_type = row_info["type"]
+            cells_data = row_info["cells"]
+
+            row_cells = [
+                ft.DataCell(
+                    ft.Container(
+                        content=ft.Text(str(r_idx), size=11, color=text_secondary, weight=ft.FontWeight.W_500),
+                        alignment=ft.alignment.Alignment(0.0, 0.0),
+                    )
+                )
+            ]
+
+            # Pad cells to max_cols
+            padded_cells = cells_data + [""] * (max_cols - len(cells_data))
+
+            for c_idx, val in enumerate(padded_cells):
+                if r_type == "table_header":
+                    cell_ctrl = ft.Container(
+                        content=ft.Text(val, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        bgcolor=table_header_bg,
+                        padding=ft.Padding(6, 4, 6, 4),
+                        border_radius=3,
+                        alignment=ft.alignment.Alignment(-1.0, 0.0),
+                    )
+                elif r_type == "heading":
+                    h_size = 13 if row_info.get("level", 1) <= 2 else 12
+                    cell_ctrl = ft.Text(val, size=h_size, weight=ft.FontWeight.BOLD, color=accent_primary, selectable=True)
+                elif r_type == "empty":
+                    cell_ctrl = ft.Text("", size=11)
+                else:
+                    is_img = val.startswith("📷")
+                    cell_color = accent_primary if is_img else text_primary
+                    cell_ctrl = ft.Text(val, size=12, color=cell_color, selectable=True)
+
+                row_cells.append(ft.DataCell(cell_ctrl))
+
+            d_rows.append(ft.DataRow(cells=row_cells))
+
+        dt = ft.DataTable(
+            columns=cols,
+            rows=d_rows if d_rows else [
+                ft.DataRow(cells=[
+                    ft.DataCell(ft.Text("1", size=11, color=text_secondary)),
+                    ft.DataCell(ft.Text("(Trống / Empty)", size=11, color=text_secondary)),
+                ])
+            ],
+            border=make_border(1, border_color),
+            border_radius=6,
+            heading_row_color=header_bg,
+            heading_row_height=34,
+            data_row_min_height=26,
+            data_row_max_height=44,
+            column_spacing=18,
+            divider_thickness=1,
+        )
+
+        # Get sheet title from first heading or default
+        doc_title = "Sheet1"
+        if markdown_text:
+            first_h = re.search(r"^#+\s+(.*)", markdown_text, re.MULTILINE)
+            if first_h:
+                doc_title = _clean_inline(first_h.group(1))[:25]
+
+        sheet_card = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.TABLE_CHART_ROUNDED, size=16, color=accent_primary),
+                            ft.Text(f"Sheet: {doc_title}", size=13, weight=ft.FontWeight.BOLD, color=text_primary),
+                            ft.Container(
+                                content=ft.Text(f"{max_cols} Cột × {total_rows} Dòng", size=10, color=accent_primary, weight=ft.FontWeight.W_600),
+                                padding=ft.Padding(6, 2, 6, 2),
+                                border_radius=4,
+                                bgcolor=header_bg,
+                                border=make_border(1, border_color),
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Container(
+                        content=ft.Row(
+                            controls=[dt],
+                            scroll=ft.ScrollMode.ADAPTIVE,
+                        ),
+                        border_radius=6,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=10,
+            border=make_border(1, border_color),
+            border_radius=8,
+            bgcolor=bg_card,
+        )
+
+        self.scroll_column.controls = [sheet_card]
+
     def set_content(self, markdown_text: str, base_dir: str = None, session_id: str | None = None):
-        """Updates preview with processed markdown content, using cache if text hasn't changed."""
+        """Updates preview with processed markdown or spreadsheet grid, using cache if text hasn't changed."""
         self._base_dir = base_dir
         self._session_id = session_id
         if not markdown_text or not markdown_text.strip():
@@ -1123,6 +1351,7 @@ class MarkdownPreview(ft.Container):
                 self.markdown_text = ""
                 self._last_raw_text = ""
                 self._cached_processed_text = "*No content to preview.*"
+                self.doc_info_text.value = t("preview.no_doc")
                 self.detect_youtube_video("")
                 try:
                     if hasattr(self.scroll_column, "page") and self.scroll_column.page:
@@ -1131,17 +1360,22 @@ class MarkdownPreview(ft.Container):
                     pass
             return
 
-        # Cache Guard: If text is unchanged, do not rebuild controls to keep scroll position 100% stable
-        if markdown_text == self._last_raw_text and self._cached_processed_text:
+        # Cache Guard: If text is unchanged and mode is unchanged, do not rebuild controls
+        if markdown_text == self._last_raw_text and self._cached_processed_text and getattr(self, "_last_rendered_mode", "document") == self._preview_mode:
             return
 
         curr_offset = getattr(self, "_saved_scroll_offset", 0.0)
         self._last_raw_text = markdown_text
-        self._cached_processed_text = process_markdown_media(
-            markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
-        )
-        self.detect_youtube_video(markdown_text)
-        is_in_place = self._render_processed_content(self._cached_processed_text)
+        self._last_rendered_mode = self._preview_mode
+
+        if getattr(self, "_preview_mode", "document") == "spreadsheet":
+            self._render_spreadsheet_content(markdown_text)
+        else:
+            self._cached_processed_text = process_markdown_media(
+                markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
+            )
+            self.detect_youtube_video(markdown_text)
+            self._render_processed_content(self._cached_processed_text)
 
         try:
             if hasattr(self.scroll_column, "page") and self.scroll_column.page:
@@ -1156,11 +1390,16 @@ class MarkdownPreview(ft.Container):
         """Sets pre-computed processed markdown directly in 0ms without re-parsing images or re-encoding Base64."""
         self._base_dir = base_dir
         self._session_id = session_id
+        if getattr(self, "_preview_mode", "document") == "spreadsheet":
+            self.set_content(raw_text, base_dir=base_dir, session_id=session_id)
+            return
+
         if raw_text == self._last_raw_text and processed_md == self._cached_processed_text:
             return
         curr_offset = getattr(self, "_saved_scroll_offset", 0.0)
         self._last_raw_text = raw_text
         self._cached_processed_text = processed_md
+        self._last_rendered_mode = "document"
         is_in_place = self._render_processed_content(processed_md)
         if hasattr(self, "detect_youtube_video"):
             self.detect_youtube_video(raw_text)
@@ -1278,7 +1517,10 @@ class MarkdownPreview(ft.Container):
 
     def update_locale(self):
         """Refresh header title, doc info text, watch video button, and placeholder to current locale."""
-        self.header_title.value = t("preview.title")
+        if getattr(self, "_preview_mode", "document") == "spreadsheet":
+            self.header_title.value = t("preview.spreadsheet_title")
+        else:
+            self.header_title.value = t("preview.title")
         self.btn_watch_video_text.value = t("preview.watch_video")
         self.btn_watch_video.tooltip = t("preview.watch_video_tooltip")
 
@@ -1286,9 +1528,12 @@ class MarkdownPreview(ft.Container):
             self.doc_info_text.value = t("preview.no_doc")
             self.markdown.value = t("preview.placeholder")
         else:
-            words = len(self._last_raw_text.split())
-            chars = len(self._last_raw_text)
-            self.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+            if getattr(self, "_preview_mode", "document") == "spreadsheet":
+                self._render_spreadsheet_content(self._last_raw_text)
+            else:
+                words = len(self._last_raw_text.split())
+                chars = len(self._last_raw_text)
+                self.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
 
         for ctrl in [self.header_title, self.btn_watch_video, self.doc_info_text, self.markdown]:
             try:

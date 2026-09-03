@@ -1318,11 +1318,18 @@ class PDFModule(BaseDocumentModule):
             session_dir = asset_mgr.get_session_dir()
             os.makedirs(session_dir, exist_ok=True)
 
+            out_dir = os.path.dirname(out_path) if out_path else None
+
             def prepare_image(src_url: str) -> str:
                 if not src_url or src_url.startswith("http://") or src_url.startswith("https://"):
                     return src_url
 
-                resolved = asset_mgr.resolve_uri(src_url)
+                resolved = asset_mgr.resolve_uri(src_url, base_dir=out_dir)
+                if not os.path.isabs(resolved) and out_dir:
+                    possible_path = os.path.join(out_dir, resolved)
+                    if os.path.exists(possible_path):
+                        resolved = possible_path
+
                 if not os.path.isabs(resolved):
                     possible_path = os.path.join(session_dir, resolved)
                     if os.path.exists(possible_path):
@@ -1352,11 +1359,11 @@ class PDFModule(BaseDocumentModule):
                 src = match.group(2)
                 suffix = match.group(3)
                 new_src = prepare_image(src)
-                return f'{prefix}src="{new_src}"{suffix}'
+                return f'{prefix}{new_src}{suffix}'
 
             if "!" in markdown_content or "<img" in markdown_content:
                 processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', resolve_img_markdown, markdown_content, flags=re.IGNORECASE)
-                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md, flags=re.IGNORECASE)
             else:
                 processed_md = markdown_content
 

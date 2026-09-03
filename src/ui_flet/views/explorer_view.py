@@ -670,20 +670,27 @@ class ExplorerView(ft.Container):
         )
 
         # Empty State
+        self.empty_state_text = ft.Text(
+            t("explorer.empty_title"),
+            size=12,
+            color=ft.Colors.OUTLINE,
+            text_align=ft.TextAlign.CENTER,
+        )
+        self.empty_state_btn = ft.Button(
+            t("explorer.btn_open"),
+            icon=ft.Icons.FOLDER_OPEN_ROUNDED,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.Padding(left=12, top=6, right=12, bottom=6),
+            ),
+            on_click=lambda e: self._on_open_folder(e) if self._on_open_folder else None,
+        )
         self.empty_state = ft.Container(
             content=ft.Column(
                 [
                     ft.Icon(ft.Icons.FOLDER_OFF_OUTLINED, size=32, color=ft.Colors.OUTLINE),
-                    ft.Text(t("explorer.no_folder"), size=12, color=ft.Colors.OUTLINE, text_align=ft.TextAlign.CENTER),
-                    ft.Button(
-                        t("explorer.btn_open"),
-                        icon=ft.Icons.FOLDER_OPEN_ROUNDED,
-                        style=ft.ButtonStyle(
-                            shape=ft.RoundedRectangleBorder(radius=6),
-                            padding=ft.Padding(left=12, top=6, right=12, bottom=6),
-                        ),
-                        on_click=lambda e: self._on_open_folder(e) if self._on_open_folder else None,
-                    ),
+                    self.empty_state_text,
+                    self.empty_state_btn,
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -1128,8 +1135,15 @@ class ExplorerView(ft.Container):
     def update_locale(self):
         """Refreshes text on language toggle."""
         self.title_text.value = t("explorer.title")
+        self.btn_collapse_all.tooltip = t("explorer.collapse_all")
         self.btn_open_folder.tooltip = t("explorer.open_folder")
         self.btn_refresh.tooltip = t("explorer.refresh")
+        self.btn_more.tooltip = t("explorer.more_actions")
+        self.filter_input.hint_text = t("explorer.filter_hint")
+        if hasattr(self, "empty_state_text") and self.empty_state_text:
+            self.empty_state_text.value = t("explorer.empty_title")
+        if hasattr(self, "empty_state_btn") and self.empty_state_btn:
+            self.empty_state_btn.text = t("explorer.btn_open")
         try:
             if self.page:
                 self.update()

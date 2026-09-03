@@ -656,7 +656,16 @@ class FileController:
 
         MediaAssetManager().set_active_session(active_tab.media_session_id)
 
-        # 1. Restore Active Tab File Paths & Mode
+        # 1. Populate Editor View Text First (Prevent draft wiping during mode changes)
+        content = active_tab.full_content
+        if len(content) > EDITOR_DISPLAY_LIMIT:
+            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
+        else:
+            self.editor_view.set_text(content)
+
+        active_tab.undo_stack.append(self.editor_view.get_text())
+
+        # 2. Restore Active Tab File Paths & Mode
         if active_tab.in_path and os.path.exists(active_tab.in_path):
             self.file_path_bar.set_in_path(active_tab.in_path)
         else:
@@ -669,15 +678,6 @@ class FileController:
 
         if active_tab.out_path:
             self.file_path_bar.set_out_path(active_tab.out_path)
-
-        # 2. Populate Editor View Text
-        content = active_tab.full_content
-        if len(content) > EDITOR_DISPLAY_LIMIT:
-            self.editor_view.set_text(content[:EDITOR_DISPLAY_LIMIT])
-        else:
-            self.editor_view.set_text(content)
-
-        active_tab.undo_stack.append(self.editor_view.get_text())
 
         words = len(content.split())
         chars = len(content)

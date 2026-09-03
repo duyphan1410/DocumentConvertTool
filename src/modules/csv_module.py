@@ -51,21 +51,36 @@ class CSVModule(BaseDocumentModule):
         import re
         from src.core.converters import strip_markdown_styles
 
+        def _clean_for_csv(text: str) -> str:
+            # 1. Clean HTML img tags
+            text = re.sub(r'<p[^>]*?>\s*<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>\s*</p>', r'[\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?alt=["\']([^"\']*)["\'][^>]*?>', r'[\1]', text, flags=re.IGNORECASE)
+            text = re.sub(r'<img[^>]*?>', r'[Image]', text, flags=re.IGNORECASE)
+            # 2. Clean markdown styles
+            val = strip_markdown_styles(text).strip()
+            # 3. Convert markdown bullet points to clean bullet symbol so Excel doesn't evaluate as formula error #NAME?
+            if val.startswith(("- ", "* ")):
+                val = "• " + val[2:]
+            elif val.startswith(("+", "=", "-", "@")):
+                # Escape leading formula characters in CSV
+                val = "'" + val
+            return val
+
         lines = markdown_content.splitlines()
-        
+
         with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            
+
             for line in lines:
                 stripped = line.strip()
                 if not stripped:
                     writer.writerow([])
                     continue
-                    
+
                 # Skip separator lines
                 if "|" in stripped and re.match(r"^[\|\s\-:]+$", stripped):
                     continue
-                    
+
                 # Check if it's a table row
                 if "|" in stripped:
                     inner_line = stripped
@@ -73,18 +88,18 @@ class CSVModule(BaseDocumentModule):
                         inner_line = inner_line[1:]
                     if inner_line.endswith("|"):
                         inner_line = inner_line[:-1]
-                        
-                    cells = [strip_markdown_styles(c.strip()) for c in inner_line.split("|")]
+
+                    cells = [_clean_for_csv(c.strip()) for c in inner_line.split("|")]
                     writer.writerow(cells)
                 else:
                     # Write plain text row in Column A (remove heading markdown markers)
                     if stripped.startswith("#"):
                         match_heading = re.match(r"^(#{1,6})\s+(.*)", stripped)
-                        text_val = strip_markdown_styles(match_heading.group(2)) if match_heading else strip_markdown_styles(line)
+                        text_val = _clean_for_csv(match_heading.group(2)) if match_heading else _clean_for_csv(line)
                     else:
-                        text_val = strip_markdown_styles(line)
+                        text_val = _clean_for_csv(line)
                     writer.writerow([text_val])
-                    
+
         return f"Exported successfully to CSV -> {os.path.basename(out_path)}"
 
 ModuleRegistry.register(CSVModule())

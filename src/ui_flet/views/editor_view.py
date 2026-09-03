@@ -717,6 +717,30 @@ class EditorView:
         if self.on_editor_changed:
             self.on_editor_changed(None)
 
+    def insert_sample_table(self):
+        """Inserts a structured Markdown table template into the editor buffer."""
+        sample = (
+            "\n\n| STT | Tên sản phẩm | Số lượng | Đơn giá | Thành tiền |\n"
+            "| :---: | :--- | :---: | :---: | :---: |\n"
+            "| 1 | Laptop Dell XPS 15 | 2 | $1,500 | $3,000 |\n"
+            "| 2 | Bàn phím cơ Không dây | 5 | $80 | $400 |\n"
+            "| 3 | Màn hình 4K LG 27 inch | 3 | $450 | $1,350 |\n\n"
+        )
+        val = self.editor.value or ""
+        start = self.selection_start if self.selection_start is not None else len(val)
+        start = max(0, min(start, len(val)))
+        new_val = val[:start] + sample + val[start:]
+        self.editor.value = new_val
+        self.selection_start = start + len(sample)
+        self.selection_end = self.selection_start
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+
     def apply_heading(self, level: int):
         """Applies Markdown Heading (H1-H6) prefix to line(s) containing selection/cursor."""
         import re

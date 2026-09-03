@@ -230,12 +230,12 @@ class MediaAssetManager:
 
     def export_assets(self, markdown_content: str, target_markdown_path: str, session_id: str | None = None) -> str:
         """
-        Ensures all images referenced in Markdown content are copied into a relative
-        `<doc_name>_assets` directory next to the target markdown file, rewriting image
-        links to portable relative paths (`./<doc_name>_assets/filename.png`).
-        Resolves both `@media/` cache URIs and external absolute disk paths.
+        Ensures all images referenced in Markdown content (both Markdown ![]() and HTML <img />)
+        are copied into a relative `<doc_name>_assets` directory next to the target markdown file,
+        rewriting image links to portable relative paths (`./<doc_name>_assets/filename.png`).
+        Resolves both `@media/` cache URIs, session cache paths, and external absolute disk paths.
         """
-        if not markdown_content or "![" not in markdown_content or "](" not in markdown_content:
+        if not markdown_content or ("![" not in markdown_content and "<img" not in markdown_content and "@media/" not in markdown_content):
             return markdown_content
 
         import re
@@ -260,12 +260,9 @@ class MediaAssetManager:
 
         copied_hashes: dict[str, str] = {}  # hash -> final_filename mapping
 
-        def replacer(match):
-            alt = match.group(1)
-            src = match.group(2)
-
-            if src.startswith(("http://", "https://", "data:")):
-                return match.group(0)
+        def _copy_and_get_relative_path(src: str) -> str:
+            if not src or src.startswith(("http://", "https://", "data:")):
+                return src
 
             resolved = self.resolve_uri(src, session_id=session_id)
             if not os.path.exists(resolved) and target_dir:
@@ -277,11 +274,11 @@ class MediaAssetManager:
                 try:
                     os.makedirs(assets_dir, exist_ok=True)
                     src_hash = _get_file_hash(resolved)
-                    
+
                     # If this exact content hash was already copied to assets_dir in this run:
                     if src_hash and src_hash in copied_hashes:
                         final_filename = copied_hashes[src_hash]
-                        return f"![{alt}](./{assets_dir_name}/{final_filename})"
+                        return f"./{assets_dir_name}/{final_filename}"
 
                     base_filename = os.path.basename(resolved)
                     name_stem, ext = os.path.splitext(base_filename)
@@ -305,15 +302,33 @@ class MediaAssetManager:
                     if src_hash:
                         copied_hashes[src_hash] = final_filename
 
-                    return f"![{alt}](./{assets_dir_name}/{final_filename})"
+                    return f"./{assets_dir_name}/{final_filename}"
                 except Exception as e:
                     print(f"[DEBUG] MediaAssetManager: Failed to export asset '{resolved}': {e}")
-                    return match.group(0)
+                    return src
 
-            return match.group(0)
+            return src
+
+        def md_replacer(match):
+            alt = match.group(1)
+            src = match.group(2)
+            new_src = _copy_and_get_relative_path(src)
+            return f"![{alt}]({new_src})"
+
+        def html_replacer(match):
+            prefix = match.group(1)
+            src = match.group(2)
+            suffix = match.group(3)
+            new_src = _copy_and_get_relative_path(src)
+            return f"{prefix}{new_src}{suffix}"
 
         image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
-        return re.sub(image_pattern, replacer, markdown_content)
+        result = re.sub(image_pattern, md_replacer, markdown_content)
+
+        html_pattern = r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)'
+        result = re.sub(html_pattern, html_replacer, result, flags=re.IGNORECASE)
+
+        return result
 
     DEFAULT_MAX_CACHE_BYTES = 200 * 1024 * 1024  # 200 MB
 

@@ -148,7 +148,7 @@ class TestYouTubeService(unittest.TestCase):
             {"start": 20.0, "text": "Bắt đầu ngay thôi nào!"},  # Sentence 3
         ]
 
-        timestamps, paragraphs = _group_snippets_into_sentences(snippets, group_interval_seconds=15.0)
+        timestamps, paragraphs = _group_snippets_into_sentences(snippets, group_interval_seconds=15.0, pause_threshold=5.0)
 
         # Paragraph 1 should include all of sentence 1 and sentence 2, ending with '.'
         self.assertEqual(len(timestamps), 2)

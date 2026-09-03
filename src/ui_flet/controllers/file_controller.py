@@ -366,7 +366,7 @@ class FileController:
         )
 
     def handle_youtube_transcript_loaded(self, content: str, source_url: str):
-        """Injects extracted YouTube Markdown transcript directly into editor workspace."""
+        """Injects extracted video Markdown transcript into editor workspace (YouTube or Drive)."""
         if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
             self.app_controls["on_show_editor"]()
         try:
@@ -374,25 +374,36 @@ class FileController:
         except Exception:
             pass
 
+        from src.services.drive_service import is_drive_url, extract_drive_file_id
         from src.services.youtube_service import extract_video_id
-        vid_id = extract_video_id(source_url) or "video"
+        import re
+
+        is_drive = is_drive_url(source_url)
+        if is_drive:
+            file_id = extract_drive_file_id(source_url) or "drive"
+            source_label = f"Drive: {source_url}"
+            fallback_stem = f"drive_{file_id}"
+        else:
+            vid_id = extract_video_id(source_url) or "video"
+            source_label = f"YouTube: {source_url}"
+            fallback_stem = f"youtube_{vid_id}"
+
         def_dir = get_default_output_dir()
 
         # Extract title from markdown header for meaningful default filename
-        import re
         first_line = content.splitlines()[0] if content else ""
         if first_line.startswith("# "):
             title_candidate = first_line[2:].strip()
-            safe_title = re.sub(r'[\\/*?:"<>|]', "", title_candidate)
+            safe_title = re.sub(r'[\\/*?"<>|]', "", title_candidate)
             safe_title = re.sub(r'\s+', "_", safe_title).strip("_")[:60]
         else:
             safe_title = ""
 
-        file_stem = safe_title if safe_title else f"youtube_{vid_id}"
+        file_stem = safe_title if safe_title else fallback_stem
         virtual_name = f"{file_stem}.md"
 
         self.state.in_path = ""
-        self.file_path_bar.set_in_path(f"YouTube: {source_url}")
+        self.file_path_bar.set_in_path(source_label)
 
         # Automatically switch conversion mode to 'MD -> Markdown' (Save as MD)
         ext = ".md"

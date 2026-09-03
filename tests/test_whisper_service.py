@@ -131,12 +131,13 @@ class TestWhisperService(unittest.TestCase):
                 include_timestamps=True,
             )
 
+            from src.i18n import t
             self.assertTrue(success)
             self.assertIsNone(err)
-            self.assertIn("| Thông tin | Chi tiết |", content)
-            self.assertIn("**Mô hình AI**", content)
+            self.assertIn(f"| {t('transcript.info_table_info')} | {t('transcript.info_table_detail')} |", content)
+            self.assertIn(f"**{t('transcript.info_ai_model')}**", content)
             self.assertIn("Tiếng Việt (vi)", content)
-            self.assertIn("## Nội dung nhận diện", content)
+            self.assertIn(f"## {t('transcript.section_speech_transcript')}", content)
             self.assertIn("[00:00]", content)
             self.assertIn("Chào các bạn.", content)
             self.assertIn("[00:20]", content)

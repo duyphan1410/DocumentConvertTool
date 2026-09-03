@@ -90,7 +90,7 @@ OK
 | `tests/test_hardware_detector.py` | **[MỚI]** Bộ kiểm thử cho Hardware Detector và thuật toán gợi ý. |
 | `tests/test_model_manager.py` | **[MỚI]** Bộ kiểm thử cho Download Manager, Instant Cancel và 2-Layer Verification. |
 | `tests/test_model_hub_ui.py` | **[MỚI]** Bộ kiểm thử cho UI Model Hub và First-time Dialog. |
-| `docs/roadmaps/whisper_feature_plan.md` | Bản đặc tả kiến trúc, phân công ma trận 2 người và lộ trình thực hiện. |
+| `docs/archive/20260903_whisper_feature_plan.md` | Bản đặc tả kiến trúc, phân công ma trận 2 người và lộ trình thực hiện. |
 | `docs/archive/20260901_whisper_model_hub_and_hardware_orchestrator.md` | **[MỚI]** Tài liệu kỹ thuật lưu trữ chính thức của Pha 1. |
 
 ---

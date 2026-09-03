@@ -127,7 +127,13 @@ class ConversionController:
         # Reset selection state when dialog opens
         self.file_path_bar.out_path_text.selection = None
 
-        def handle_cancel(e):
+        is_handled = False
+
+        def handle_cancel(e=None):
+            nonlocal is_handled
+            if is_handled:
+                return
+            is_handled = True
             print(f"[DEBUG] Overwrite canceled by user.")
             dialog.open = False
             self.footer_bar.set_status_key(
@@ -135,48 +141,70 @@ class ConversionController:
                 color=ft.Colors.AMBER_400,
             )
             # Ensure File Path Bar is visible & focus on output path field for easy manual editing
-            if not self.file_path_bar.container.visible:
-                self.file_path_bar.container.visible = True
+            if hasattr(self, "file_path_bar") and self.file_path_bar:
+                if hasattr(self.file_path_bar, "container") and not self.file_path_bar.container.visible:
+                    self.file_path_bar.container.visible = True
 
-            val = self.file_path_bar.out_path_text.value or ""
-            try:
-                if val:
-                    base_dir, filename = os.path.split(val)
-                    name_no_ext, ext = os.path.splitext(filename)
-                    start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
-                    end_idx = start_idx + len(name_no_ext)
-                    # Reset selection to None first so Flet property diff engine ALWAYS detects selection property change
-                    self.file_path_bar.out_path_text.selection = None
-                    try:
-                        self.file_path_bar.out_path_text.update()
-                    except Exception:
-                        pass
-                    self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
-            except Exception as sel_ex:
-                print(f"[DEBUG] TextSelection error: {sel_ex}")
-            self.page.update()
+                val = getattr(getattr(self.file_path_bar, "out_path_text", None), "value", "") or ""
+                try:
+                    if val:
+                        base_dir, filename = os.path.split(val)
+                        name_no_ext, ext = os.path.splitext(filename)
+                        start_idx = len(base_dir) + (1 if base_dir and not base_dir.endswith(os.sep) and not base_dir.endswith("/") else 0)
+                        end_idx = start_idx + len(name_no_ext)
+                        # Reset selection to None first so Flet property diff engine ALWAYS detects selection property change
+                        self.file_path_bar.out_path_text.selection = None
+                        try:
+                            self.file_path_bar.out_path_text.update()
+                        except Exception:
+                            pass
+                        self.file_path_bar.out_path_text.selection = ft.TextSelection(start_idx, end_idx)
+                except Exception as sel_ex:
+                    print(f"[DEBUG] TextSelection error: {sel_ex}")
 
             try:
-                asyncio.create_task(self.file_path_bar.out_path_text.focus())
+                self.page.update()
+            except Exception:
+                pass
+
+            try:
+                if hasattr(self, "file_path_bar") and hasattr(self.file_path_bar, "out_path_text"):
+                    asyncio.create_task(self.file_path_bar.out_path_text.focus())
             except Exception as ex:
                 print(f"[DEBUG] Failed to focus out_path_text: {ex}")
 
-        def handle_save_new(e):
+        def handle_save_new(e=None):
+            nonlocal is_handled
+            if is_handled:
+                return
+            is_handled = True
             print(f"[DEBUG] 1-Click Save as New selected: '{new_path}'")
             dialog.open = False
             self.state.out_path = new_path
-            self.file_path_bar.set_out_path(new_path)
-            self.page.update()
+            if hasattr(self, "file_path_bar") and self.file_path_bar:
+                self.file_path_bar.set_out_path(new_path)
+            try:
+                self.page.update()
+            except Exception:
+                pass
             self.start_conversion_process(new_path)
 
-        def handle_overwrite(e):
+        def handle_overwrite(e=None):
+            nonlocal is_handled
+            if is_handled:
+                return
+            is_handled = True
             print(f"[DEBUG] Overwrite confirmed for target file: '{out_path}'")
             dialog.open = False
-            self.page.update()
+            try:
+                self.page.update()
+            except Exception:
+                pass
             on_confirm_callback()
 
         dialog = ft.AlertDialog(
-            modal=True,
+            modal=False,
+            on_dismiss=handle_cancel,
             title=ft.Row(
                 controls=[
                     ft.Icon(
@@ -250,9 +278,7 @@ class ConversionController:
             shape=ft.RoundedRectangleBorder(radius=10),
         )
 
-        if dialog not in self.page.overlay:
-            self.page.overlay.append(dialog)
-        self.page.dialog = dialog
+        self.page.overlay.append(dialog)
         dialog.open = True
         self.page.update()
         print("[DEBUG] Overwrite dialog opened")

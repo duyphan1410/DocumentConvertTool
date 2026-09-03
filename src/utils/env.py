@@ -144,6 +144,8 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
         folder_dir = target_path if os.path.isdir(target_path) else os.path.dirname(target_path)
         folder_name = os.path.basename(folder_dir).lower()
 
+    own_pid = os.getpid()
+
     system_shell_classes = {
         "progman", "workerw", "shell_traywnd", "searchhost",
         "startmenuexperiencehost", "windows.immersivecontextmenu"
@@ -153,28 +155,37 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     if is_folder:
         expected_classes = {"cabinetwclass", "explorer"}
     elif ext in (".xlsx", ".xls", ".csv"):
-        expected_classes = {"xlmain"}
+        expected_classes = {"xlmain", "wps_mainwindow", "kwps_mainwindow"}
     elif ext in (".docx", ".doc"):
-        expected_classes = {"opusapp"}
+        expected_classes = {"opusapp", "wps_mainwindow", "kwps_mainwindow"}
     elif ext in (".pptx", ".ppt"):
-        expected_classes = {"pptframeclass"}
-    elif ext in (".pdf", ".html"):
-        expected_classes = {"chrome_widgetwin_1", "mozilla_window_class", "pdf_realm"}
+        expected_classes = {"pptframeclass", "wps_mainwindow", "kwps_mainwindow"}
+    elif ext in (".pdf", ".html", ".htm"):
+        expected_classes = {
+            "chrome_widgetwin_1", "mozilla_window_class", "pdf_realm",
+            "acrobatsdwindow", "sumatrapdf_frame", "foxitreaderapp", "microsoftedge"
+        }
 
     def poll_and_force_foreground():
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
 
-        for attempt in range(25):
+        for attempt in range(30):
             time.sleep(0.1)
             found_hwnds = []
 
             def enum_windows_callback(hwnd, lparam):
                 if user32.IsWindowVisible(hwnd):
+                    # 1. Ignore Document Converter's own process to prevent self-focus hijacking
+                    win_pid = ctypes.wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(win_pid))
+                    if win_pid.value == own_pid:
+                        return True
+
                     class_buff = ctypes.create_unicode_buffer(256)
                     user32.GetClassNameW(hwnd, class_buff, 256)
                     cls_name = class_buff.value.lower()
 
-                    if cls_name in system_shell_classes:
+                    if cls_name in system_shell_classes or "flutter_runner" in cls_name:
                         return True
 
                     length = user32.GetWindowTextLengthW(hwnd)
@@ -185,7 +196,7 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     user32.GetWindowTextW(hwnd, buff, length + 1)
                     title = buff.value.lower()
 
-                    if "antigravity" in title:
+                    if "antigravity" in title or "document converter" in title:
                         return True
 
                     is_iconic = bool(user32.IsIconic(hwnd))
@@ -199,8 +210,11 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                         if file_name and file_name in title:
                             score = 200 if not is_iconic else 180
                         elif file_stem and len(file_stem) > 2 and file_stem in title:
-                            # Reject title if it contains a DIFFERENT document extension (e.g. ignore .html when opening .docx)
-                            other_exts = {".pdf", ".html", ".htm", ".docx", ".doc", ".xlsx", ".pptx"} - {ext}
+                            # Reject title if it contains a DIFFERENT document extension (e.g. ignore .md or .html when opening .docx)
+                            other_exts = {
+                                ".pdf", ".html", ".htm", ".docx", ".doc",
+                                ".xlsx", ".xls", ".pptx", ".ppt", ".md", ".markdown", ".txt"
+                            } - {ext}
                             if any(o_ext in title for o_ext in other_exts):
                                 score = 0
                             else:

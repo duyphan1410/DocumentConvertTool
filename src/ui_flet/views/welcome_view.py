@@ -164,6 +164,7 @@ class WelcomeView(ft.Container):
         on_open_folder: Optional[Callable] = None,
         on_create_blank: Optional[Callable] = None,
         on_import_youtube: Optional[Callable] = None,
+        on_transcribe_media: Optional[Callable] = None,
         on_open_model_hub: Optional[Callable] = None,
         on_open_help: Optional[Callable] = None,
         **kwargs,
@@ -173,6 +174,7 @@ class WelcomeView(ft.Container):
         self.on_open_folder = on_open_folder
         self.on_create_blank = on_create_blank
         self.on_import_youtube = on_import_youtube
+        self.on_transcribe_media = on_transcribe_media
         self.on_open_model_hub = on_open_model_hub
         self.on_open_help = on_open_help
 
@@ -239,11 +241,19 @@ class WelcomeView(ft.Container):
             on_click=lambda e: self._on_youtube_click(e),
         )
 
+        self.card_transcribe = WelcomeActionCard(
+            icon=ft.Icons.MIC_ROUNDED,
+            title_key="welcome.btn_transcribe",
+            desc_key="welcome.desc_transcribe",
+            on_click=lambda e: self._on_transcribe_click(e),
+        )
+
         self.cards_list = [
             self.card_open_file,
             self.card_open_folder,
             self.card_blank,
             self.card_youtube,
+            self.card_transcribe,
         ]
 
         # ── 3. Quick Help & Model Hub CTA ────────────────────────────────────
@@ -280,7 +290,11 @@ class WelcomeView(ft.Container):
                         spacing=12,
                     ),
                     ft.Row(
-                        controls=[self.card_blank, self.card_youtube],
+                        controls=[self.card_youtube, self.card_transcribe],
+                        spacing=12,
+                    ),
+                    ft.Row(
+                        controls=[self.card_blank],
                         spacing=12,
                     ),
                     ft.Container(height=4),
@@ -323,6 +337,10 @@ class WelcomeView(ft.Container):
     def _on_youtube_click(self, e):
         if self.on_import_youtube:
             self.on_import_youtube(e)
+
+    def _on_transcribe_click(self, e):
+        if self.on_transcribe_media:
+            self.on_transcribe_media(e)
 
     def _on_model_hub_click(self, e):
         if self.on_open_model_hub:

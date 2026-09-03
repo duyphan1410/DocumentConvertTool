@@ -41,6 +41,8 @@ class BaseDocumentModule(ABC):
                 import_name = "PIL"
             elif dep_lower == "pyyaml":
                 import_name = "yaml"
+            elif dep_lower == "faster-whisper":
+                import_name = "faster_whisper"
             else:
                 import_name = dep
             try:

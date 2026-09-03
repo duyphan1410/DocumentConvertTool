@@ -52,8 +52,9 @@ Download the latest standalone executable (no Python installation required):
 | **CSV (`.csv`)** | ✅ | ✅ | Delimiter auto-detection, clean Markdown table generation |
 | **HTML (`.html`)** | ✅ | ✅ | GitHub-flavored CSS styling, Pygments codehilite, safe regex code fence auto-repair |
 | **JSON (`.json`)** | ✅ | ✅ | Tabular array-to-table conversion, nested key-value formatting, fenced code blocks |
-| **YAML (`.yaml`, `.yml`)** | ✅ | ✅ | Structured tree formatting, pipe table conversion, safe PyYAML parsing |
-| **YouTube (`URL`)** | ✅ | — | Multi-tier subtitle extraction: Tier 1 Subtitles & Server-side Auto-Translate (0% CPU/RAM), Tier 2 Non-AI Speech Recognition Fallback (`SpeechRecognition` + `yt-dlp`), oEmbed video metadata, interactive clickable timestamps & In-App Companion Player |
+| **YAML (`.yaml`, `.yml`)** | ✅ | — | Structured tree formatting, pipe table conversion, safe PyYAML parsing |
+| **Audio / Video (`.mp3`, `.wav`, `.m4a`, `.mp4`, `.mkv`, `.flac`, `.aac`, `.webm`)** | ✅ | — | 100% Offline Whisper AI speech-to-text with Silero VAD, hardware detection (CUDA/CPU), PyAV 16kHz resampling, and structured Markdown output |
+| **YouTube & Google Drive (`URL`)** | ✅ | — | Multi-tier subtitle extraction: Tier 1 Subtitles & Auto-Translate (0% CPU/RAM), Tier 2 Whisper AI Fallback (`faster-whisper`), oEmbed metadata, clickable timestamps & Companion Player |
 
 ### 🎨 Modern Flet UI & Architecture
 * **In-App YouTube Companion Player**: Dedicated Edge WebView2 mini player (`540x335`, 16:9) with interactive clickable timestamp seeking (`yt://...`), local HTTP bridge server (Error 153 immune), instant unmuted autoplay, and Win32 Z-Index #1 focus elevation.

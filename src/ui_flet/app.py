@@ -290,6 +290,7 @@ class DocumentConvertApp:
             ),
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
             on_image_link_clicked=lambda url: self._handle_preview_image_clicked(url),
+            on_insert_sample_table=lambda: self.editor_view.insert_sample_table(),
         )
 
         self.right_pane = ft.Container(
@@ -578,6 +579,23 @@ class DocumentConvertApp:
             self.state.out_path = os.path.abspath(f"output{out_ext}")
 
         self.file_path_bar.set_out_path(self.state.out_path)
+
+        # Adaptive Preview Mode: Switch to spreadsheet view for Excel/CSV target modes
+        cur_mode = self.state.current_mode or ""
+        if cur_mode in ("MD -> Excel", "MD -> CSV") or out_ext in (".xlsx", ".xls", ".csv"):
+            if hasattr(self.preview, "set_preview_mode"):
+                self.preview.set_preview_mode("spreadsheet")
+        else:
+            if hasattr(self.preview, "set_preview_mode"):
+                self.preview.set_preview_mode("document")
+
+        cur_text = self.editor_view.get_text() if hasattr(self, "editor_view") else ""
+        if cur_text and hasattr(self.preview, "set_content"):
+            base_dir = os.path.dirname(self.state.in_path) if self.state.in_path else None
+            active_tab = self.state.active_tab
+            sid = active_tab.media_session_id if active_tab else None
+            self.preview.set_content(cur_text, base_dir=base_dir, session_id=sid)
+
         try:
             self.page.update()
         except Exception:

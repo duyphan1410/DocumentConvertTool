@@ -13,14 +13,25 @@ Trong `src/ui_flet/components/model_hub_dialog.py` và `src/services/model_manag
 - Khi một model đang được tải xuống từ Hugging Face (`is_model_downloading(model_id) == True`), hàm `build_model_card()` đăng ký một callback `live_listener` vào danh sách toàn cục `_PROGRESS_LISTENERS[model_id]`.
 - Callback `live_listener` đóng gói (closure) các biến `card_pbar`, `card_status` và `page`.
 - Nếu người dùng chuyển qua lại các tab hoặc kích hoạt `render_cards()` nhiều lần trong khi 1 model đang tải dở, hàm `build_model_card()` sẽ tạo ra các control mới và tiếp tục gọi `add_download_listener()`.
-- **Hệ quả**: Các listener cũ (trỏ vào các control đã bị unmount khỏi giao diện) vẫn tồn tại tạm thời trong `_PROGRESS_LISTENERS[model_id]`.
-- **Phạm vi ảnh hưởng**:
-  - Đã được giới hạn an toàn: Trong `finally` của `download_model()` và `cancel_model_download()`, dòng `_PROGRESS_LISTENERS.pop(model_id, None)` sẽ dọn sạch 100% các listener mồ côi này ngay khi lượt tải kết thúc (thành công, thất bại hoặc hủy).
-  - Tuổi thọ của closure mồ côi chỉ kéo dài bằng thời gian tải model (tối đa vài chục giây), không bị rò rỉ vĩnh viễn.
+
+### Minh họa trực quan kịch bản (Scenario Walkthrough):
+1. **Lần mở 1**: Người dùng mở Model Hub $\rightarrow$ Tạo ra thanh tiến trình **ProgressBar A**. Hàm tải ghi nhớ: *"Mỗi khi tải được 1%, hãy cập nhật cho ProgressBar A"*.
+2. **Đóng rồi mở lại lần 2** (trong lúc model vẫn đang tải dở): Tạo ra thanh tiến trình mới **ProgressBar B**. Hàm tải ghi nhớ: *"Mỗi khi tải được 1%, hãy cập nhật cho cả ProgressBar A và ProgressBar B"*.
+3. **Mở lại N lần**: Danh sách `_PROGRESS_LISTENERS[model_id]` giữ $N$ listeners. Các thanh tiến trình cũ (A -> N-1) tuy đã biến mất khỏi giao diện nhưng closure vẫn nằm trong RAM tạm thời.
 
 ---
 
-## 2. Thiết kế giải pháp dài hạn (Proposed Architecture)
+## 2. Đánh giá tác động thực tế & Cơ chế an toàn hiện có
+
+> [!NOTE]
+> **Trải nghiệm thực tế hoàn toàn ổn định**: Người dùng cuối không bao giờ nhìn thấy lỗi, giật lag hay crash ứng dụng vì các lý do sau:
+> 1. **Cơ chế thu hồi tự động**: Trong khối `finally` của `download_model()` và `cancel_model_download()`, dòng `_PROGRESS_LISTENERS.pop(model_id, None)` giải phóng sạch sẽ 100% các listener mồ côi này ngay khi lượt tải kết thúc (thành công, thất bại hoặc hủy).
+> 2. **Cơ chế bảo vệ Exception**: Trong hàm phát tín hiệu `_notify_progress()`, các lời gọi listener cũ bị unmount đều được bọc trong `try...except Exception: pass`, không gây ảnh hưởng đến tiến trình UI chính.
+> 3. **Mức tiêu hao tài nguyên**: Tác động chỉ dừng ở mức tiêu tốn thêm **vài Kilobyte RAM** trong đúng khoảng thời gian tải model (10 - 30 giây), sau đó bộ nhớ được giải phóng hoàn toàn.
+
+---
+
+## 3. Thiết kế giải pháp dài hạn (Proposed Architecture)
 
 Khi mở rộng hệ thống tải đa model song song hoặc hỗ trợ tác vụ tải ngầm nền (background multi-worker queue), có thể áp dụng 1 trong 2 giải pháp:
 
@@ -57,6 +68,6 @@ Lưu reference của `live_listener` vào `card_refs[meta.model_id]["listener"]`
 
 ---
 
-## 3. Tiêu chí nghiệm thu (Acceptance Criteria)
+## 4. Tiêu chí nghiệm thu (Acceptance Criteria)
 - [ ] Số lượng phần tử trong `_PROGRESS_LISTENERS[model_id]` luôn $\le 1$ cho mỗi view active bất kể số lần gọi `render_cards()`.
 - [ ] Khi đóng Modal/SettingsView trong lúc tải, các UI controls cũ được Garbage Collector thu hồi ngay lập tức mà không cần đợi lượt tải hoàn tất.

@@ -16,6 +16,7 @@ from src.core.error_mapper import ErrorMapper
 from src.core.validator import validate_file_pipeline
 from src.services.file_loader import load_document
 from src.services.media_asset_manager import MediaAssetManager
+from src.services.history_service import HistoryService
 from src.ui_flet.constants import (
     DRAFT_PATH,
     DRAFT_META_PATH,
@@ -73,9 +74,19 @@ class FileController:
             self.trigger_media_transcribe(default_file_path=file_path)
             return
 
+        if not os.path.isfile(file_path):
+            self.footer_bar.set_status(t("welcome.recent_missing_file"), color=ft.Colors.RED_400)
+            show_message_dialog(
+                self.page,
+                f"{t('welcome.recent_missing_file')}:\n{file_path}",
+                dialog_type=DialogType.ERROR,
+            )
+            return
+
         # 1. Multi-Tab Deduplication Guard: If file is already open, switch to that tab
         existing_tab = self.state.find_tab_by_path(file_path)
         if existing_tab and not force_reload:
+            HistoryService.get_instance().add_file(file_path, mode=existing_tab.current_mode)
             if existing_tab.is_loading:
                 # If tab is already loading, switch to it so user sees progress if they are on another tab
                 if self.state.active_tab_id != existing_tab.tab_id:
@@ -293,6 +304,7 @@ class FileController:
 
             self.perform_autosave(target_tab.tab_id)
             self.save_tab_session()
+            HistoryService.get_instance().add_file(actual_path, mode=mode)
 
             # Compute preview asynchronously first
             is_dark = getattr(self.preview, "_is_dark", False)
@@ -645,6 +657,7 @@ class FileController:
                 if tab_bar and hasattr(tab_bar, "render_tabs"):
                     tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
                 self.save_tab_session()
+                HistoryService.get_instance().add_file(active_tab.in_path, mode=active_tab.current_mode)
                 self.footer_bar.set_status(
                     f"Đã lưu -> {os.path.basename(active_tab.in_path)}",
                     color=ft.Colors.GREEN_400,
@@ -720,6 +733,7 @@ class FileController:
                 self.page.title = f"{os.path.basename(file_path)} — Document Converter v{__version__}"
 
                 self.save_tab_session()
+                HistoryService.get_instance().add_file(file_path, mode="MD -> Markdown")
                 self.footer_bar.set_result_buttons_visible(True)
                 self.footer_bar.set_status(
                     f"Đã lưu Markdown -> {os.path.basename(file_path)}",
@@ -840,6 +854,18 @@ class FileController:
         active_tab = self.state.active_tab
         if not active_tab:
             return False
+
+        # Register restored tabs & workspace folder to HistoryService
+        try:
+            hist = HistoryService.get_instance()
+            ws_folder = getattr(self.state, "workspace_folder", "")
+            if ws_folder and os.path.exists(ws_folder):
+                hist.add_folder(ws_folder)
+            for tab in restored_tabs:
+                if getattr(tab, "in_path", "") and os.path.exists(tab.in_path):
+                    hist.add_file(tab.in_path, mode=getattr(tab, "current_mode", ""))
+        except Exception:
+            pass
 
         MediaAssetManager().set_active_session(active_tab.media_session_id)
 

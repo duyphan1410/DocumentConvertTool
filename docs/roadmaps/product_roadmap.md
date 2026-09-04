@@ -106,11 +106,14 @@
 
 ---
 
-### 🚀 v1.9.2+ (Format Expansion & UX Polish):
+### ✅ v1.9.2 (Recent Folders, File History, Multi-Window & Welcome Studio Dashboard):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Recent Files History** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Lưu danh sách 5-10 tệp mở gần đây (Recent Documents) có biểu tượng định dạng, đường dẫn rút gọn và hỗ trợ mở lại nhanh 1-click từ Welcome Dashboard. | ⏳ Planned |
+| **Recent Files & Folders History** | `src/services/history_service.py`, `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Quản lý & lưu trữ LRU danh sách tệp và thư mục mở gần đây tại `%APPDATA%\DocConvert\recent_history.json`; Hỗ trợ Ghim cố định (`📌 Pin`), Xóa mục (`✖`), Xóa toàn bộ (`Clear All`), lọc Search, Tab lọc `All`/`Files`/`Folders`, và phát hiện file bị xóa/di chuyển. | ✅ Completed (v1.9.2) |
+| **2-Column Welcome Studio Dashboard** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/views/workspace_view.py` | Tái thiết kế bố cục 2 cột Studio (`920px`): Cột trái (Quick Actions & Branding), Cột phải (Lịch sử hoạt động kèm icon định dạng màu sắc theo đuôi file Word, Excel, PDF, Markdown, Media, Folder và nhãn thời gian tương đối). | ✅ Completed (v1.9.2) |
+| **Home Button & Navigation Anywhere** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/app.py` | Bổ sung Icon Home (`ft.Icons.HOME_ROUNDED`) trên Activity Bar giúp quay lại Welcome Dashboard bất cứ lúc nào mà không làm mất tab soạn thảo đang mở. | ✅ Completed (v1.9.2) |
+| **New Window (`Ctrl+Shift+N`) & Close Workspace** | `src/ui_flet/helpers/shortcut_manager.py`, `src/ui_flet/views/explorer_view.py`, `src/ui_flet/app.py` | Phím tắt mở cửa sổ tiến trình ứng dụng mới độc lập (`Ctrl+Shift+N`) và nút Đóng thư mục dự án (`Close Workspace`) trên Header File Explorer. | ✅ Completed (v1.9.2) |
 
 > 📌 **Ghi chú kỹ thuật về Mô hình Whisper**:  
 > Bộ model chuẩn hiện tại (`base`, `small`, `medium`, `large-v3`) đã chốt và đáp ứng toàn diện theo cả 3 tiêu chí: nhẹ hơn, nhanh hơn, và chính xác hơn — đặc biệt đối với các file âm thanh có xen lẫn thuật ngữ tiếng Anh/kỹ thuật.  

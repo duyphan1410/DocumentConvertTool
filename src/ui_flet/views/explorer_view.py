@@ -548,6 +548,7 @@ class ExplorerView(ft.Container):
         on_new_folder: Optional[Callable[[str], None]] = None,
         on_status_message: Optional[Callable[[str, Optional[str]], None]] = None,
         on_batch_convert: Optional[Callable[[str], None]] = None,
+        on_close_workspace: Optional[Callable] = None,
         get_is_dirty: Optional[Callable[[], bool]] = None,
         get_active_file: Optional[Callable[[], str]] = None,
         workspace_path: str = "",
@@ -564,6 +565,7 @@ class ExplorerView(ft.Container):
         self._on_new_folder = on_new_folder
         self._on_status_message = on_status_message
         self._on_batch_convert = on_batch_convert
+        self._on_close_workspace = on_close_workspace
         self._get_is_dirty = get_is_dirty
         self._get_active_file = get_active_file
 
@@ -587,26 +589,38 @@ class ExplorerView(ft.Container):
             overflow=ft.TextOverflow.ELLIPSIS,
             expand=True,
         )
-        is_compact = width < 210
+        is_compact = width < 260
 
+        btn_style = ft.ButtonStyle(padding=ft.Padding(2, 2, 2, 2))
         self.btn_collapse_all = ft.IconButton(
             icon=ft.Icons.UNFOLD_LESS_ROUNDED,
-            icon_size=15,
+            icon_size=14,
+            style=btn_style,
             tooltip=t("explorer.collapse_all"),
             on_click=lambda _: self.collapse_all(),
             visible=bool(workspace_path),
         )
         self.btn_open_folder = ft.IconButton(
             icon=ft.Icons.FOLDER_OPEN_ROUNDED,
-            icon_size=15,
+            icon_size=14,
+            style=btn_style,
             tooltip=t("explorer.open_folder"),
             on_click=lambda e: self._on_open_folder(e) if self._on_open_folder else None,
         )
         self.btn_refresh = ft.IconButton(
             icon=ft.Icons.REFRESH_ROUNDED,
-            icon_size=15,
+            icon_size=14,
+            style=btn_style,
             tooltip=t("explorer.refresh"),
             on_click=lambda _: self.refresh_tree(),
+            visible=bool(workspace_path),
+        )
+        self.btn_close_folder = ft.IconButton(
+            icon=ft.Icons.CLOSE_ROUNDED,
+            icon_size=14,
+            style=btn_style,
+            tooltip=t("explorer.close_folder_tooltip"),
+            on_click=lambda _: self._handle_close_workspace(),
             visible=bool(workspace_path),
         )
 
@@ -615,6 +629,7 @@ class ExplorerView(ft.Container):
                 self.btn_collapse_all,
                 self.btn_open_folder,
                 self.btn_refresh,
+                self.btn_close_folder,
             ],
             spacing=0,
             tight=True,
@@ -625,6 +640,7 @@ class ExplorerView(ft.Container):
         self.btn_more = ft.IconButton(
             icon=ft.Icons.MORE_HORIZ_ROUNDED,
             icon_size=15,
+            style=btn_style,
             tooltip=t("explorer.more_actions"),
             on_click=self._handle_more_clicked,
             visible=is_compact,
@@ -828,6 +844,8 @@ class ExplorerView(ft.Container):
                 on_open_folder=lambda: self._on_open_folder(None) if self._on_open_folder else None,
                 on_collapse_all=self.collapse_all,
                 on_refresh=self.refresh_tree,
+                on_close_workspace=self._handle_close_workspace,
+                has_workspace=bool(self.workspace_path),
             )
 
     def _show_file_context_menu(self, file_path: str, x: float, y: float):
@@ -939,7 +957,7 @@ class ExplorerView(ft.Container):
 
     def update_responsive_width(self, new_width: int):
         """Switches between inline 3-button row and 3-dots dropdown menu based on sidebar width."""
-        is_compact = new_width < 210
+        is_compact = new_width < 260
         self.btn_actions_row.visible = not is_compact
         self.btn_more.visible = is_compact
         self.width = new_width
@@ -960,6 +978,30 @@ class ExplorerView(ft.Container):
         except Exception:
             pass
 
+    def close_workspace(self):
+        """Clears the loaded workspace and shows empty state."""
+        self.workspace_path = ""
+        self.active_file_path = ""
+        self.folder_name_text.value = ""
+        self.tree_list.controls.clear()
+        self.folder_title_row.visible = False
+        self.btn_collapse_all.visible = False
+        self.btn_refresh.visible = False
+        self.btn_close_folder.visible = False
+        self.filter_input.visible = False
+        self.empty_state.visible = True
+        self.tree_list.visible = False
+        try:
+            if self.page:
+                self.update()
+        except Exception:
+            pass
+
+    def _handle_close_workspace(self):
+        self.close_workspace()
+        if self._on_close_workspace:
+            self._on_close_workspace()
+
     def load_workspace(self, folder_path: str, active_file: str = ""):
         """Sets the root workspace directory and asynchronously scans files."""
         self.workspace_path = folder_path
@@ -968,6 +1010,7 @@ class ExplorerView(ft.Container):
         self.folder_title_row.visible = bool(folder_path)
         self.btn_collapse_all.visible = bool(folder_path)
         self.btn_refresh.visible = bool(folder_path)
+        self.btn_close_folder.visible = bool(folder_path)
         self.filter_input.visible = bool(folder_path)
         self.filter_input.value = ""
         self.empty_state.visible = not bool(folder_path)
@@ -1153,6 +1196,7 @@ class ExplorerView(ft.Container):
         self.btn_collapse_all.tooltip = t("explorer.collapse_all")
         self.btn_open_folder.tooltip = t("explorer.open_folder")
         self.btn_refresh.tooltip = t("explorer.refresh")
+        self.btn_close_folder.tooltip = t("explorer.close_folder_tooltip")
         self.btn_more.tooltip = t("explorer.more_actions")
         self.filter_input.hint_text = t("explorer.filter_hint")
         if hasattr(self, "empty_state_text") and self.empty_state_text:

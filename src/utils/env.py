@@ -347,3 +347,123 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             print(f"[DEBUG] Timeout: no matching window found for '{target_path}'")
 
     threading.Thread(target=poll_and_force_foreground, daemon=True).start()
+
+
+def force_process_window_foreground(pid: int = 0, delay: float = 0.1, retries: int = 25):
+    """
+    Guarantees bringing an application window (by PID or current process)
+    to top Z-Index (#1) and steals OS input focus using Win32 4-layer elevation.
+    """
+    if sys.platform != "win32":
+        return
+
+    import ctypes
+    import ctypes.wintypes
+    import threading
+    import time
+
+    target_pid = pid or os.getpid()
+    user32 = ctypes.windll.user32
+
+    VK_MENU = 0x12
+    KEYEVENTF_EXTENDEDKEY = 0x0001
+    KEYEVENTF_KEYUP = 0x0002
+    HWND_TOP = ctypes.wintypes.HWND(0)
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_SHOWWINDOW = 0x0040
+    SW_RESTORE = 9
+    SW_SHOW = 5
+    SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000
+    SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001
+
+    def _elevate():
+        time.sleep(delay)
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+
+        for _ in range(retries):
+            found_hwnd = None
+
+            def enum_cb(hwnd, lparam):
+                nonlocal found_hwnd
+                if user32.IsWindowVisible(hwnd):
+                    w_pid = ctypes.wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(w_pid))
+                    if w_pid.value == target_pid:
+                        class_buff = ctypes.create_unicode_buffer(256)
+                        user32.GetClassNameW(hwnd, class_buff, 256)
+                        cls_name = class_buff.value.lower()
+                        if "flutter" in cls_name or user32.GetWindowTextLengthW(hwnd) > 0:
+                            found_hwnd = hwnd
+                            return False
+                return True
+
+            user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+
+            if found_hwnd:
+                hwnd = found_hwnd
+                try:
+                    # 1. Unlock Windows OS ForegroundLockTimeout via simulated ALT key tap
+                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                except Exception:
+                    pass
+
+                try:
+                    user32.AllowSetForegroundWindow(target_pid)
+                except Exception:
+                    pass
+
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                else:
+                    user32.ShowWindow(hwnd, SW_SHOW)
+
+                old_timeout = ctypes.wintypes.DWORD()
+                user32.SystemParametersInfoW(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(old_timeout), 0)
+                user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(0), 0)
+
+                attached = False
+                fg_thread_id = 0
+                target_thread_id = 0
+
+                try:
+                    user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                    curr_fg = user32.GetForegroundWindow()
+                    if curr_fg and curr_fg != hwnd:
+                        fg_thread_id = user32.GetWindowThreadProcessId(curr_fg, None)
+                        target_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+                        if fg_thread_id and target_thread_id and fg_thread_id != target_thread_id:
+                            attached = bool(user32.AttachThreadInput(fg_thread_id, target_thread_id, True))
+
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.SetFocus(hwnd)
+                finally:
+                    if attached and fg_thread_id and target_thread_id:
+                        try:
+                            user32.AttachThreadInput(fg_thread_id, target_thread_id, False)
+                        except Exception:
+                            pass
+                    user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(old_timeout.value), 0)
+
+                # Delayed re-assertion
+                def reassert():
+                    try:
+                        if user32.IsWindow(hwnd) and user32.GetForegroundWindow() != hwnd:
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                            user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                            user32.BringWindowToTop(hwnd)
+                            user32.SetForegroundWindow(hwnd)
+                            user32.SetFocus(hwnd)
+                    except Exception:
+                        pass
+
+                threading.Timer(0.15, reassert).start()
+                threading.Timer(0.4, reassert).start()
+                break
+
+            time.sleep(0.1)
+
+    threading.Thread(target=_elevate, daemon=True).start()

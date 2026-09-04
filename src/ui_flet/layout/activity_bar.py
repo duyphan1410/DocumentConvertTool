@@ -134,7 +134,13 @@ class ActivityBar(ft.Container):
         self._on_tab_selected = on_tab_selected
         self._active_tab = active_tab
 
-        # 3 Core Action Items
+        self.item_home = ActivityBarItem(
+            name="home",
+            icon=ft.Icons.HOME_ROUNDED,
+            tooltip=t("welcome.btn_home"),
+            on_click=self._handle_item_click,
+            is_active=False,
+        )
         self.item_explorer = ActivityBarItem(
             name="explorer",
             icon=ft.Icons.FOLDER_COPY_OUTLINED,
@@ -158,6 +164,7 @@ class ActivityBar(ft.Container):
         )
 
         self._items = {
+            "home": self.item_home,
             "explorer": self.item_explorer,
             "search": self.item_search,
             "youtube": self.item_youtube,
@@ -165,6 +172,7 @@ class ActivityBar(ft.Container):
 
         self.top_column = ft.Column(
             [
+                self.item_home,
                 self.item_explorer,
                 self.item_search,
                 self.item_youtube,
@@ -224,6 +232,7 @@ class ActivityBar(ft.Container):
 
     def update_locale(self):
         """Refresh tooltips when language changes."""
+        self.item_home.update_tooltip(t("welcome.btn_home"))
         self.item_explorer.update_tooltip(t("activity_bar.explorer"))
         self.item_search.update_tooltip(t("activity_bar.search"))
         self.item_youtube.update_tooltip(t("activity_bar.youtube"))

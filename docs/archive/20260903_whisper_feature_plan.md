@@ -3,7 +3,14 @@
 **Mã định danh**: `FEAT-WHISPER-001`  
 **Phiên bản phát hành mục tiêu**: `v1.9.0 (AI-Powered Transcriber & Model Marketplace Release)`  
 **Ngày cập nhật**: 03/09/2026  
-**Trạng thái**: ✅ All Phases Completed  
+**Trạng thái**: ✅ All Phases Completed (Được tối ưu hóa & hoàn thiện tại v1.9.1)  
+
+> [!NOTE]
+> **Cập nhật Tầm nhìn & Tối ưu hóa Thực nghiệm (04/09/2026 - v1.9.1)**:  
+> Sau khi tiến hành benchmark thực tế trên âm thanh tiếng Việt và đa ngữ:  
+> 1. Bộ 4 model chuẩn quốc tế (`whisper-base`, `whisper-small`, `whisper-medium`, `whisper-large-v3`) đã đáp ứng toàn diện cả 3 tiêu chí: tốc độ, dung lượng và độ chính xác (kể cả từ mượn tiếng Anh/game). Do đó `PhoWhisper` được chuyển thành dạng **Optional Add-on** dự phòng cho v1.9.1.  
+> 2. `whisper-small` được xác nhận là **Sweet Spot** tối ưu nhất cho người dùng CPU (được Hardware Detector tự động đề xuất).  
+> 3. Xem chi tiết kết quả thực nghiệm tại: [20260904_whisper_model_optimization_and_vision_alignment.md](20260904_whisper_model_optimization_and_vision_alignment.md).
 
 ---
 

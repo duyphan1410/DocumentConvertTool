@@ -32,6 +32,7 @@ docs/
 │   ├── v1.6.0_en.md
 │   └── v1.7.0.md
 └── archive/                              # Completed snapshots, feature plans & PR logs
+    ├── 20260904_whisper_model_optimization_and_vision_alignment.md
     ├── 20260903_whisper_feature_plan.md
     ├── 20260903_background_transcription_and_tabs.md
     ├── 20260902_image_regex_parentheses_and_preview_scroll_stabilization.md
@@ -112,6 +113,7 @@ docs/
 - [20260818_plan_setup_exe.md](archive/20260818_plan_setup_exe.md): `--onedir` packaging & Inno Setup 7 installer plan (AppId, user data protection, WebView2 runtime check, CI/CD automation). ✅ Completed (v1.7.2).
 
 #### PR Completion Snapshots & Technical Logs
+- [20260904_whisper_model_optimization_and_vision_alignment.md](archive/20260904_whisper_model_optimization_and_vision_alignment.md): Whisper Models Optimization, Hardware Recommendation Tuning & Vision Alignment (v1.9.1) — PhoWhisper retracted to Optional Add-on, real-world Vietnamese benchmark analysis (79.6s audio, sweet spot `whisper-small` ~7.4x realtime), CTranslate2 CPU 8-threads, Model Hub non-blocking toast SnackBar, progress throttle, 4-card equal-ratio grid, TranscribeDialog live % progress, and lightning emoji removal.
 - [20260903_background_transcription_and_tabs.md](archive/20260903_background_transcription_and_tabs.md): Background Transcription, Tab Integration & Universal Media Support (Phase 3 — v1.9.0) — TranscribeDialog redesign, Activity Bar smart routing, background tab creation, draft persistence, Ribbon Bar toggle sync, and universal media container file dialog.
 - [20260902_image_regex_parentheses_and_preview_scroll_stabilization.md](archive/20260902_image_regex_parentheses_and_preview_scroll_stabilization.md): Image regex parentheses fix and preview scroll position stabilization across tab switches.
 - [20260901_whisper_model_hub_and_hardware_orchestrator.md](archive/20260901_whisper_model_hub_and_hardware_orchestrator.md): AI Model Hub Orchestrator, Multi-Vendor Hardware Detection & 2-Layer Verification Architecture (Phase 1 — v1.9.0).

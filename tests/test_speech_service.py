@@ -13,7 +13,7 @@ class TestSpeechService(unittest.TestCase):
     @patch("src.services.speech_service.download_youtube_audio")
     @patch("src.services.speech_service.fetch_video_metadata")
     def test_transcribe_audio_download_failed(self, mock_meta, mock_download, mock_model):
-        mock_model.return_value = "whisper-tiny"
+        mock_model.return_value = "whisper-base"
         mock_meta.return_value = {"title": "Test Video", "author": "Channel"}
         mock_download.return_value = None
 

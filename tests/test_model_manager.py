@@ -35,16 +35,19 @@ class TestModelManager(unittest.TestCase):
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_available_models_catalog(self):
-        """Ensures all 3 official Systran models exist in catalog with correct required_files."""
-        self.assertIn("whisper-tiny", AVAILABLE_MODELS)
+        """Ensures all 4 official Systran models exist in catalog with correct required_files."""
         self.assertIn("whisper-base", AVAILABLE_MODELS)
         self.assertIn("whisper-small", AVAILABLE_MODELS)
+        self.assertIn("whisper-medium", AVAILABLE_MODELS)
+        self.assertIn("whisper-large-v3", AVAILABLE_MODELS)
 
         for m_id, meta in AVAILABLE_MODELS.items():
             self.assertTrue(meta.repo_id.startswith("Systran/faster-whisper-"))
             self.assertIn("model.bin", meta.required_files)
             self.assertIn("config.json", meta.required_files)
-            self.assertIn("vocabulary.txt", meta.required_files)
+            self.assertTrue(
+                "vocabulary.txt" in meta.required_files or "vocabulary.json" in meta.required_files
+            )
             self.assertIn("tokenizer.json", meta.required_files)
 
     @patch("src.services.model_manager.get_models_dir")
@@ -58,11 +61,11 @@ class TestModelManager(unittest.TestCase):
     def test_is_model_installed_and_verify_files_sha256(self, mock_get_models_dir):
         """Tests Layer 1 verification with valid SHA256 and corrupted files."""
         mock_get_models_dir.return_value = self.temp_dir
-        model_dir = os.path.join(self.temp_dir, "whisper-tiny")
+        model_dir = os.path.join(self.temp_dir, "whisper-base")
         os.makedirs(model_dir, exist_ok=True)
 
         # 1. Incomplete files -> should be False
-        self.assertFalse(is_model_installed("whisper-tiny"))
+        self.assertFalse(is_model_installed("whisper-base"))
 
         # 2. Create corrupt files (invalid SHA256)
         for fname in ["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"]:
@@ -70,13 +73,13 @@ class TestModelManager(unittest.TestCase):
                 f.write(b"corrupt_content_bytes")
 
         # Files exist on disk (>0 bytes) so is_model_installed is True, but SHA256 mismatch -> verify_model_files MUST return False
-        self.assertTrue(is_model_installed("whisper-tiny"))
-        self.assertFalse(verify_model_files("whisper-tiny"))
+        self.assertTrue(is_model_installed("whisper-base"))
+        self.assertFalse(verify_model_files("whisper-base"))
 
         # 3. Inject mock expected_sha256 matching our test content
         import hashlib
         valid_hash = hashlib.sha256(b"correct_bytes").hexdigest()
-        with patch.dict(AVAILABLE_MODELS["whisper-tiny"].expected_sha256, {
+        with patch.dict(AVAILABLE_MODELS["whisper-base"].expected_sha256, {
             "model.bin": valid_hash,
             "config.json": valid_hash,
             "vocabulary.txt": valid_hash,
@@ -86,8 +89,8 @@ class TestModelManager(unittest.TestCase):
                 with open(os.path.join(model_dir, fname), "wb") as f:
                     f.write(b"correct_bytes")
 
-            self.assertTrue(verify_model_files("whisper-tiny"))
-            self.assertTrue(is_model_installed("whisper-tiny"))
+            self.assertTrue(verify_model_files("whisper-base"))
+            self.assertTrue(is_model_installed("whisper-base"))
 
     @patch("src.services.model_manager.get_models_dir")
     def test_storage_usage_calculation(self, mock_get_models_dir):
@@ -108,13 +111,13 @@ class TestModelManager(unittest.TestCase):
     def test_delete_and_clean_all_models(self, mock_get_models_dir):
         """Tests model deletion and full directory clean-up."""
         mock_get_models_dir.return_value = self.temp_dir
-        t_dir = os.path.join(self.temp_dir, "whisper-tiny")
+        t_dir = os.path.join(self.temp_dir, "whisper-small")
         b_dir = os.path.join(self.temp_dir, "whisper-base")
         os.makedirs(t_dir, exist_ok=True)
         os.makedirs(b_dir, exist_ok=True)
 
         # Delete single model
-        self.assertTrue(delete_model("whisper-tiny"))
+        self.assertTrue(delete_model("whisper-small"))
         self.assertFalse(os.path.exists(t_dir))
         self.assertTrue(os.path.exists(b_dir))
 

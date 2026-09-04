@@ -53,8 +53,9 @@ def verify_live_huggingface_hashes() -> bool:
                 else:
                     print(f"    [PASS] model.bin: MATCH (LFS Metadata SHA256)")
 
-        # 2. Audit small text config files (config.json, tokenizer.json, vocabulary.txt)
-        for fname in ["config.json", "tokenizer.json", "vocabulary.txt"]:
+        # 2. Audit small text config files (config.json, tokenizer.json, vocabulary.txt/json)
+        text_files = [fn for fn in meta.expected_sha256.keys() if fn != "model.bin"]
+        for fname in text_files:
             expected_sha = meta.expected_sha256.get(fname, "").lower()
             if not expected_sha:
                 continue

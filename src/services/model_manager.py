@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -44,37 +45,18 @@ class ModelMetadata:
 
 # Official Systran faster-whisper models for v1.9.0 with verified HuggingFace SHA256 checksums
 AVAILABLE_MODELS: dict[str, ModelMetadata] = {
-    "whisper-tiny": ModelMetadata(
-        model_id="whisper-tiny",
-        repo_id="Systran/faster-whisper-tiny",
-        display_name="Whisper Tiny",
-        size_mb=75,
-        speed_rating=5,
-        accuracy_rating=3,
-        recommended_ram_gb=4,
-        recommended_vram_gb=0,
-        required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
-        description_vi="Siêu nhẹ, xử lý tức thì, phù hợp máy cấu hình yếu hoặc ghi chú ngắn.",
-        description_en="Ultra lightweight, near-instant, ideal for low-spec PCs and short notes.",
-        expected_sha256={
-            "config.json": "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
-            "model.bin": "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
-            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
-            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
-        },
-    ),
     "whisper-base": ModelMetadata(
         model_id="whisper-base",
         repo_id="Systran/faster-whisper-base",
         display_name="Whisper Base",
         size_mb=145,
-        speed_rating=4,
-        accuracy_rating=4,
-        recommended_ram_gb=8,
+        speed_rating=5,
+        accuracy_rating=3,
+        recommended_ram_gb=1,
         recommended_vram_gb=0,
         required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
-        description_vi="Cân bằng hoàn hảo giữa tốc độ và độ chính xác cho công việc hàng ngày.",
-        description_en="Perfect balance between speed and accuracy for daily office workflows.",
+        description_vi="Nhẹ nhàng, tốc độ nhanh, phù hợp cho máy cấu hình cơ bản hoặc ghi chú ngắn.",
+        description_en="Lightweight, fast speed, ideal for basic specs or short voice notes.",
         expected_sha256={
             "config.json": "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a",
             "model.bin": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
@@ -87,18 +69,56 @@ AVAILABLE_MODELS: dict[str, ModelMetadata] = {
         repo_id="Systran/faster-whisper-small",
         display_name="Whisper Small",
         size_mb=480,
-        speed_rating=2,
-        accuracy_rating=5,
-        recommended_ram_gb=16,
+        speed_rating=4,
+        accuracy_rating=4,
+        recommended_ram_gb=2,
         recommended_vram_gb=2,
         required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
-        description_vi="Độ chính xác cao, xử lý bài giảng, hội thảo chuyên sâu và nhiều thuật ngữ.",
-        description_en="High accuracy, ideal for deep seminars, lectures, and specialized terms.",
+        description_vi="Cân bằng hoàn hảo giữa tốc độ và độ chính xác cho văn phòng, podcast hàng ngày.",
+        description_en="Perfect balance between speed and accuracy for daily office workflows and podcasts.",
         expected_sha256={
             "config.json": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
             "model.bin": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
             "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
             "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
+    ),
+    "whisper-medium": ModelMetadata(
+        model_id="whisper-medium",
+        repo_id="Systran/faster-whisper-medium",
+        display_name="Whisper Medium",
+        size_mb=1500,
+        speed_rating=2,
+        accuracy_rating=5,
+        recommended_ram_gb=3,
+        recommended_vram_gb=3,
+        required_files=["model.bin", "config.json", "vocabulary.txt", "tokenizer.json"],
+        description_vi="Độ chính xác cao, xử lý tuyệt vời bài giảng, video tiếng Việt và thuật ngữ chuyên ngành.",
+        description_en="High accuracy multilingual recognition, excellent for Vietnamese lectures and specialized audio.",
+        expected_sha256={
+            "config.json": "3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807",
+            "model.bin": "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
+    ),
+    "whisper-large-v3": ModelMetadata(
+        model_id="whisper-large-v3",
+        repo_id="Systran/faster-whisper-large-v3",
+        display_name="Whisper Large v3",
+        size_mb=3100,
+        speed_rating=1,
+        accuracy_rating=5,
+        recommended_ram_gb=5,
+        recommended_vram_gb=6,
+        required_files=["model.bin", "config.json", "vocabulary.json", "tokenizer.json"],
+        description_vi="Đỉnh cao độ chính xác, xử lý các file hội thảo chuyên sâu, ngữ cảnh phức tạp và đa phương ngữ.",
+        description_en="State of the art accuracy, handles deep seminars, accents, and complex acoustic contexts.",
+        expected_sha256={
+            "config.json": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9",
+            "model.bin": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+            "tokenizer.json": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+            "vocabulary.json": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
         },
     ),
 }
@@ -416,6 +436,7 @@ def download_model(
         total_files = len(meta.required_files)
         total_model_bytes = meta.size_mb * 1024 * 1024
         downloaded_total_bytes = 0
+        last_notify_time = 0.0
 
         for i, fname in enumerate(meta.required_files):
             if evt.is_set():
@@ -425,28 +446,41 @@ def download_model(
 
             file_url = hf_hub_url(repo_id=meta.repo_id, filename=fname)
             dest_file = os.path.join(target_dir, fname)
+            tmp_file = dest_file + ".tmp"
 
             response = requests.get(file_url, stream=True, timeout=20)
             response.raise_for_status()
 
-            with open(dest_file, "wb") as f:
+            with open(tmp_file, "wb") as f:
                 for chunk in response.iter_content(chunk_size=65536):
                     if evt.is_set():
                         f.close()
+                        if os.path.exists(tmp_file):
+                            try:
+                                os.remove(tmp_file)
+                            except Exception:
+                                pass
                         print(f"[MODEL_HUB] Đã hủy tải model [{model_id}] thành công. Đang dọn dẹp file tạm...")
                         delete_model(model_id)
                         return False
                     if chunk:
                         f.write(chunk)
                         downloaded_total_bytes += len(chunk)
-                        pct = min(0.92, max(0.05, downloaded_total_bytes / max(1, total_model_bytes)))
-                        mb_done = downloaded_total_bytes / (1024 * 1024)
-                        _notify_progress(
-                            model_id,
-                            pct,
-                            t("model_hub.progress_downloading", file=fname, done=f"{mb_done:.1f}", total=meta.size_mb),
-                            progress_callback,
-                        )
+                        now = time.time()
+                        # Throttle progress notifications to ~6-7 per second (every 0.15s)
+                        if now - last_notify_time >= 0.15:
+                            last_notify_time = now
+                            pct = min(0.92, max(0.05, downloaded_total_bytes / max(1, total_model_bytes)))
+                            mb_done = downloaded_total_bytes / (1024 * 1024)
+                            _notify_progress(
+                                model_id,
+                                pct,
+                                t("model_hub.progress_downloading", file=fname, done=f"{mb_done:.1f}", total=meta.size_mb),
+                                progress_callback,
+                            )
+
+            if os.path.exists(tmp_file):
+                os.replace(tmp_file, dest_file)
 
         if evt.is_set():
             delete_model(model_id)

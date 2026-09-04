@@ -33,12 +33,12 @@ def get_optimal_device_and_compute_type() -> Tuple[str, str]:
 def get_best_installed_model() -> Optional[str]:
     """
     Returns the best available installed model ID.
-    Priority order: whisper-small > whisper-base > whisper-tiny.
+    Priority order: whisper-large-v3 > whisper-medium > whisper-small > whisper-base.
     Returns None if no model is installed.
     """
     from src.services.model_manager import is_model_installed
 
-    priority = ["whisper-small", "whisper-base", "whisper-tiny"]
+    priority = ["whisper-large-v3", "whisper-medium", "whisper-small", "whisper-base"]
     for model_id in priority:
         if is_model_installed(model_id):
             return model_id
@@ -199,7 +199,7 @@ def transcribe_audio_whisper(
 
         # 3. Determine device and compute type
         device, compute_type = get_optimal_device_and_compute_type()
-        cpu_threads = min(4, os.cpu_count() or 1)
+        cpu_threads = min(8, os.cpu_count() or 1)
         print(f"[SPEECH] Loading {model_id} on {device} ({compute_type}, threads={cpu_threads})...")
 
         try:

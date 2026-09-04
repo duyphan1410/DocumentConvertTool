@@ -344,21 +344,34 @@ def detect_hardware(force_refresh: bool = False) -> HardwareInfo:
 def recommend_model(hw: HardwareInfo) -> str:
     """
     Evaluates hardware specs and returns the optimal recommended model_id:
-    - 'whisper-small': If CUDA usable with ample VRAM (>= 3GB) or High-end CPU with >= 16GB RAM
-    - 'whisper-base': Balanced default for standard laptops/PCs (>= 8GB RAM)
-    - 'whisper-tiny': Ultra lightweight for low-spec PCs (< 8GB RAM)
+    - 'whisper-large-v3': If CUDA usable with dedicated VRAM (>= 6GB)
+    - 'whisper-medium': High-end CPU (>= 6 cores, >= 14GB RAM, >= 3GB free) or CUDA VRAM (>= 3.5GB)
+    - 'whisper-small': Standard PCs (>= 4 cores, >= 7GB RAM) or CUDA VRAM (>= 1.5GB)
+    - 'whisper-base': Lightweight entry-level default for budget/low-spec PCs
     """
-    rec = "whisper-tiny"
-    # 1. Check GPU CUDA capability
-    if hw.cuda_usable and hw.vram_free_mb >= 3000:
-        rec = "whisper-small"
-    elif hw.cuda_usable and hw.vram_free_mb >= 1500:
-        rec = "whisper-base"
-    # 2. CPU fallback based on system RAM
-    elif hw.ram_total_gb >= 16:
-        rec = "whisper-small"
-    elif hw.ram_total_gb >= 8:
-        rec = "whisper-base"
+    rec = "whisper-base"
+
+    # 1. NVIDIA CUDA GPU Path (Fastest inference)
+    if hw.cuda_usable:
+        vram_available = max(hw.vram_free_mb, hw.vram_total_mb * 0.7)
+        if vram_available >= 5500:
+            rec = "whisper-large-v3"
+        elif vram_available >= 3000:
+            rec = "whisper-medium"
+        elif vram_available >= 1500:
+            rec = "whisper-small"
+        else:
+            rec = "whisper-base"
+    else:
+        # 2. CPU Multi-core Path (Balanced sweet spot for CPU responsiveness)
+        effective_ram = round(hw.ram_total_gb) if hw.ram_total_gb > 0 else 0
+
+        # On CPU without CUDA, whisper-small is the true sweet spot (fast + accurate).
+        # Medium/Large take 4x-10x longer on CPU and degrade user responsiveness.
+        if effective_ram >= 7 and hw.cpu_cores >= 4 and hw.ram_free_gb >= 2.0:
+            rec = "whisper-small"
+        else:
+            rec = "whisper-base"
 
     print(f"[DEBUG] [HARDWARE] Evaluated Recommendation -> '{rec}' for {hw.cpu_name}")
     return rec

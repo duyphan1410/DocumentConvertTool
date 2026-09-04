@@ -18,7 +18,13 @@ docs/
 │   ├── 006_parentheses_image_path_resolution_fix.md
 │   └── 007_module_architecture_and_pptx_refactoring.md
 ├── roadmaps/                             # Active feature roadmaps & UI specifications
-│   └── product_roadmap.md
+│   ├── pkb/                              # PKB-001 Detailed Phase Specifications
+│   │   ├── phase1_tagging_wikilinks.md   # Phase 1: SQLite Index, Wikilinks & Backlinks (v1.10.0)
+│   │   ├── phase2_mcp_server.md          # Phase 2: Local stdio MCP Server for Claude (v1.11.0)
+│   │   ├── phase3_graph_view.md          # Phase 3: Interactive Knowledge Graph View (v1.12.0)
+│   │   └── phase4_export_sync.md         # Phase 4: Obsidian Sync & Claude Projects Export (v1.13.0)
+│   ├── pkb_feature_plan.md               # PKB-001 Master Architecture & Phased Blueprint
+│   └── product_roadmap.md                # Master product roadmap
 ├── releases/                             # Version changelogs & release notes
 │   ├── v1.5.0.md
 │   ├── v1.5.3.md
@@ -79,6 +85,11 @@ docs/
 ### 🗺️ 2. Product Roadmaps (`docs/roadmaps/`)
 
 - [product_roadmap.md](roadmaps/product_roadmap.md): Master product development roadmap and planned milestones.
+- [pkb_feature_plan.md](roadmaps/pkb_feature_plan.md): Kế hoạch kiến trúc & phân công 4-phase cho Tagging, MCP Server, Graph View, Export Module (v1.10.0 → v1.13.0).
+  - [phase1_tagging_wikilinks.md](roadmaps/pkb/phase1_tagging_wikilinks.md): Chi tiết kỹ thuật Phase 1 — SQLite Index, Wikilinks `[[...]]`, Fuzzy Matching & Backlink Panel (v1.10.0).
+  - [phase2_mcp_server.md](roadmaps/pkb/phase2_mcp_server.md): Chi tiết kỹ thuật Phase 2 — Local stdio MCP Server cho Claude Desktop / Code (v1.11.0).
+  - [phase3_graph_view.md](roadmaps/pkb/phase3_graph_view.md): Chi tiết kỹ thuật Phase 3 — Interactive Knowledge Graph View với NetworkX & SVG (v1.12.0).
+  - [phase4_export_sync.md](roadmaps/pkb/phase4_export_sync.md): Chi tiết kỹ thuật Phase 4 — Obsidian Sync, Claude Projects Exporter & AI Auto-Link (v1.13.0).
 
 ---
 

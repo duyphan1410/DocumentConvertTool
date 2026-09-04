@@ -701,15 +701,17 @@ class ExplorerView(ft.Container):
         self.empty_state = ft.Container(
             content=ft.Column(
                 [
-                    ft.Icon(ft.Icons.FOLDER_OFF_OUTLINED, size=32, color=ft.Colors.OUTLINE),
+                    ft.Icon(ft.Icons.FOLDER_OFF_OUTLINED, size=36, color=ft.Colors.OUTLINE),
                     self.empty_state_text,
                     self.empty_state_btn,
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
-                spacing=8,
+                spacing=10,
             ),
-            padding=ft.Padding(left=16, top=32, right=16, bottom=16),
+            alignment=ft.Alignment(0, 0),
+            expand=True,
+            padding=ft.Padding(left=16, top=16, right=16, bottom=16),
             visible=not bool(workspace_path),
         )
 

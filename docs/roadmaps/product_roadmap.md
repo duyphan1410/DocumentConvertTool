@@ -103,21 +103,56 @@
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **Recent Files History** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Lưu danh sách 5-10 tệp mở gần đây (Recent Documents) có biểu tượng định dạng, đường dẫn rút gọn và hỗ trợ mở lại nhanh 1-click từ Welcome Dashboard. | ⏳ Planned |
-| **Image Sizing Dialog & Format Tab** | `src/ui_flet/views/editor_view.py`, `src/ui_flet/layout/ribbon_bar.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh trực quan (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh W/H) và bổ sung Contextual Format Tab động trên Ribbon Bar khi click vào ảnh. | ⏳ Planned |
 | **EPub eBook Engine (`.epub <-> .md`)** | `src/modules/epub_module.py` | Đọc, phân giải cấu trúc chương sách và đóng gói sách điện tử `.epub` hai chiều với Markdown. | ⏳ Planned |
-| **PhoWhisper Tiếng Việt** | `src/services/whisper_service.py`, `src/ui_flet/components/model_hub_dialog.py` | Convert `vinai/PhoWhisper-base` sang CTranslate2, host trên Repo HuggingFace chính chủ, tối ưu ngữ điệu đa vùng miền Việt Nam. | ⏳ Planned |
+
+> 📌 **Ghi chú kỹ thuật về Mô hình Whisper**:  
+> Bộ model chuẩn hiện tại (`base`, `small`, `medium`, `large-v3`) đã chốt và đáp ứng toàn diện theo cả 3 tiêu chí: nhẹ hơn, nhanh hơn, và chính xác hơn — đặc biệt đối với các file âm thanh có xen lẫn thuật ngữ tiếng Anh/kỹ thuật.  
+> Do đó, **`PhoWhisper-base` được rút khỏi roadmap chính thức của v1.9.1** và chỉ lưu ý lại như một **Optional Add-on dự phòng** (tùy mục tiêu sau này, nếu có nhóm người dùng chuyên biệt yêu cầu xử lý âm thanh thuần Việt 100% như phỏng vấn, bài giảng không thuật ngữ ngoại lai).
 
 ---
 
-### 🔮 v2.0.0 (Personal Knowledge Base & Network Graph Ecosystem):
+### 🚀 v1.10.0 (Tagging & Wikilinks — nền tảng PKB):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Manual Wikilinks `[[...]]`** | `src/services/link_parser.py` | Cú pháp liên kết hai chiều kiểu Obsidian `[[Tên File]]` hoặc `[[Tên File\|Tên hiển thị]]`; Bộ phân giải Fuzzy Match (bỏ dấu tiếng Việt `NFD`, case-insensitive, trim space); In-memory graph index. | 🔮 Planned (v2.0) |
-| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py`, `src/ui_flet/controllers/file_controller.py` | Hiển thị link chưa tồn tại bằng màu cảnh báo / gạch chân đứt nét; Hỗ trợ Click để tự động tạo file `.md` mới trong Workspace và mở tab mới tức thì. | 🔮 Planned (v2.0) |
-| **Backlink Panel** | `src/ui_flet/views/backlink_view.py`, `src/ui_flet/layout/activity_bar.py` | Panel thanh bên hiển thị danh sách các tài liệu đang dẫn nguồn về tài liệu hiện hành (*Linked References* & *Unlinked Mentions*). | 🔮 Planned (v2.0) |
-| **Interactive Knowledge Graph View** | `src/ui_flet/views/graph_view.py` | Bản đồ đồ thị tri thức tương tác trực quan 2D kết nối tất cả các ghi chú trong toàn bộ thư mục Workspace. | 🔮 Planned (v2.0) |
-| **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết thông minh giữa các tài liệu dựa trên Semantic Embeddings / Local Vector Search. | 🔮 Planned (v2.0) |
+| **SQLite Metadata Index** | `%APPDATA%\DocConvert\index.db` | Bảng `documents`, `tags`, `document_tags`, `wikilinks` — nền tảng dữ liệu chung cho MCP, Graph View, Export. | ⏳ Planned |
+| **Manual Wikilinks `[[...]]`** | `src/services/link_parser.py` | Liên kết hai chiều kiểu Obsidian; Fuzzy Match tiếng Việt (bỏ dấu NFD, case-insensitive, trim space). | ⏳ Planned |
+| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng cảnh báo màu; Click tạo file `.md` mới tự động. | ⏳ Planned |
+| **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel *Linked References* & *Unlinked Mentions*. | ⏳ Planned |
+
+*(Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.11.0 (MCP Server cho Claude Desktop/Code):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **MCP Server (stdio)** | `src/mcp/server.py` (mới) | Expose `search_documents`, `read_document`, `convert_document`, `tag_document`, `list_backlinks` qua MCP stdio transport (local subprocess, không mở port/tunnel); mọi tool dùng `document_id` nội bộ. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.12.0 (Knowledge Graph View):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Interactive Knowledge Graph View** | `src/ui_flet/views/graph_view.py` | Đồ thị 2D, layout `networkx`, render SVG trong Flet; filter theo tag/tên/độ sâu liên kết; mặc định giới hạn 2-hop quanh note đang mở. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.13.0 (Export Module — Obsidian & Claude Projects):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Obsidian Export-sync** | `src/services/export_service.py` (mới) | Ghi `.md` + frontmatter (`title`, `tags`, `docconvert_id`) vào vault folder; sync 1 chiều. | ⏳ Planned |
+| **Claude Projects Export** | `src/services/export_service.py` | Đóng gói `.zip` giữ nguyên cấu trúc thư mục + frontmatter, mỗi note là 1 file riêng (tối ưu cho RAG retrieval của Claude Projects); dữ liệu tĩnh, user tự re-export khi cần cập nhật. | ⏳ Planned |
+| **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết dựa trên Semantic Embeddings / Local Vector Search. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
 
 ---
 

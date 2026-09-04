@@ -18,7 +18,7 @@ class TestHardwareDetector(unittest.TestCase):
     """Test cases for hardware detection logic and recommendations."""
 
     def test_recommendation_modern_gpu(self):
-        """High-end NVIDIA GPU with ample VRAM should recommend whisper-small."""
+        """High-end NVIDIA GPU with ample VRAM (>= 6GB) should recommend whisper-large-v3."""
         hw = HardwareInfo(
             cpu_name="Intel Core i7-13700H",
             cpu_cores=16,
@@ -32,12 +32,12 @@ class TestHardwareDetector(unittest.TestCase):
             vram_free_mb=6200.0,
             cuda_usable=True,
         )
-        self.assertEqual(recommend_model(hw), "whisper-small")
+        self.assertEqual(recommend_model(hw), "whisper-large-v3")
         self.assertIn("RTX 4070", hw.get_summary_text())
         self.assertIn("CUDA 12.4", hw.get_summary_text())
 
     def test_recommendation_mid_gpu(self):
-        """Moderate NVIDIA GPU with ~2GB free VRAM should recommend whisper-base."""
+        """Moderate NVIDIA GPU with ~2GB free VRAM should recommend whisper-small."""
         hw = HardwareInfo(
             cpu_name="AMD Ryzen 5 3600",
             cpu_cores=6,
@@ -51,7 +51,19 @@ class TestHardwareDetector(unittest.TestCase):
             vram_free_mb=2000.0,
             cuda_usable=True,
         )
-        self.assertEqual(recommend_model(hw), "whisper-base")
+        self.assertEqual(recommend_model(hw), "whisper-small")
+
+    def test_recommendation_cpu_multicore_sweet_spot(self):
+        """Zen 3 CPU (6 cores / 12 threads) with 15.4GB RAM should recommend whisper-small (CPU sweet spot)."""
+        hw = HardwareInfo(
+            cpu_name="AMD Ryzen 5 5600H with Radeon Graphics",
+            cpu_cores=12,
+            ram_total_gb=15.39,
+            ram_free_gb=6.5,
+            has_nvidia_gpu=False,
+            cuda_usable=False,
+        )
+        self.assertEqual(recommend_model(hw), "whisper-small")
 
     def test_recommendation_legacy_driver_gpu_fallback_cpu(self):
         """GPU with outdated driver / cuda_usable=False falls back to CPU RAM thresholds."""
@@ -67,11 +79,11 @@ class TestHardwareDetector(unittest.TestCase):
             vram_free_mb=1800.0,
             cuda_usable=False,  # Outdated driver < 450
         )
-        # RAM is 8GB -> whisper-base
-        self.assertEqual(recommend_model(hw), "whisper-base")
+        # RAM is 8GB, 4 cores -> whisper-small
+        self.assertEqual(recommend_model(hw), "whisper-small")
 
     def test_recommendation_low_spec_cpu_only(self):
-        """Low-spec PC with < 8GB RAM and no dedicated GPU should recommend whisper-tiny."""
+        """Low-spec PC with < 7GB RAM or < 4 cores should recommend whisper-base."""
         hw = HardwareInfo(
             cpu_name="Intel Celeron N4020",
             cpu_cores=2,
@@ -80,11 +92,11 @@ class TestHardwareDetector(unittest.TestCase):
             has_nvidia_gpu=False,
             cuda_usable=False,
         )
-        self.assertEqual(recommend_model(hw), "whisper-tiny")
+        self.assertEqual(recommend_model(hw), "whisper-base")
         self.assertIn("CPU/Integrated Graphics", hw.get_summary_text())
 
     def test_recommendation_ram_query_failure_fallback(self):
-        """When RAM info cannot be detected (0.0 GB), safely recommend whisper-tiny."""
+        """When RAM info cannot be detected (0.0 GB), safely recommend whisper-base."""
         hw = HardwareInfo(
             cpu_name="Unknown CPU",
             cpu_cores=1,
@@ -93,7 +105,7 @@ class TestHardwareDetector(unittest.TestCase):
             has_nvidia_gpu=False,
             cuda_usable=False,
         )
-        self.assertEqual(recommend_model(hw), "whisper-tiny")
+        self.assertEqual(recommend_model(hw), "whisper-base")
 
     @patch("src.services.hardware_detector._query_gpu_nvml")
     @patch("src.services.hardware_detector._query_gpu_nvidia_smi")

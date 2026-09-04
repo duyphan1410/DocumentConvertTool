@@ -86,13 +86,17 @@ def build_model_hub_view(
             drive=drive,
             free_gb=free_gb,
         )
+        try:
+            storage_label.update()
+        except Exception:
+            pass
 
     refresh_storage_display()
 
     # Container for model cards grid
     cards_row = ft.Row(
         controls=[],
-        spacing=12,
+        spacing=10,
         alignment=ft.MainAxisAlignment.START,
         vertical_alignment=ft.CrossAxisAlignment.START,
         wrap=True if is_embedded else False,
@@ -147,11 +151,15 @@ def build_model_hub_view(
                 card_pbar.visible = True
                 card_status.value = msg
                 card_status.visible = True
-                if page:
-                    try:
-                        page.update()
-                    except Exception:
-                        pass
+                try:
+                    card_pbar.update()
+                    card_status.update()
+                except Exception:
+                    if page:
+                        try:
+                            page.update()
+                        except Exception:
+                            pass
 
             if main_loop and not main_loop.is_closed():
                 try:
@@ -164,7 +172,11 @@ def build_model_hub_view(
                     card_pbar.visible = True
                     card_status.value = msg
                     card_status.visible = True
-                    page.update()
+                    try:
+                        card_pbar.update()
+                        card_status.update()
+                    except Exception:
+                        page.update()
                 except Exception:
                     pass
 
@@ -197,12 +209,20 @@ def build_model_hub_view(
 
             if page:
                 if success:
-                    show_message_dialog(
-                        page=page,
-                        payload=t("model_hub.download_success", name=meta.display_name),
-                        title=t("model_hub.dialog_success_title"),
-                        dialog_type=DialogType.SUCCESS,
-                    )
+                    try:
+                        page.snack_bar = ft.SnackBar(
+                            content=ft.Text(
+                                t("model_hub.download_success", name=meta.display_name),
+                                color=ft.Colors.WHITE,
+                                weight=ft.FontWeight.W_500,
+                            ),
+                            bgcolor=ft.Colors.GREEN_700,
+                            duration=3500,
+                        )
+                        page.snack_bar.open = True
+                        page.update()
+                    except Exception:
+                        pass
                 elif not cancel_evt.is_set():
                     # Only show error dialog on actual network/disk failure, not user cancellation
                     err_detail = last_msg[0] or t("model_hub.error_generic", error="Network timeout")
@@ -424,7 +444,7 @@ def build_model_hub_view(
             border=make_border(1.5 if is_rec else 1, accent_primary if is_rec else border_color),
             border_radius=8,
             padding=12,
-            height=275,
+            height=280,
             expand=1 if not is_embedded else None,
             width=255 if is_embedded else None,
         )
@@ -432,6 +452,10 @@ def build_model_hub_view(
 
     def render_cards():
         cards_row.controls = [build_model_card(m) for m in AVAILABLE_MODELS.values()]
+        try:
+            cards_row.update()
+        except Exception:
+            pass
         try:
             if page:
                 page.update()
@@ -593,7 +617,7 @@ def build_model_hub_view(
             spacing=6,
             tight=True,
         ),
-        width=830 if not is_embedded else None,
+        width=1000 if not is_embedded else None,
     )
     return root_container
 

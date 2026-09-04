@@ -18,7 +18,13 @@ docs/
 │   ├── 006_parentheses_image_path_resolution_fix.md
 │   └── 007_module_architecture_and_pptx_refactoring.md
 ├── roadmaps/                             # Active feature roadmaps & UI specifications
-│   └── product_roadmap.md
+│   ├── pkb/                              # PKB-001 Detailed Phase Specifications
+│   │   ├── phase1_tagging_wikilinks.md   # Phase 1: SQLite Index, Wikilinks & Backlinks (v1.10.0)
+│   │   ├── phase2_mcp_server.md          # Phase 2: Local stdio MCP Server for Claude (v1.11.0)
+│   │   ├── phase3_graph_view.md          # Phase 3: Interactive Knowledge Graph View (v1.12.0)
+│   │   └── phase4_export_sync.md         # Phase 4: Obsidian Sync & Claude Projects Export (v1.13.0)
+│   ├── pkb_feature_plan.md               # PKB-001 Master Architecture & Phased Blueprint
+│   └── product_roadmap.md                # Master product roadmap
 ├── releases/                             # Version changelogs & release notes
 │   ├── v1.5.0.md
 │   ├── v1.5.3.md
@@ -26,6 +32,7 @@ docs/
 │   ├── v1.6.0_en.md
 │   └── v1.7.0.md
 └── archive/                              # Completed snapshots, feature plans & PR logs
+    ├── 20260904_whisper_model_optimization_and_vision_alignment.md
     ├── 20260903_whisper_feature_plan.md
     ├── 20260903_background_transcription_and_tabs.md
     ├── 20260902_image_regex_parentheses_and_preview_scroll_stabilization.md
@@ -79,6 +86,11 @@ docs/
 ### 🗺️ 2. Product Roadmaps (`docs/roadmaps/`)
 
 - [product_roadmap.md](roadmaps/product_roadmap.md): Master product development roadmap and planned milestones.
+- [pkb_feature_plan.md](roadmaps/pkb_feature_plan.md): Kế hoạch kiến trúc & phân công 4-phase cho Tagging, MCP Server, Graph View, Export Module (v1.10.0 → v1.13.0).
+  - [phase1_tagging_wikilinks.md](roadmaps/pkb/phase1_tagging_wikilinks.md): Chi tiết kỹ thuật Phase 1 — SQLite Index, Wikilinks `[[...]]`, Fuzzy Matching & Backlink Panel (v1.10.0).
+  - [phase2_mcp_server.md](roadmaps/pkb/phase2_mcp_server.md): Chi tiết kỹ thuật Phase 2 — Local stdio MCP Server cho Claude Desktop / Code (v1.11.0).
+  - [phase3_graph_view.md](roadmaps/pkb/phase3_graph_view.md): Chi tiết kỹ thuật Phase 3 — Interactive Knowledge Graph View với NetworkX & SVG (v1.12.0).
+  - [phase4_export_sync.md](roadmaps/pkb/phase4_export_sync.md): Chi tiết kỹ thuật Phase 4 — Obsidian Sync, Claude Projects Exporter & AI Auto-Link (v1.13.0).
 
 ---
 
@@ -101,6 +113,7 @@ docs/
 - [20260818_plan_setup_exe.md](archive/20260818_plan_setup_exe.md): `--onedir` packaging & Inno Setup 7 installer plan (AppId, user data protection, WebView2 runtime check, CI/CD automation). ✅ Completed (v1.7.2).
 
 #### PR Completion Snapshots & Technical Logs
+- [20260904_whisper_model_optimization_and_vision_alignment.md](archive/20260904_whisper_model_optimization_and_vision_alignment.md): Whisper Models Optimization, Hardware Recommendation Tuning & Vision Alignment (v1.9.1) — PhoWhisper retracted to Optional Add-on, real-world Vietnamese benchmark analysis (79.6s audio, sweet spot `whisper-small` ~7.4x realtime), CTranslate2 CPU 8-threads, Model Hub non-blocking toast SnackBar, progress throttle, 4-card equal-ratio grid, TranscribeDialog live % progress, and lightning emoji removal.
 - [20260903_background_transcription_and_tabs.md](archive/20260903_background_transcription_and_tabs.md): Background Transcription, Tab Integration & Universal Media Support (Phase 3 — v1.9.0) — TranscribeDialog redesign, Activity Bar smart routing, background tab creation, draft persistence, Ribbon Bar toggle sync, and universal media container file dialog.
 - [20260902_image_regex_parentheses_and_preview_scroll_stabilization.md](archive/20260902_image_regex_parentheses_and_preview_scroll_stabilization.md): Image regex parentheses fix and preview scroll position stabilization across tab switches.
 - [20260901_whisper_model_hub_and_hardware_orchestrator.md](archive/20260901_whisper_model_hub_and_hardware_orchestrator.md): AI Model Hub Orchestrator, Multi-Vendor Hardware Detection & 2-Layer Verification Architecture (Phase 1 — v1.9.0).

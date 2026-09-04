@@ -198,8 +198,10 @@ class LayoutController:
 
     def on_editor_resized(self, delta_x: float):
         """Handles smooth 60fps drag resizing between editor and preview."""
+        self.state.is_ui_resizing = True
         editor_view = self.app_controls.get("editor_view")
         right_pane = self.app_controls.get("right_pane")
+        editor_split_row = self.app_controls.get("editor_split_row")
         editor_workspace = self.app_controls.get("editor_workspace")
         if not (editor_view and right_pane):
             return
@@ -223,13 +225,16 @@ class LayoutController:
         right_pane.expand = preview_flex
 
         try:
-            if editor_workspace and editor_workspace.page:
+            if editor_split_row and editor_split_row.page:
+                editor_split_row.update()
+            elif editor_workspace and editor_workspace.page:
                 editor_workspace.update()
         except Exception:
             pass
 
     def on_editor_resize_end(self):
         """Persist editor ratio to settings when drag ends."""
+        self.state.is_ui_resizing = False
         self._safe_save_settings()
 
     def on_editor_double_tap(self):
@@ -278,6 +283,7 @@ class LayoutController:
 
     def on_sidebar_resized(self, delta_x: float):
         """Handles smooth 60fps drag resizing of the sidebar."""
+        self.state.is_ui_resizing = True
         explorer_view = self.app_controls.get("explorer_view")
         if not explorer_view:
             return
@@ -290,6 +296,7 @@ class LayoutController:
 
         # Snap-to-collapse threshold
         if target_width < 100:
+            self.state.is_ui_resizing = False
             self.state.show_sidebar = False
             self.toggle_sidebar(tab_name=self.state.active_activity_tab)
             return
@@ -313,6 +320,7 @@ class LayoutController:
 
     def on_sidebar_resize_end(self):
         """Persist new sidebar width to settings when drag ends."""
+        self.state.is_ui_resizing = False
         self._safe_save_settings()
 
     def on_sidebar_double_tap(self):
@@ -482,49 +490,51 @@ class LayoutController:
                 print(f"[LOG][TAB_SWITCH] No cache, is_heavy={is_heavy}. Launching hydration...")
 
                 if is_heavy:
-                    incoming_tab.is_loading = True
-                    if tab_bar and hasattr(tab_bar, "render_tabs"):
-                        tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                    if not getattr(incoming_tab, "_is_hydrating", False):
+                        incoming_tab._is_hydrating = True
 
-                    async def _async_hydrate():
-                        t_h0 = time.time()
-                        try:
-                            is_dark = getattr(preview, "_is_dark", False)
-                            palette_name = getattr(preview, "_palette_name", "Deep Ocean")
-                            processed_md = await process_markdown_media_async(
-                                incoming_tab.full_content,
-                                base_dir=base_dir,
-                                is_dark=is_dark,
-                                palette_name=palette_name,
-                                session_id=incoming_tab.media_session_id,
-                            )
-                            incoming_tab.cached_preview_md = processed_md
-                            print(f"[LOG][TAB_SWITCH] Async hydration computed in {time.time() - t_h0:.3f}s (cached_len={len(processed_md)})")
-
-                            # UI CONCURRENCY GUARD: Only mutate preview widget if incoming_tab is STILL the active tab
-                            if self.state.active_tab_id == incoming_tab.tab_id:
-                                preview.set_processed_content(
-                                    processed_md,
+                        async def _async_hydrate():
+                            t_h0 = time.time()
+                            try:
+                                is_dark = getattr(preview, "_is_dark", False)
+                                palette_name = getattr(preview, "_palette_name", "Deep Ocean")
+                                processed_md = await process_markdown_media_async(
                                     incoming_tab.full_content,
                                     base_dir=base_dir,
+                                    is_dark=is_dark,
+                                    palette_name=palette_name,
                                     session_id=incoming_tab.media_session_id,
                                 )
+                                incoming_tab.cached_preview_md = processed_md
+                                print(f"[LOG][TAB_SWITCH] Async hydration computed in {time.time() - t_h0:.3f}s (cached_len={len(processed_md)})")
+
+                                # UI CONCURRENCY GUARD: Only mutate preview widget if incoming_tab is STILL the active tab
+                                if self.state.active_tab_id == incoming_tab.tab_id:
+                                    preview.set_processed_content(
+                                        processed_md,
+                                        incoming_tab.full_content,
+                                        base_dir=base_dir,
+                                        session_id=incoming_tab.media_session_id,
+                                    )
+                                    try:
+                                        self.page.update()
+                                    except Exception:
+                                        pass
+                            except Exception as e:
+                                print(f"[DEBUG] Preview hydration error: {e}")
+                            finally:
+                                incoming_tab._is_hydrating = False
+                                footer_bar = self.app_controls.get("footer_bar")
+                                if footer_bar and self.state.active_tab_id == incoming_tab.tab_id:
+                                    footer_bar.set_processing(getattr(incoming_tab, "is_loading", False))
+                                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
                                 try:
                                     self.page.update()
                                 except Exception:
                                     pass
-                        except Exception as e:
-                            print(f"[DEBUG] Preview hydration error: {e}")
-                        finally:
-                            incoming_tab.is_loading = False
-                            if tab_bar and hasattr(tab_bar, "render_tabs"):
-                                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
-                            try:
-                                self.page.update()
-                            except Exception:
-                                pass
 
-                    asyncio.create_task(_async_hydrate())
+                        asyncio.create_task(_async_hydrate())
                 else:
                     preview.update_preview(
                         incoming_tab.full_content,
@@ -552,6 +562,7 @@ class LayoutController:
         # 11. Hydrate FooterBar (Per-Tab conversion result & status)
         footer_bar = self.app_controls.get("footer_bar")
         if footer_bar:
+            footer_bar.set_processing(incoming_tab.is_loading)
             has_valid_converted = bool(
                 incoming_tab.last_converted_path
                 and os.path.exists(incoming_tab.last_converted_path)
@@ -563,6 +574,8 @@ class LayoutController:
                     f"✓ {fname}",
                     color=ft.Colors.GREEN_400,
                 )
+            elif incoming_tab.is_loading:
+                footer_bar.set_status_key("status.file_loading", filename=incoming_tab.title)
             else:
                 footer_bar.set_status_key("footer.status_ready")
 

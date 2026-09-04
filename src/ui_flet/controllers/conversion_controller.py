@@ -32,6 +32,17 @@ class ConversionController:
         self._active_tasks = set()
 
     def on_convert_clicked(self, e=None):
+        if self.state.is_processing or (self.state.active_tab and self.state.active_tab.is_loading):
+            self.footer_bar.set_status(
+                "Đang trong tiến trình nạp / nhận diện OCR tài liệu, vui lòng đợi hoàn tất trước khi chuyển đổi!",
+                color=ft.Colors.AMBER_400,
+            )
+            try:
+                self.page.update()
+            except Exception:
+                pass
+            return
+
         content = self.editor_view.get_text()
         if not content or not content.strip():
             self.footer_bar.set_status_key(
@@ -310,12 +321,33 @@ class ConversionController:
         try:
             content = self.editor_view.get_text()
             mode = self.state.current_mode
+
+            # Safety fallback: if user converts in "PDF Scan -> MD" mode but editor content is empty,
+            # dynamically execute OCR loading first to prevent writing out an empty/corrupted file.
+            if (
+                mode == "PDF Scan -> MD"
+                and (not content or not content.strip())
+                and self.state.in_path
+                and self.state.in_path.lower().endswith(".pdf")
+            ):
+                file_controller = self.app_controls.get("file_controller")
+                if file_controller and hasattr(file_controller, "open_file_by_path"):
+                    await file_controller.open_file_by_path(self.state.in_path, force_reload=True)
+                    content = self.editor_view.get_text()
+
             msg = await asyncio.to_thread(convert_content, mode, content, out_path)
             duration = time.time() - t0
             timestamp = time.strftime("%H:%M:%S")
             print(f"[LOG][SAVE/CONVERT][{timestamp}] {msg} ({duration:.2f}s) -> {out_path}")
 
             self.state.last_converted_path = out_path
+            if self.state.active_tab:
+                self.state.active_tab.last_converted_path = out_path
+            file_controller = self.app_controls.get("file_controller")
+            if file_controller:
+                file_controller.perform_autosave(self.state.active_tab_id)
+                file_controller.save_tab_session()
+
             self.state.is_processing = False
             self.footer_bar.set_processing(False)
             self.footer_bar.set_result_buttons_visible(True)

@@ -337,10 +337,14 @@ class RibbonBar(ft.Container):
         ]
         if preferred_mode and preferred_mode in valid_modes:
             self.mode_dropdown.value = preferred_mode
-        elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
-            pass
         else:
-            self.mode_dropdown.value = valid_modes[0]
+            # Fallback priority: if file is .md and preferred mode is incompatible (e.g. PDF -> MD), default to "MD -> Markdown" (Save .md)
+            if input_ext.lower() == ".md" and "MD -> Markdown" in valid_modes:
+                self.mode_dropdown.value = "MD -> Markdown"
+            elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
+                pass
+            else:
+                self.mode_dropdown.value = valid_modes[0]
 
         if self.mode_dropdown.page:
             self.mode_dropdown.update()

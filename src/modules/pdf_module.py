@@ -3,6 +3,7 @@ import sys
 import re
 import io
 import hashlib
+from typing import Optional, Callable
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 
@@ -799,8 +800,15 @@ class PDFModule(BaseDocumentModule):
                         page_area = page.width * page.height
                         img_area = (rect.x1 - rect.x0) * (rect.y1 - rect.y0)
                         if page_area > 0 and img_area > page_area * 0.85:
-                            print(f"[DEBUG] PDFModule: Skipped likely-background image (page {page_idx+1})")
-                            continue
+                            # A full-page image is a background only if the page has readable text on top of it.
+                            # If the page has no text (e.g. rasterized slide deck, infographics, photo slides),
+                            # the image IS the entire page content and must be preserved!
+                            page_text = page_fitz.get_text().strip() if page_fitz else ""
+                            if len(page_text) > 0:
+                                print(f"[DEBUG] PDFModule: Skipped likely-background image (page {page_idx+1})")
+                                continue
+                            else:
+                                print(f"[DEBUG] PDFModule: Retained full-page slide/content image on textless page {page_idx+1}")
 
                         candidates.append({
                             "xref": xref,
@@ -892,7 +900,11 @@ class PDFModule(BaseDocumentModule):
     # MAIN DOCUMENT INGESTION (PDF -> Markdown)
     # =========================================================================
 
-    def load_to_markdown(self, file_path: str) -> str:
+    def load_to_markdown(
+        self,
+        file_path: str,
+        progress_callback: Optional[Callable[[int, int, str, Optional[str]], None]] = None,
+    ) -> str:
         """
         Extracts PDF content to clean Markdown text with table structure recognition using pdfplumber.
         Supports table stitching across page breaks and image deduplication.
@@ -1047,6 +1059,30 @@ class PDFModule(BaseDocumentModule):
                             
                     if page_idx < len(pdf.pages) - 1:
                         doc_elements.append({"type": "page_break", "content": "\n\n---\n\n"})
+
+                    if progress_callback:
+                        try:
+                            partial_parts = []
+                            for el in doc_elements:
+                                if el["type"] == "text":
+                                    partial_parts.append(el["content"].strip())
+                                elif el["type"] == "table":
+                                    md_t = self._format_markdown_table(el["content"])
+                                    if md_t:
+                                        partial_parts.append(md_t)
+                                elif el["type"] == "image":
+                                    partial_parts.append(el["content"].strip())
+                                elif el["type"] == "page_break":
+                                    partial_parts.append(el["content"])
+                            partial_md = "\n\n".join(partial_parts)
+                            progress_callback(
+                                page_idx + 1,
+                                len(pdf.pages),
+                                f"Trang {page_idx + 1}/{len(pdf.pages)}",
+                                partial_md,
+                            )
+                        except Exception:
+                            pass
 
             if fitz_doc:
                 try:

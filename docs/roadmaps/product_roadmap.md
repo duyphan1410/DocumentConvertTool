@@ -98,12 +98,19 @@
 
 ---
 
-### 🚀 v1.9.1+ (Format Expansion & UX Polish):
+### ✅ v1.9.1 (OCR Scanned PDF Engine & Preview Scroll Synchronization):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **OCR Scanned PDF Engine & Scroll Synchronization** | `src/services/ocr_service.py`, `src/modules/pdf_scan_module.py`, `src/ui_flet/views/preview_view.py` | Tích hợp OCR đa tầng (Tesseract/RapidOCR) nhận diện PDF quét ảnh sang Markdown; Đồng bộ hóa 2-Pass Frame Layout Scroll khóa vị trí cuộn Preview khi mở Menu ảnh và áp dụng preset. *(Xem `docs/archive/20260904_ocr_pdf_scan_and_preview_scroll_synchronization.md`)*. | ✅ Completed (v1.9.1) |
+
+---
+
+### 🚀 v1.9.2+ (Format Expansion & UX Polish):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **Recent Files History** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Lưu danh sách 5-10 tệp mở gần đây (Recent Documents) có biểu tượng định dạng, đường dẫn rút gọn và hỗ trợ mở lại nhanh 1-click từ Welcome Dashboard. | ⏳ Planned |
-| **EPub eBook Engine (`.epub <-> .md`)** | `src/modules/epub_module.py` | Đọc, phân giải cấu trúc chương sách và đóng gói sách điện tử `.epub` hai chiều với Markdown. | ⏳ Planned |
 
 > 📌 **Ghi chú kỹ thuật về Mô hình Whisper**:  
 > Bộ model chuẩn hiện tại (`base`, `small`, `medium`, `large-v3`) đã chốt và đáp ứng toàn diện theo cả 3 tiêu chí: nhẹ hơn, nhanh hơn, và chính xác hơn — đặc biệt đối với các file âm thanh có xen lẫn thuật ngữ tiếng Anh/kỹ thuật.  

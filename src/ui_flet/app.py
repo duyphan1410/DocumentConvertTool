@@ -143,18 +143,39 @@ class DocumentConvertApp:
             on_close_tab=lambda: self.layout_controller.handle_doc_tab_closed(self.state.active_tab_id) if self.state.active_tab_id else None,
             on_next_tab=self.layout_controller.handle_next_doc_tab,
             on_prev_tab=self.layout_controller.handle_prev_doc_tab,
+            on_new_window=lambda: self._open_new_window(),
         )
 
         # Load & sync settings into UI controls (after controls are built)
         self.settings_controller.load_and_apply()
 
         # Restore Draft asynchronously with loading view, or Show Editor if Workspace Folder exists, or Show Welcome Screen
-        if self.file_controller.has_draft_on_disk():
+        is_fresh_window = "--new-window" in sys.argv or "--fresh" in sys.argv
+        if is_fresh_window:
+            self.state.workspace_folder = ""
+            self.state.tabs.clear()
+            self.state.active_tab_id = None
+            self._show_welcome_view()
+        elif self.file_controller.has_draft_on_disk():
             asyncio.create_task(self.file_controller.async_load_draft_if_exists())
         elif self.state.workspace_folder and os.path.exists(self.state.workspace_folder):
             self._show_editor_view(auto_select_edit=False)
         else:
             self._show_welcome_view()
+
+        async def _focus_window_async():
+            try:
+                self.page.window.focused = True
+                await self.page.window.to_front()
+            except Exception:
+                pass
+
+        asyncio.create_task(_focus_window_async())
+
+        # Win32 OS 4-layer Z-Index & Focus elevation (bypasses Windows ForegroundLockTimeout)
+        if sys.platform == "win32":
+            from src.utils.env import force_process_window_foreground
+            force_process_window_foreground(delay=0.1)
 
         print("[DEBUG] App initialized successfully with Pure Orchestrator MVC Architecture")
 
@@ -185,6 +206,10 @@ class DocumentConvertApp:
             on_transcribe_media=lambda e: self.file_controller.trigger_media_transcribe(e),
             on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_open_help=lambda e: self._show_help_view(),
+            on_open_recent_file=lambda path: asyncio.create_task(self.file_controller.open_file_by_path(path)),
+            on_open_recent_folder=lambda path: self._on_open_recent_workspace_folder(path),
+            on_new_window=lambda: self._open_new_window(),
+            on_return_editor=lambda: self._show_editor_view(auto_select_edit=True),
         )
 
         self.loading_view = LoadingView()
@@ -337,6 +362,7 @@ class DocumentConvertApp:
             on_new_folder=lambda new_folder: None,
             on_status_message=lambda msg, col=None: self.footer_bar.set_status(msg, color=col),
             on_batch_convert=lambda p: self._show_batch_converter(p),
+            on_close_workspace=self._on_close_workspace_folder,
             get_is_dirty=lambda: getattr(self.state, "is_dirty", False),
             get_active_file=lambda: getattr(self.state, "in_path", ""),
             workspace_path=getattr(self.state, "workspace_folder", ""),
@@ -632,7 +658,25 @@ class DocumentConvertApp:
             pass
 
     def _on_activity_bar_item_clicked(self, tab_name: str):
-        if tab_name == "explorer":
+        if tab_name == "home":
+            # If already on welcome screen and user has open tabs or workspace, toggle back to editor!
+            if self.workspace_view.content == self.welcome_view and (self.state.tabs or self.state.workspace_folder):
+                self._show_editor_view(auto_select_edit=True)
+                return
+
+            from src.services.history_service import HistoryService
+            hist = HistoryService.get_instance()
+            ws_folder = getattr(self.state, "workspace_folder", "")
+            if ws_folder and os.path.exists(ws_folder):
+                hist.add_folder(ws_folder)
+            for tab in getattr(self.state, "tabs", []):
+                if getattr(tab, "in_path", "") and os.path.exists(tab.in_path):
+                    hist.add_file(tab.in_path, mode=getattr(tab, "current_mode", ""))
+            self.welcome_view.set_has_open_tabs(bool(self.state.tabs or self.state.workspace_folder))
+            self.workspace_view.show_welcome(self.ribbon_bar)
+        elif tab_name == "explorer":
+            if self.workspace_view.content == self.welcome_view:
+                self._show_editor_view(auto_select_edit=False)
             self.layout_controller.toggle_sidebar(e=True, tab_name="explorer")
         elif tab_name == "search":
             self.quick_open_dialog.show(self.page)
@@ -648,10 +692,51 @@ class DocumentConvertApp:
     async def _on_open_workspace_folder(self, e=None):
         folder = await pick_directory_async(self.page, self.file_picker_in)
         if folder:
-            self.state.workspace_folder = folder
-            self.explorer_view.load_workspace(folder, active_file=self.state.in_path)
+            self._on_open_recent_workspace_folder(folder)
+
+    def _on_open_recent_workspace_folder(self, folder_path: str):
+        if folder_path and os.path.isdir(folder_path):
+            from src.services.history_service import HistoryService
+            self.state.workspace_folder = folder_path
+            self.explorer_view.load_workspace(folder_path, active_file=self.state.in_path)
+            HistoryService.get_instance().add_folder(folder_path)
             settings_store.save_settings(self.state)
             self._show_editor_view(auto_select_edit=False)
+        else:
+            self.footer_bar.set_status(t("welcome.recent_missing_file"), color=ft.Colors.RED_400)
+
+    def _on_close_workspace_folder(self):
+        self.state.workspace_folder = ""
+        settings_store.save_settings(self.state)
+        if not self.state.tabs:
+            self.workspace_view.show_welcome(self.ribbon_bar)
+        else:
+            self.footer_bar.set_status("Workspace closed", color=ft.Colors.BLUE_400)
+
+    def _open_new_window(self):
+        try:
+            import sys
+            import subprocess
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.AllowSetForegroundWindow(-1)
+                except Exception:
+                    pass
+
+            proc = None
+            if getattr(sys, "frozen", False):
+                proc = subprocess.Popen([sys.executable, "--new-window"], close_fds=True)
+            else:
+                root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                script_path = os.path.join(root_dir, "run.py")
+                proc = subprocess.Popen([sys.executable, script_path, "--new-window"], close_fds=True)
+
+            if sys.platform == "win32" and proc and proc.pid:
+                from src.utils.env import force_process_window_foreground
+                force_process_window_foreground(pid=proc.pid, delay=0.2, retries=30)
+        except Exception as ex:
+            print(f"[App] Failed to spawn new window: {ex}")
 
     async def _on_explorer_file_clicked(self, file_path: str):
         ext = os.path.splitext(file_path)[1].lower()

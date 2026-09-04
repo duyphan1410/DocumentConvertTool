@@ -92,6 +92,9 @@ class LayoutController:
             ribbon_bar = self.app_controls.get("ribbon_bar")
             if ribbon_bar and hasattr(ribbon_bar, "update_responsive_layout"):
                 ribbon_bar.update_responsive_layout(int(w))
+            welcome_view = self.app_controls.get("welcome_view")
+            if welcome_view and hasattr(welcome_view, "update_responsive_layout"):
+                welcome_view.update_responsive_layout(int(w))
 
     def apply_panel_visibility(self):
         """Restore panel visibilities from AppState."""
@@ -720,26 +723,80 @@ class LayoutController:
         prev_idx = (idx - 1) % len(self.state.tabs)
         self.handle_doc_tab_selected(self.state.tabs[prev_idx].tab_id)
 
+    def _close_tabs_sequentially(self, tab_ids: list[str]):
+        """
+        Closes a sequence of tabs safely and sequentially.
+        For clean tabs, closes them immediately.
+        For dirty tabs, prompts confirmation one by one.
+        If user clicks Cancel, the batch closing aborts.
+        """
+        if not tab_ids:
+            return
+
+        current_id = tab_ids[0]
+        remaining_ids = tab_ids[1:]
+
+        tab = self.state.find_tab_by_id(current_id)
+        if not tab:
+            self._close_tabs_sequentially(remaining_ids)
+            return
+
+        if tab.is_dirty or tab.is_orphaned:
+            file_controller = self.app_controls.get("file_controller")
+
+            # Switch to this tab so user clearly sees what document they are saving/discarding
+            self.handle_doc_tab_selected(current_id)
+
+            def on_save_confirm():
+                async def _save_and_next():
+                    if file_controller:
+                        if tab.in_path and os.path.exists(os.path.dirname(tab.in_path)):
+                            file_controller.handle_save_shortcut()
+                            self._force_close_tab(current_id)
+                            self._close_tabs_sequentially(remaining_ids)
+                        elif hasattr(file_controller, "async_save_markdown"):
+                            saved = await file_controller.async_save_markdown()
+                            if saved:
+                                self._force_close_tab(current_id)
+                                self._close_tabs_sequentially(remaining_ids)
+                asyncio.create_task(_save_and_next())
+
+            def on_discard_confirm():
+                self._force_close_tab(current_id)
+                self._close_tabs_sequentially(remaining_ids)
+
+            def on_cancel():
+                # User cancelled -> abort closing the rest of tabs to avoid data loss
+                pass
+
+            show_unsaved_tab_dialog(
+                page=self.page,
+                tab_title=tab.title,
+                on_save=on_save_confirm,
+                on_discard=on_discard_confirm,
+                on_cancel=on_cancel,
+            )
+        else:
+            self._force_close_tab(current_id)
+            self._close_tabs_sequentially(remaining_ids)
+
     def handle_close_other_tabs(self, keep_tab_id: str):
-        """Closes all tabs except the specified keep_tab_id."""
+        """Closes all tabs except the specified keep_tab_id with sequential confirmation."""
         tabs_to_close = [t.tab_id for t in list(self.state.tabs) if t.tab_id != keep_tab_id]
-        for tid in tabs_to_close:
-            self.handle_doc_tab_closed(tid)
+        self._close_tabs_sequentially(tabs_to_close)
 
     def handle_close_tabs_to_right(self, from_tab_id: str):
-        """Closes all tabs to the right of from_tab_id."""
+        """Closes all tabs to the right of from_tab_id with sequential confirmation."""
         idx = self.state.get_tab_index(from_tab_id)
         if idx < 0:
             return
         tabs_to_close = [t.tab_id for t in list(self.state.tabs[idx + 1:])]
-        for tid in tabs_to_close:
-            self.handle_doc_tab_closed(tid)
+        self._close_tabs_sequentially(tabs_to_close)
 
     def handle_close_all_tabs(self):
-        """Closes all document tabs."""
+        """Closes all document tabs with sequential confirmation for dirty tabs."""
         tabs_to_close = [t.tab_id for t in list(self.state.tabs)]
-        for tid in tabs_to_close:
-            self.handle_doc_tab_closed(tid)
+        self._close_tabs_sequentially(tabs_to_close)
 
 
 

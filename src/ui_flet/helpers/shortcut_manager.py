@@ -21,6 +21,7 @@ class ShortcutManager:
         on_close_tab: Optional[Callable] = None,
         on_next_tab: Optional[Callable] = None,
         on_prev_tab: Optional[Callable] = None,
+        on_new_window: Optional[Callable] = None,
     ):
         def _on_keyboard_event(e: ft.KeyboardEvent):
             if not e.ctrl:
@@ -30,6 +31,9 @@ class ShortcutManager:
             if key == "O":
                 if on_open_file:
                     on_open_file()
+            elif key == "N":
+                if e.shift and on_new_window:
+                    on_new_window()
             elif key == "P":
                 if on_quick_open:
                     on_quick_open()

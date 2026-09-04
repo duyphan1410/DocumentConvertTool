@@ -57,9 +57,8 @@ Kiểm thử trực tiếp trên phần cứng AMD Ryzen 5 5600H (12 Threads, 3.
 - Kết nối trực tiếp `on_progress` từ `transcribe_file()` lên thanh progress bar, hiển thị định dạng trực quan: `Transcribing X% (current_s / total_s)...`.
 - Bổ sung huy hiệu và mô tả ngữ cảnh sử dụng cho từng model trong dropdown chọn lựa.
 
-### 3.5. Công Cụ Benchmark Thực Nghiệm (`scripts/benchmark_models.py`)
-- Xây dựng script kiểm thử benchmark độc lập cho phép chỉ định số giây cần cắt âm thanh (`python scripts/benchmark_models.py [slice_seconds]`).
-- Tự động đo thời gian tiền xử lý audio 16kHz, thời gian chạy từng model và in bảng so sánh chất lượng văn bản transcription đối chiếu.
+### 3.5. Thực Nghiệm Benchmark Đối Soát Mô Hình
+- Tiến hành chạy thử nghiệm benchmark đo đạc trực tiếp thời gian tiền xử lý audio 16kHz, tốc độ xử lý thực tế và trích xuất bảng so sánh chất lượng văn bản transcription của từng mô hình (dữ liệu chi tiết đã được lưu trữ trong phần 2). Script benchmark tạm thời sau khi hoàn tất nghiệm thu đã được dọn dẹp sạch sẽ khỏi repo.
 
 ---
 

@@ -7,5 +7,7 @@ from .pptx_module import PPTXModule
 from .json_module import JSONModule
 from .yaml_module import YAMLModule
 from .audio_module import AudioModule
+from .pdf_scan_module import PDFScanModule
+
 
 

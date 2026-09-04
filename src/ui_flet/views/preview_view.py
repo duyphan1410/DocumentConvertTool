@@ -776,9 +776,8 @@ class MarkdownPreview(ft.Container):
             if ev_type in (ft.ScrollType.USER, ft.ScrollType.UPDATE, ft.ScrollType.END, ft.ScrollType.START):
                 if px > 0:
                     self._saved_scroll_offset = px
-            print(f"[DEBUG][PREVIEW_SCROLL] event_type={ev_type}, pixels={px:.1f}, saved_offset={getattr(self, '_saved_scroll_offset', 0.0):.1f}")
-        except Exception as ex:
-            print(f"[DEBUG][PREVIEW_SCROLL] error: {ex}")
+        except Exception:
+            pass
 
     def save_scroll(self):
         """Snapshot current scroll position for later restoration."""

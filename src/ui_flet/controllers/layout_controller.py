@@ -55,12 +55,6 @@ class LayoutController:
                 YouTubePlayerManager.get_instance().close()
             except Exception:
                 pass
-            print(
-                f"[DEBUG][WINDOW] 💾 Đã lưu khi đóng app: "
-                f"width={self.state.window_width}, height={self.state.window_height}, "
-                f"top={self.state.window_top}, left={self.state.window_left}, "
-                f"maximized={self.state.window_maximized}"
-            )
             return
 
         _sync_geometry()
@@ -79,15 +73,6 @@ class LayoutController:
         def _delayed_save():
             _sync_geometry()
             self._safe_save_settings()
-            try:
-                print(
-                    f"[DEBUG][WINDOW] Da luu cau hinh (event: {evt_name}): "
-                    f"width={self.state.window_width}, height={self.state.window_height}, "
-                    f"top={self.state.window_top}, left={self.state.window_left}, "
-                    f"maximized={self.state.window_maximized}"
-                )
-            except Exception:
-                pass
 
         self._window_save_timer = threading.Timer(0.5, _delayed_save)
         self._window_save_timer.daemon = True

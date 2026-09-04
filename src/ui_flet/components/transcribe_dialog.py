@@ -68,13 +68,16 @@ def show_transcribe_dialog(
     )
 
     # 2. Installed Models Detection
-    installed_models = [mid for mid in ["whisper-small", "whisper-base", "whisper-tiny"] if is_model_installed(mid)]
+    installed_models = [mid for mid in ["whisper-large-v3", "whisper-medium", "whisper-small", "whisper-base"] if is_model_installed(mid)]
     best_model = get_best_installed_model()
 
     model_options = []
     for mid in installed_models:
         meta = AVAILABLE_MODELS.get(mid)
-        label = f"{meta.display_name} (~{meta.size_mb} MB)" if meta else mid
+        opt_key = f"transcribe.opt_{mid.replace('-', '_')}"
+        label = t(opt_key)
+        if label == opt_key and meta:
+            label = f"{meta.display_name} (~{meta.size_mb} MB)"
         model_options.append(ft.dropdown.Option(key=mid, text=label))
 
     dd_model = ft.Dropdown(
@@ -261,19 +264,23 @@ def show_transcribe_dialog(
             if job.cancel_event.is_set():
                 return
             if stage == "preprocessing":
-                progress_cb(t("speech.preprocessing"), 0.25)
+                progress_cb(t("speech.preprocessing"), 0.15)
             elif stage == "transcribing":
-                progress_cb(t("speech.transcribing_with_model", model_name=selected_model or "Whisper"), 0.6)
-            elif stage == "segment_progress" and len(args) >= 2:
-                cur, tot = args[0], args[1]
-                pct = cur / tot if tot > 0 else 0.0
-                progress_cb(f"Transcribing {int(pct*100)}%", min(0.3 + pct * 0.65, 0.95))
+                progress_cb(t("speech.transcribing_with_model", model_name=selected_model or "Whisper"), 0.25)
+
+        def _on_progress(current_sec: float, total_sec: float):
+            if job.cancel_event.is_set():
+                return
+            pct = current_sec / total_sec if total_sec > 0 else 0.0
+            val = min(0.25 + pct * 0.70, 0.95)
+            progress_cb(f"Transcribing {int(pct * 100)}% ({int(current_sec)}s / {int(total_sec)}s)...", val)
 
         return transcribe_file(
             file_path=file_path,
             model_id=selected_model,
             language=selected_lang,
             include_timestamps=include_ts,
+            on_progress=_on_progress,
             status_callback=_status_callback,
         )
 

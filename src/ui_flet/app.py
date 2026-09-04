@@ -111,14 +111,6 @@ class DocumentConvertApp:
         # Maximize window on fresh first launch or if previously saved as maximized
         self.page.window.maximized = bool(self.state.window_maximized)
 
-        try:
-            print(
-                f"[DEBUG][WINDOW] Khoi dong: width={safe_w}, height={safe_h}, "
-                f"top={safe_top}, left={safe_left}, maximized={self.state.window_maximized}"
-            )
-        except Exception:
-            pass
-
         # File Pickers
         self.file_picker_in = ft.FilePicker()
         self.file_picker_out = ft.FilePicker()

@@ -25,8 +25,8 @@ def show_message_dialog(
     Displays a modern, theme-aware, production-grade unified MessageDialog.
     Automatically logs DocumentErrors to persistent log file.
     """
-    # Clean up previous unmounted dialogs from overlay list
-    page.overlay[:] = [c for c in page.overlay if not isinstance(c, ft.AlertDialog)]
+    # Clean up only previous closed/unmounted dialogs from overlay list
+    page.overlay[:] = [c for c in page.overlay if not (isinstance(c, ft.AlertDialog) and not getattr(c, "open", False))]
 
     # Normalize payload into DocumentError
     if isinstance(payload, DocumentError):

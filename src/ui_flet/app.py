@@ -580,7 +580,9 @@ class DocumentConvertApp:
         self.layout_controller.handle_new_doc_tab()
 
     def _on_mode_changed(self, e=None):
-        self.state.current_mode = self.ribbon_bar.mode_dropdown.value
+        old_mode = getattr(self.state, "current_mode", "") or ""
+        new_mode = self.ribbon_bar.mode_dropdown.value or ""
+        self.state.current_mode = new_mode
         mode_cfg = MODES.get(self.state.current_mode, MODES["MD -> Excel"])
         self.file_path_bar.set_in_label(mode_cfg["in_label"])
         self.file_path_bar.set_out_label(mode_cfg["out_label"])
@@ -609,6 +611,20 @@ class DocumentConvertApp:
             active_tab = self.state.active_tab
             sid = active_tab.media_session_id if active_tab else None
             self.preview.set_content(cur_text, base_dir=base_dir, session_id=sid)
+
+        # Trigger dynamic reload if user switches between regular PDF -> MD and PDF Scan -> MD
+        if (
+            self.state.in_path
+            and self.state.in_path.lower().endswith(".pdf")
+            and old_mode != new_mode
+            and (old_mode in ("PDF -> MD", "PDF Scan -> MD") or new_mode in ("PDF -> MD", "PDF Scan -> MD"))
+            and hasattr(self, "file_controller")
+        ):
+            active_tab = self.state.active_tab
+            if active_tab:
+                active_tab.current_mode = new_mode
+            import asyncio
+            asyncio.create_task(self.file_controller.open_file_by_path(self.state.in_path, force_reload=True))
 
         try:
             self.page.update()
@@ -697,6 +713,9 @@ class DocumentConvertApp:
             from src.ui_flet.components.context_menu import ExplorerContextMenu
             self.context_menu = ExplorerContextMenu(self.page)
         self.context_menu.on_dismiss = self._on_image_menu_dismissed
+
+        saved_offset = getattr(self.preview, "_saved_scroll_offset", 0.0) if hasattr(self, "preview") and self.preview else 0.0
+
         self.context_menu.show_image_menu(
             x=x,
             y=y,
@@ -708,11 +727,17 @@ class DocumentConvertApp:
             on_reset_image=lambda: self._on_image_size_preset("100%", image_token=tok),
         )
 
+        if hasattr(self, "preview") and self.preview and saved_offset > 0:
+            self.preview.restore_scroll(target_offset=saved_offset)
+
     def _on_image_menu_dismissed(self):
         if hasattr(self, "editor_view"):
             self.editor_view._dismissed_token_raw = None
-        if hasattr(self, "preview"):
-            self.preview.restore_scroll()
+        if hasattr(self, "preview") and self.preview:
+            saved_offset = getattr(self.preview, "_saved_scroll_offset", 0.0)
+            if saved_offset > 0:
+                self.preview.restore_scroll(target_offset=saved_offset)
+        print("[DEBUG][_on_image_menu_dismissed] context menu dismissed")
 
     def _on_image_context_changed(self, tok):
         self.ribbon_bar.set_image_context(tok)

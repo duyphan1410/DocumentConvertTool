@@ -211,6 +211,7 @@
   "mode.word_to_md": "Word → MD",
   "mode.csv_to_md": "CSV → MD",
   "mode.pdf_to_md": "PDF → MD",
+  "mode.pdf_scan_to_md": "PDF Scan (OCR) → MD",
   "mode.html_to_md": "HTML → MD",
   "mode.json_to_md": "JSON → MD",
   "mode.yaml_to_md": "YAML → MD",

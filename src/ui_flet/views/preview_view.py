@@ -267,11 +267,11 @@ def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_
                         has_alpha = True
 
                     if has_alpha:
-                        img.save(buf, format="PNG", optimize=True)
+                        img.save(buf, format="PNG")
                         mime_type = "image/png"
                     else:
                         img = img.convert("RGB")
-                        img.save(buf, format="JPEG", quality=quality, optimize=True)
+                        img.save(buf, format="JPEG", quality=quality)
                         mime_type = "image/jpeg"
 
                     raw_bytes = buf.getvalue()
@@ -654,6 +654,7 @@ class MarkdownPreview(ft.Container):
             scroll=ft.ScrollMode.AUTO,
             expand=True,
             on_scroll=self._on_scroll_changed,
+            key="markdown_preview_scroll_column",
         )
 
         self.content = ft.Column(
@@ -768,14 +769,14 @@ class MarkdownPreview(ft.Container):
 
     def _on_scroll_changed(self, e):
         """Tracks the current scroll offset of the preview column, guarding against spurious layout resets."""
-        if getattr(self, "_is_restoring_scroll", False):
-            return
         try:
             px = float(getattr(e, "pixels", 0) or 0)
             ev_type = getattr(e, "event_type", None)
-            if ev_type in (ft.ScrollType.USER, ft.ScrollType.UPDATE, ft.ScrollType.END, ft.ScrollType.START):
-                if px > 0:
-                    self._saved_scroll_offset = px
+            is_restoring = getattr(self, "_is_restoring_scroll", False)
+            if px == 0:
+                print(f"[DEBUG][SCROLL_EVENT_ZERO] pixels={px}, type={ev_type}, restoring={is_restoring}, saved={getattr(self, '_saved_scroll_offset', 0.0)}")
+            elif px > 0 and not is_restoring:
+                self._saved_scroll_offset = px
         except Exception:
             pass
 
@@ -783,37 +784,50 @@ class MarkdownPreview(ft.Container):
         """Snapshot current scroll position for later restoration."""
         pass
 
-    def restore_scroll(self, target_offset: Optional[float] = None):
+    def restore_scroll(self, target_offset: Optional[float] = None, target_image_idx: Optional[int] = None):
         """Restores the preview scroll to the exact last known pixel offset after content changes."""
         try:
             offset = target_offset if target_offset is not None else getattr(self, "_saved_scroll_offset", 0.0)
-            if offset <= 0:
+            img_idx = target_image_idx if target_image_idx is not None else getattr(self, "_last_active_image_idx", None)
+            if offset <= 0 and img_idx is None:
                 return
 
             if not hasattr(self.scroll_column, "scroll_to"):
                 return
 
-            page = getattr(self.scroll_column, "page", None)
+            page = getattr(self.scroll_column, "page", None) or getattr(self.markdown, "page", None)
             if not page:
                 return
 
             import asyncio
             import inspect
 
-            # Cancel previous restore task to prevent jitter and loop fighting
-            existing_task = getattr(self, "_active_restore_task", None)
-            if existing_task and not existing_task.done():
-                existing_task.cancel()
-
             self._is_restoring_scroll = True
-            self._saved_scroll_offset = offset
+            if offset > 0:
+                self._saved_scroll_offset = offset
 
             async def _async_restore():
                 try:
-                    await asyncio.sleep(0.02)
-                    res = self.scroll_column.scroll_to(offset=offset, duration=100)
+                    await asyncio.sleep(0.04)
+                    if offset > 0:
+                        res = self.scroll_column.scroll_to(offset=offset, duration=0)
+                    elif img_idx is not None:
+                        res = self.scroll_column.scroll_to(scroll_key=f"preview_img_{img_idx}", duration=0)
+                    else:
+                        res = None
                     if inspect.iscoroutine(res):
                         await res
+
+                    # Second safety frame to guarantee position after Flutter layout settles
+                    await asyncio.sleep(0.05)
+                    if offset > 0:
+                        res2 = self.scroll_column.scroll_to(offset=offset, duration=0)
+                    elif img_idx is not None:
+                        res2 = self.scroll_column.scroll_to(scroll_key=f"preview_img_{img_idx}", duration=0)
+                    else:
+                        res2 = None
+                    if inspect.iscoroutine(res2):
+                        await res2
                 except asyncio.CancelledError:
                     pass
                 except Exception as ex:
@@ -822,11 +836,12 @@ class MarkdownPreview(ft.Container):
                     await asyncio.sleep(0.05)
                     self._is_restoring_scroll = False
 
-            try:
-                loop = asyncio.get_running_loop()
-                self._active_restore_task = loop.create_task(_async_restore())
-            except RuntimeError:
-                self._is_restoring_scroll = False
+            if hasattr(page, "run_task"):
+                self._active_restore_task = page.run_task(_async_restore)
+            else:
+                loop = getattr(page, "loop", None)
+                if loop:
+                    self._active_restore_task = asyncio.run_coroutine_threadsafe(_async_restore(), loop)
         except Exception as ex:
             print(f"[DEBUG][PREVIEW_RESTORE] error: {ex}")
             self._is_restoring_scroll = False
@@ -942,12 +957,6 @@ class MarkdownPreview(ft.Container):
         saved = getattr(self, "_saved_scroll_offset", 0.0)
         print(f"[DEBUG][IMAGE_CLICK] action_url={action_url}, click_pos=({gx}, {gy}), current_saved_offset={saved:.1f}")
 
-        # Protect and restore scroll offset immediately before menu overlay displays
-        if saved > 0:
-            self._is_restoring_scroll = True
-            self._saved_scroll_offset = saved
-            self.restore_scroll(target_offset=saved)
-
         url_with_pos = action_url
         if gx is not None and gy is not None:
             url_with_pos += f"&click_x={int(gx)}&click_y={int(gy)}"
@@ -1010,30 +1019,41 @@ class MarkdownPreview(ft.Container):
         # Check if smooth in-place update can be performed to avoid full widget tree recreation and visual flicker
         existing_controls = self.scroll_column.controls or []
         can_in_place = (len(existing_controls) == len(items) and len(items) > 0)
+        reason = ""
         if can_in_place:
-            for ctrl, item in zip(existing_controls, items):
+            for idx_c, (ctrl, item) in enumerate(zip(existing_controls, items)):
                 if item[0] == "text" and not isinstance(ctrl, ft.Markdown):
                     can_in_place = False
+                    reason = f"item[{idx_c}] is text but ctrl is {type(ctrl).__name__}"
                     break
                 elif item[0] == "img" and not isinstance(ctrl, ft.Row):
                     can_in_place = False
+                    reason = f"item[{idx_c}] is img but ctrl is {type(ctrl).__name__}"
                     break
+        else:
+            reason = f"len(existing)={len(existing_controls)} != len(items)={len(items)}"
+
+        print(f"[DEBUG][CAN_IN_PLACE] can_in_place={can_in_place}, reason={reason}")
 
         if can_in_place:
+            changed_controls = []
             for ctrl, item in zip(existing_controls, items):
                 if item[0] == "text":
                     if ctrl.value != item[1]:
                         ctrl.value = item[1]
+                        changed_controls.append(ctrl)
                 elif item[0] == "img":
                     img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
-                    ctrl.alignment = main_align
+                    if ctrl.alignment != main_align:
+                        ctrl.alignment = main_align
+                        changed_controls.append(ctrl)
                     if ctrl.controls and isinstance(ctrl.controls[0], ft.Container):
                         container = ctrl.controls[0]
                         container.tooltip = f"{alt} (Nhấn để chỉnh sửa)" if action_url else alt
                         img_ctrl = None
                         if isinstance(container.content, ft.GestureDetector):
                             img_ctrl = container.content.content
-                            if action_url:
+                            if action_url and getattr(container.content, "data", "") != action_url:
                                 container.content.data = action_url
                         elif isinstance(container.content, ft.Image):
                             img_ctrl = container.content
@@ -1041,11 +1061,19 @@ class MarkdownPreview(ft.Container):
                         if isinstance(img_ctrl, ft.Image):
                             if img_ctrl.src != src:
                                 img_ctrl.src = src
+                                if ctrl not in changed_controls:
+                                    changed_controls.append(ctrl)
+            for c in changed_controls:
+                try:
+                    if hasattr(c, "page") and c.page:
+                        c.update()
+                except Exception:
+                    pass
             return True
 
         # Fallback: construct new controls tree
         new_controls = []
-        for item in items:
+        for idx_item, item in enumerate(items):
             if item[0] == "text":
                 new_controls.append(ft.Markdown(
                     value=item[1],
@@ -1055,6 +1083,7 @@ class MarkdownPreview(ft.Container):
                     md_style_sheet=self.markdown.md_style_sheet,
                     soft_line_break=True,
                     on_tap_link=self._on_markdown_link_clicked,
+                    key=f"preview_text_{idx_item}",
                 ))
             elif item[0] == "img":
                 img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
@@ -1367,6 +1396,7 @@ class MarkdownPreview(ft.Container):
         self._last_raw_text = markdown_text
         self._last_rendered_mode = self._preview_mode
 
+        is_in_place = False
         if getattr(self, "_preview_mode", "document") == "spreadsheet":
             self._render_spreadsheet_content(markdown_text)
         else:
@@ -1374,15 +1404,16 @@ class MarkdownPreview(ft.Container):
                 markdown_text, base_dir=base_dir, is_dark=self._is_dark, palette_name=self._palette_name, session_id=session_id
             )
             self.detect_youtube_video(markdown_text)
-            self._render_processed_content(self._cached_processed_text)
+            is_in_place = self._render_processed_content(self._cached_processed_text)
 
-        try:
-            if hasattr(self.scroll_column, "page") and self.scroll_column.page:
-                self.scroll_column.update()
-        except Exception:
-            pass
+        if not is_in_place:
+            try:
+                if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                    self.scroll_column.update()
+            except Exception:
+                pass
 
-        if curr_offset > 0:
+        if curr_offset > 0 or getattr(self, "_last_active_image_idx", None) is not None:
             self.restore_scroll(target_offset=curr_offset)
 
     def set_processed_content(self, processed_md: str, raw_text: str, base_dir: str = None, session_id: str | None = None):
@@ -1402,13 +1433,15 @@ class MarkdownPreview(ft.Container):
         is_in_place = self._render_processed_content(processed_md)
         if hasattr(self, "detect_youtube_video"):
             self.detect_youtube_video(raw_text)
-        try:
-            if hasattr(self.scroll_column, "page") and self.scroll_column.page:
-                self.scroll_column.update()
-        except Exception:
-            pass
 
-        if curr_offset > 0:
+        if not is_in_place:
+            try:
+                if hasattr(self.scroll_column, "page") and self.scroll_column.page:
+                    self.scroll_column.update()
+            except Exception:
+                pass
+
+        if curr_offset > 0 or getattr(self, "_last_active_image_idx", None) is not None:
             self.restore_scroll(target_offset=curr_offset)
 
     def update_preview(self, markdown_text: str, base_dir: str = None, session_id: str | None = None):

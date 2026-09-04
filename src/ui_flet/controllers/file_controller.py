@@ -60,7 +60,7 @@ class FileController:
         if file_path:
             await self.open_file_by_path(file_path)
 
-    async def open_file_by_path(self, file_path: str):
+    async def open_file_by_path(self, file_path: str, force_reload: bool = False):
         """
         Loads document from file_path into the editor workspace.
         Handles multi-tab deduplication, creates new tabs or switches to existing ones.
@@ -75,14 +75,24 @@ class FileController:
 
         # 1. Multi-Tab Deduplication Guard: If file is already open, switch to that tab
         existing_tab = self.state.find_tab_by_path(file_path)
-        if existing_tab:
+        if existing_tab and not force_reload:
             if existing_tab.is_loading:
-                # Tab is already in the middle of loading from the previous click; ignore duplicate click
+                # If tab is already loading, switch to it so user sees progress if they are on another tab
+                if self.state.active_tab_id != existing_tab.tab_id:
+                    layout_controller = self.app_controls.get("layout_controller")
+                    if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
+                        layout_controller.handle_doc_tab_selected(existing_tab.tab_id)
                 return
-            layout_controller = self.app_controls.get("layout_controller")
-            if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
-                layout_controller.handle_doc_tab_selected(existing_tab.tab_id)
-                return
+            # If the file is already open but currently has no content (e.g. previous load extracted nothing)
+            # or if the mode in Ribbon indicates a different PDF conversion engine, reload instead of doing nothing
+            curr_mode = self.ribbon_bar.mode_dropdown.value if (self.ribbon_bar and self.ribbon_bar.mode_dropdown) else ""
+            if not existing_tab.full_content.strip() or (curr_mode in ("PDF -> MD", "PDF Scan -> MD") and existing_tab.current_mode != curr_mode):
+                force_reload = True
+            else:
+                layout_controller = self.app_controls.get("layout_controller")
+                if layout_controller and hasattr(layout_controller, "handle_doc_tab_selected"):
+                    layout_controller.handle_doc_tab_selected(existing_tab.tab_id)
+                    return
 
         if "on_show_editor" in self.app_controls and self.app_controls["on_show_editor"]:
             self.app_controls["on_show_editor"]()
@@ -106,9 +116,19 @@ class FileController:
             and not curr_active_tab.is_dirty
             and not curr_active_tab.is_orphaned
         )
+        can_reuse_existing = (
+            curr_active_tab is not None
+            and curr_active_tab.in_path == file_path
+        )
 
-        if can_reuse_blank:
+        if can_reuse_blank or can_reuse_existing:
             target_tab = curr_active_tab
+            target_tab.in_path = file_path
+            target_tab.title = filename
+            target_tab.is_loading = True
+            is_new_placeholder = False
+        elif existing_tab:
+            target_tab = existing_tab
             target_tab.in_path = file_path
             target_tab.title = filename
             target_tab.is_loading = True
@@ -127,6 +147,13 @@ class FileController:
         if tab_bar and hasattr(tab_bar, "render_tabs"):
             tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
+        # Cập nhật chế độ Ribbon ngay lập tức theo extension file
+        if self.ribbon_bar and hasattr(self.ribbon_bar, "update_mode_options"):
+            tab_mode = getattr(target_tab, "current_mode", "")
+            def_mode = getattr(self.state, "default_mode", "")
+            pref_mode = tab_mode if (tab_mode and tab_mode in MODES and MODES[tab_mode]["in_ext"] == ext) else def_mode
+            self.ribbon_bar.update_mode_options(ext, preferred_mode=pref_mode)
+
         if self.state.active_tab_id == target_tab.tab_id:
             self.editor_view.set_loading(filename)
             self.preview.set_content(f"*Loading {filename}...*", session_id=target_tab.media_session_id)
@@ -140,8 +167,53 @@ class FileController:
         # ── BƯỚC 2: ASYNC LOAD VỚI GUARD TOÀN DIỆN ──
         t0 = time.time()
         try:
+            is_pdf = file_path.lower().endswith(".pdf")
+            req_module = "PDF Scan" if (
+                is_pdf and (
+                    (self.ribbon_bar and self.ribbon_bar.mode_dropdown and self.ribbon_bar.mode_dropdown.value == "PDF Scan -> MD")
+                    or (target_tab and target_tab.current_mode == "PDF Scan -> MD")
+                    or (self.state and getattr(self.state, "current_mode", "") == "PDF Scan -> MD")
+                )
+            ) else None
+
+            last_ui_update = [0.0]
+
+            def on_load_progress(cur: int, total: int, msg: str, partial_text: Optional[str] = None):
+                pct = int(cur / total * 100) if total > 0 else 0
+                label = "OCR Scan" if req_module == "PDF Scan" else "Đang đọc"
+                if self.footer_bar:
+                    self.footer_bar.set_status(f"{label} ({pct}%): {msg}", color=ft.Colors.AMBER_400)
+
+                # Progressive streaming with UI throttling to avoid choking the event loop during dragging/resizing
+                now = time.time()
+                is_final = (cur >= total)
+                is_resizing = getattr(self.state, "is_ui_resizing", False)
+                should_update_heavy_ui = is_final or (not is_resizing and (now - last_ui_update[0] >= 1.5))
+
+                if partial_text:
+                    target_tab.full_content = partial_text
+                    if self.state.active_tab_id == target_tab.tab_id and should_update_heavy_ui:
+                        last_ui_update[0] = now
+                        if self.editor_view:
+                            self.editor_view.set_text(partial_text)
+                        if self.preview:
+                            preview_text = partial_text
+                            if cur < total:
+                                preview_text += (
+                                    f"\n\n---\n\n"
+                                    f"> ⏳ *Đang nạp tiếp trang {cur + 1}/{total}... ({pct}%)*"
+                                )
+                            self.preview.set_content(
+                                preview_text,
+                                session_id=target_tab.media_session_id,
+                            )
+
             res = await asyncio.to_thread(
-                load_document, file_path, session_id=target_tab.media_session_id
+                load_document,
+                file_path,
+                session_id=target_tab.media_session_id,
+                module_name=req_module,
+                progress_callback=on_load_progress,
             )
 
             if not res.success:
@@ -197,7 +269,7 @@ class FileController:
             actual_path = res.path or file_path
             ext = os.path.splitext(actual_path)[1].lower()
 
-            preferred_mode = getattr(self.state, "default_mode", "")
+            preferred_mode = res.mode if (res and res.mode in MODES) else getattr(self.state, "default_mode", "")
             self.ribbon_bar.update_mode_options(ext, preferred_mode=preferred_mode)
             mode = self.ribbon_bar.mode_dropdown.value
             out_ext = MODES.get(mode, {}).get("out_ext", ".md")
@@ -286,6 +358,9 @@ class FileController:
             if tab_bar and hasattr(tab_bar, "render_tabs"):
                 tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
             self.footer_bar.set_processing(False)
+            if target_tab.full_content and target_tab.full_content.strip():
+                self.perform_autosave(target_tab.tab_id)
+                self.save_tab_session()
             self.page.update()
 
     def trigger_browse_output(self, e=None):
@@ -682,6 +757,7 @@ class FileController:
                         "is_dirty": tab.is_dirty,
                         "is_orphaned": tab.is_orphaned,
                         "media_session_id": tab.media_session_id,
+                        "last_converted_path": getattr(tab, "last_converted_path", "") or "",
                     }
                     for tab in self.state.tabs
                 ],
@@ -868,11 +944,25 @@ class FileController:
                                     content = raw_c
                         except Exception:
                             pass
-                    
+
+                    # Fallback 1: if draft was missing but target .md was already saved/converted
+                    candidate_paths = [item.get("last_converted_path", ""), item.get("out_path", "")]
+                    for cand_p in candidate_paths:
+                        if not content and cand_p and os.path.exists(cand_p) and cand_p.lower().endswith(".md"):
+                            try:
+                                with open(cand_p, "r", encoding="utf-8") as cf:
+                                    raw_c = cf.read()
+                                    if raw_c.strip() and not raw_c.startswith("<MagicMock"):
+                                        content = raw_c
+                                        break
+                            except Exception:
+                                pass
+
                     if not content and item.get("in_path") and os.path.exists(item.get("in_path")):
                         try:
                             sid = item.get("media_session_id", f"session_{tid}")
-                            res = load_document(item["in_path"], session_id=sid)
+                            req_mod = "PDF Scan" if item.get("mode") == "PDF Scan -> MD" else None
+                            res = load_document(item["in_path"], session_id=sid, module_name=req_mod)
                             if res.success and not res.content.startswith("<MagicMock"):
                                 content = res.content
                         except Exception:
@@ -888,6 +978,7 @@ class FileController:
                         is_dirty=item.get("is_dirty", False),
                         is_orphaned=item.get("is_orphaned", False),
                         media_session_id=item.get("media_session_id", f"session_{tid}"),
+                        last_converted_path=item.get("last_converted_path", ""),
                     )
                     tabs.append(tab)
             except Exception as e:

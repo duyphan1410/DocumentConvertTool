@@ -430,20 +430,13 @@ class ExplorerContextMenu:
         on_open_folder: Optional[Callable] = None,
         on_collapse_all: Optional[Callable] = None,
         on_refresh: Optional[Callable] = None,
+        on_close_workspace: Optional[Callable] = None,
+        has_workspace: bool = False,
     ):
-        """Opens sleek floating dropdown menu for Explorer Header when compact."""
+        """Opens sleek floating dropdown menu for Explorer Header when compact or clicked."""
         self.hide(update_page=False)
 
         items: List[ft.Control] = []
-        if on_collapse_all:
-            items.append(
-                ContextMenuItem(
-                    title=t("explorer.collapse_all"),
-                    icon=ft.Icons.UNFOLD_LESS_ROUNDED,
-                    icon_color=ft.Colors.OUTLINE,
-                    on_click=lambda: self._wrap_action(on_collapse_all),
-                )
-            )
         if on_open_folder:
             items.append(
                 ContextMenuItem(
@@ -453,13 +446,33 @@ class ExplorerContextMenu:
                     on_click=lambda: self._wrap_action(on_open_folder),
                 )
             )
-        if on_refresh:
+        if on_refresh and has_workspace:
             items.append(
                 ContextMenuItem(
                     title=t("explorer.refresh"),
                     icon=ft.Icons.REFRESH_ROUNDED,
                     icon_color=ft.Colors.OUTLINE,
                     on_click=lambda: self._wrap_action(on_refresh),
+                )
+            )
+        if on_collapse_all and has_workspace:
+            items.append(
+                ContextMenuItem(
+                    title=t("explorer.collapse_all"),
+                    icon=ft.Icons.UNFOLD_LESS_ROUNDED,
+                    icon_color=ft.Colors.OUTLINE,
+                    on_click=lambda: self._wrap_action(on_collapse_all),
+                )
+            )
+        if on_close_workspace and has_workspace:
+            items.append(ContextMenuDivider())
+            items.append(
+                ContextMenuItem(
+                    title=t("explorer.close_folder_tooltip"),
+                    icon=ft.Icons.FOLDER_OFF_ROUNDED,
+                    icon_color=ft.Colors.RED_400,
+                    color=ft.Colors.RED_400,
+                    on_click=lambda: self._wrap_action(on_close_workspace),
                 )
             )
 

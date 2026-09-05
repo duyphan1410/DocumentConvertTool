@@ -42,16 +42,57 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/build_installer.ps1
 
-      - name: 📝 Prepare Release Notes
+      - name: 📝 Prepare Release Notes & Title
         id: release_notes
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
           $docReleaseFile = "docs/releases/$tag.md"
+          $releaseTitle = $tag
+          $bodyFile = "RELEASE_BODY.md"
           
           if (Test-Path $docReleaseFile) {
               Write-Host "Found release note file at $docReleaseFile"
-              "BODY_PATH=$docReleaseFile" >> $env:GITHUB_ENV
+              $content = Get-Content $docReleaseFile -Encoding UTF8
+              
+              # Extract title from the first H1 header (# ...) if available
+              $firstHeading = $content | Where-Object { $_ -match '^#\s+(.+)$' } | Select-Object -First 1
+              if ($firstHeading) {
+                  if ($firstHeading -match 'Release Notes\s*[-—:]\s*(.+)$') {
+                      $candidate = $matches[1].Trim()
+                      if ($candidate -match '^(v\d+\.\d+\.\d+)[:—\-]\s*(.+)$') {
+                          $releaseTitle = "{0}: {1}" -f $matches[1], $matches[2].Trim()
+                      } elseif (-not $candidate.StartsWith($tag)) {
+                          $releaseTitle = "{0}: {1}" -f $tag, $candidate
+                      } else {
+                          $releaseTitle = $candidate
+                      }
+                  } elseif ($firstHeading -match '^[#\s]*(?:[^\w\s]|[\uD800-\uDFFF])*\s*(v\d+\.\d+\.\d+)\s*[:—\-]\s*(.+)$') {
+                      $releaseTitle = "{0}: {1}" -f $matches[1], $matches[2].Trim()
+                  }
+              }
+              
+              # Strip top H1 & metadata headers, start directly from "## What's New" or first H2 section
+              $bodyLines = @()
+              $skipHeader = $true
+              foreach ($line in $content) {
+                  if ($skipHeader) {
+                      if ($line -match '^##\s+') {
+                          $skipHeader = $false
+                          $bodyLines += $line
+                      }
+                  } else {
+                      $bodyLines += $line
+                  }
+              }
+              
+              # If no "## " section was found, use content without top H1
+              if ($bodyLines.Count -eq 0) {
+                  $bodyLines = $content | Where-Object { $_ -notmatch '^#\s+' -and $_ -notmatch '^\*\*(Ngày|Release Date|Dự án|Project|Phiên bản|Version|Nhánh):' -and $_ -ne '---' }
+              }
+              
+              $bodyLines | Set-Content -Path $bodyFile -Encoding UTF8
+              "BODY_PATH=$bodyFile" >> $env:GITHUB_ENV
           } else {
               Write-Host "Release note file not found at $docReleaseFile. Generating summary from git commits..."
               $prevTag = git describe --tags --abbrev=0 "${tag}^" 2>$null
@@ -60,16 +101,18 @@ jobs:
               } else {
                   $commits = git log --oneline -n 10
               }
-              $fallbackFile = "RELEASE_TEMP_NOTES.md"
-              "## What's New in $tag`n`n### 📝 Commits`n" | Out-File $fallbackFile
-              $commits | ForEach-Object { "- $_`n" } | Out-File $fallbackFile -Append
-              "BODY_PATH=$fallbackFile" >> $env:GITHUB_ENV
+              "## What's New in $tag`n`n### 📝 Commits`n" | Out-File $bodyFile -Encoding UTF8
+              $commits | ForEach-Object { "- $_`n" } | Out-File $bodyFile -Append -Encoding UTF8
+              "BODY_PATH=$bodyFile" >> $env:GITHUB_ENV
           }
+          
+          Write-Host "Release Title set to: $releaseTitle"
+          "RELEASE_TITLE=$releaseTitle" >> $env:GITHUB_ENV
 
       - name: 🚀 Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          name: ${{ env.RELEASE_TITLE }}
           body_path: ${{ env.BODY_PATH }}
           files: dist/installer/Document_Converter_Setup_v*.exe
           draft: false

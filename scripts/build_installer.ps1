@@ -40,9 +40,9 @@ function Sign-Binary {
             
             $sig = Set-AuthenticodeSignature -FilePath $FilePath -Certificate $cert -TimestampServer $TimestampServer -HashAlgorithm SHA256
             if ($sig.Status -eq "Valid") {
-                Write-Host "✔ Successfully signed: $FilePath" -ForegroundColor Green
+                Write-Host "[OK] Successfully signed: $FilePath" -ForegroundColor Green
             } else {
-                Write-Host "ℹ Signature applied (Status: $($sig.StatusMessage))" -ForegroundColor Yellow
+                Write-Host "[INFO] Signature applied (Status: $($sig.StatusMessage))" -ForegroundColor Yellow
             }
         } else {
             Write-Warning "Certificate file not found at: $CertPath"
@@ -110,16 +110,16 @@ if (-not $SkipPyInstaller) {
     $clrFiles = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*clr*" -Recurse -ErrorAction SilentlyContinue
     $runtimeDll = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*Python.Runtime.dll*" -Recurse -ErrorAction SilentlyContinue
     if ($runtimeDll -or $clrFiles) {
-        Write-Host "✔ pythonnet / CLR assemblies detected in bundle." -ForegroundColor Green
+        Write-Host "[OK] pythonnet / CLR assemblies detected in bundle." -ForegroundColor Green
     } else {
-        Write-Host "ℹ Status: Webview / pythonnet standalone assemblies verified." -ForegroundColor Green
+        Write-Host "[INFO] Status: Webview / pythonnet standalone assemblies verified." -ForegroundColor Green
     }
 
 
     # Sign the executable if certificate provided
     Sign-Binary -FilePath $exePath -Description "Document Converter Application"
 
-    Write-Host "✔ PyInstaller build succeeded -> dist/Document Converter/" -ForegroundColor Green
+    Write-Host "[OK] PyInstaller build succeeded -> dist/Document Converter/" -ForegroundColor Green
 } else {
     Write-Host "`n[PyInstaller skipped by parameter]" -ForegroundColor DarkGray
 }

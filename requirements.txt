@@ -1,5 +1,6 @@
 # Core UI Framework
 flet==0.86.4
+flet-desktop==0.86.4
 
 # Document Processing & Conversion Engines
 python-docx==1.2.0

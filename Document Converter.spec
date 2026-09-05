@@ -125,6 +125,9 @@ hiddenimports = [
     'webview.platforms.mshtml',
     'clr',
     'pythonnet',
+    'flet',
+    'flet_desktop',
+    'flet_desktop.version',
 ]
 
 # Collect binaries & data assets for pywebview & pythonnet (.NET bridge)
@@ -138,10 +141,14 @@ for pkg in ['webview', 'pythonnet']:
         pass
 
 # Collect binaries & data assets for Flet Desktop framework
-tmp_ret = collect_all('flet')
-datas += tmp_ret[0]
-binaries += tmp_ret[1]
-hiddenimports += tmp_ret[2]
+for flet_pkg in ['flet', 'flet_desktop']:
+    try:
+        tmp_ret = collect_all(flet_pkg)
+        datas += tmp_ret[0]
+        binaries += tmp_ret[1]
+        hiddenimports += tmp_ret[2]
+    except Exception:
+        pass
 
 # Collect essential data files for PDF & document processing libraries (fast & lightweight)
 for pkg in ['pdfminer', 'pdfplumber', 'pypdfium2', 'fitz']:

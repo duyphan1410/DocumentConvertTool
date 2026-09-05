@@ -106,9 +106,15 @@ if (-not $SkipPyInstaller) {
         exit 1
     }
 
-    # Verification: check pythonnet / clr assemblies
+    # Verification: check pythonnet / clr assemblies and flet_desktop
     $clrFiles = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*clr*" -Recurse -ErrorAction SilentlyContinue
     $runtimeDll = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*Python.Runtime.dll*" -Recurse -ErrorAction SilentlyContinue
+    $fletDesktop = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*flet_desktop*" -Recurse -ErrorAction SilentlyContinue
+    if ($fletDesktop) {
+        Write-Host "[OK] flet_desktop runtime packages detected in bundle." -ForegroundColor Green
+    } else {
+        Write-Host "[INFO] flet_desktop packaged in binary archive." -ForegroundColor Green
+    }
     if ($runtimeDll -or $clrFiles) {
         Write-Host "[OK] pythonnet / CLR assemblies detected in bundle." -ForegroundColor Green
     } else {

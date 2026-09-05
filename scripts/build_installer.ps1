@@ -40,9 +40,9 @@ function Sign-Binary {
             
             $sig = Set-AuthenticodeSignature -FilePath $FilePath -Certificate $cert -TimestampServer $TimestampServer -HashAlgorithm SHA256
             if ($sig.Status -eq "Valid") {
-                Write-Host "✔ Successfully signed: $FilePath" -ForegroundColor Green
+                Write-Host "[OK] Successfully signed: $FilePath" -ForegroundColor Green
             } else {
-                Write-Host "ℹ Signature applied (Status: $($sig.StatusMessage))" -ForegroundColor Yellow
+                Write-Host "[INFO] Signature applied (Status: $($sig.StatusMessage))" -ForegroundColor Yellow
             }
         } else {
             Write-Warning "Certificate file not found at: $CertPath"
@@ -110,16 +110,16 @@ if (-not $SkipPyInstaller) {
     $clrFiles = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*clr*" -Recurse -ErrorAction SilentlyContinue
     $runtimeDll = Get-ChildItem -Path "$RootDir\dist\Document Converter" -Filter "*Python.Runtime.dll*" -Recurse -ErrorAction SilentlyContinue
     if ($runtimeDll -or $clrFiles) {
-        Write-Host "✔ pythonnet / CLR assemblies detected in bundle." -ForegroundColor Green
+        Write-Host "[OK] pythonnet / CLR assemblies detected in bundle." -ForegroundColor Green
     } else {
-        Write-Host "ℹ Status: Webview / pythonnet standalone assemblies verified." -ForegroundColor Green
+        Write-Host "[INFO] Status: Webview / pythonnet standalone assemblies verified." -ForegroundColor Green
     }
 
 
     # Sign the executable if certificate provided
     Sign-Binary -FilePath $exePath -Description "Document Converter Application"
 
-    Write-Host "✔ PyInstaller build succeeded -> dist/Document Converter/" -ForegroundColor Green
+    Write-Host "[OK] PyInstaller build succeeded -> dist/Document Converter/" -ForegroundColor Green
 } else {
     Write-Host "`n[PyInstaller skipped by parameter]" -ForegroundColor DarkGray
 }
@@ -164,15 +164,16 @@ if (-not $SkipInnoSetup) {
             exit $LASTEXITCODE
         }
 
-        $setupExe = "$RootDir\dist\installer\Document_Converter_Setup_v$AppVersion.exe"
+        $setupExe = Join-Path $RootDir "dist\installer\Document_Converter_Setup_v$AppVersion.exe"
         if (Test-Path $setupExe) {
             # Sign the installer setup binary
             Sign-Binary -FilePath $setupExe -Description "Document Converter Setup Installer"
 
-            $sizeMB = [math]::Round(((Get-Item $setupExe).Length / 1MB), 2)
+            $fileItem = Get-Item $setupExe
+            $sizeMB = [math]::Round(($fileItem.Length / 1048576.0), 2)
             Write-Host "`n=================================================================" -ForegroundColor Green
             Write-Host " SUCCESS: Installer created at:" -ForegroundColor Green
-            Write-Host " $setupExe ($sizeMB MB)" -ForegroundColor Cyan
+            Write-Host ("   {0} ({1} MB)" -f $setupExe, $sizeMB) -ForegroundColor Cyan
             Write-Host "=================================================================" -ForegroundColor Green
         }
     } else {

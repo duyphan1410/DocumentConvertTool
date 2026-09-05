@@ -211,7 +211,13 @@ class HelpView(ft.Container):
         shortcuts = [
             ("Ctrl + O", t("help.sc_open")),
             ("Ctrl + S", t("help.sc_save")),
+            ("Ctrl + P", t("help.sc_quick_open")),
+            ("Ctrl + Shift + N", t("help.sc_new_window")),
+            ("Ctrl + T", t("help.sc_new_tab")),
+            ("Ctrl + W", t("help.sc_close_tab")),
+            ("Ctrl + Tab", t("help.sc_switch_tab")),
             ("Ctrl + F", t("help.sc_find")),
+            ("Ctrl + H", t("help.sc_replace")),
             ("Ctrl + B", t("help.sc_sidebar")),
             ("Ctrl + Z", t("help.sc_undo")),
             ("Ctrl + Y", t("help.sc_redo")),
@@ -249,14 +255,16 @@ class HelpView(ft.Container):
 
     def _build_markdown_syntax_card(self) -> ft.Container:
         items = [
-            ("# Header", t("help.md_h1")),
+            ("# Header (H1..H6)", t("help.md_h1")),
             ("**Bold**", t("help.md_bold")),
             ("*Italic*", t("help.md_italic")),
             ("~~Strike~~", t("help.md_strike")),
-            ("`code`", t("help.md_code")),
+            ("`code` / ```lang", t("help.md_code")),
             ("> Quote", t("help.md_quote")),
             ("| Col 1 | Col 2 |", t("help.md_table")),
             ("![Alt](img.png)", t("help.md_image")),
+            ('<p align="center">', t("help.md_img_align")),
+            ("```mermaid", t("help.md_mermaid")),
         ]
         rows = [
             ft.DataRow(cells=[
@@ -292,12 +300,16 @@ class HelpView(ft.Container):
         formats = [
             ("Markdown (.md)", True, True),
             ("Word (.docx)", True, True),
+            ("PowerPoint (.pptx)", True, True),
             ("Excel (.xlsx)", True, True),
             ("CSV (.csv)", True, True),
             ("PDF (.pdf)", True, True),
+            ("Scanned PDF (OCR)", True, False),
             ("HTML (.html)", True, True),
             ("JSON / YAML", True, True),
-            ("PowerPoint (.pptx)", True, True),
+            ("Audio/Video (.mp3, .mp4...)", True, False),
+            ("Batch Archives (.zip, .7z)", True, False),
+            ("YouTube / Drive (URL)", True, False),
         ]
 
         def _check(val: bool):
@@ -336,12 +348,14 @@ class HelpView(ft.Container):
 
     def _build_pro_tips_card(self) -> ft.Container:
         tips = [
-            (ft.Icons.FOLDER_COPY_OUTLINED, "Studio Workspace: Quản lý cả thư mục dự án với File Explorer, kéo thả co giãn Splitter linh hoạt."),
-            (ft.Icons.SMART_DISPLAY_OUTLINED, "YouTube Companion: Click vào mốc [mm:ss] trong Live Preview để tua video tức thì."),
-            (ft.Icons.AUTO_GRAPH_ROUNDED, "Mermaid Live Preview: Hỗ trợ vẽ sơ đồ Flowchart, Sequence, Class, Gantt hiển thị trực quan."),
-            (ft.Icons.RESTORE_ROUNDED, t("help.tip_autosave")),
-            (ft.Icons.IMAGE_OUTLINED, t("help.tip_images")),
-            (ft.Icons.SEARCH_ROUNDED, t("help.tip_search")),
+            (ft.Icons.DASHBOARD_CUSTOMIZE_ROUNDED, t("help.tip_workspace")),
+            (ft.Icons.GRAPHIC_EQ_ROUNDED, t("help.tip_whisper")),
+            (ft.Icons.DOCUMENT_SCANNER_ROUNDED, t("help.tip_ocr")),
+            (ft.Icons.DRIVE_FILE_MOVE_ROUNDED, t("help.tip_batch")),
+            (ft.Icons.HISTORY_ROUNDED, t("help.tip_history")),
+            (ft.Icons.IMAGE_OUTLINED, t("help.tip_img_format")),
+            (ft.Icons.DRAG_INDICATOR_ROUNDED, t("help.tip_drag_drop")),
+            (ft.Icons.SMART_DISPLAY_OUTLINED, t("help.tip_youtube")),
         ]
         tip_rows = [
             ft.Row(

@@ -212,6 +212,36 @@ class SearchReplaceBar:
         except Exception:
             pass
 
+    def focus_replace_input(self):
+        try:
+            if self.replace_input.page:
+                import asyncio
+                res = self.replace_input.focus()
+                if asyncio.iscoroutine(res):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(res)
+                    except RuntimeError:
+                        pass
+        except Exception:
+            pass
+
+    def set_replace_visible(self, visible: bool):
+        self.replace_container.visible = visible
+        self.btn_toggle_replace.icon = (
+            ft.Icons.EXPAND_LESS if visible else ft.Icons.EXPAND_MORE
+        )
+        try:
+            if self.replace_container.page:
+                self.replace_container.update()
+        except Exception:
+            pass
+        try:
+            if self.btn_toggle_replace.page:
+                self.btn_toggle_replace.update()
+        except Exception:
+            pass
+
     def update_results(self, matches: list[dict], current_idx: int = -1):
         """Populates the Word/VS Code style Search Navigation Results list panel."""
         self.results_column.controls.clear()

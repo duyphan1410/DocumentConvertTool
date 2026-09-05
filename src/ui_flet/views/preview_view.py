@@ -237,6 +237,10 @@ def image_to_base64_uri(file_path: str, target_width: Optional[int] = None, max_
     """
     limit_w = target_width if target_width is not None else max_width
     limit_w = max(50, min(1200, limit_w))
+
+    if not file_path or not isinstance(file_path, str) or not os.path.isfile(file_path):
+        return file_path
+
     sid = _resolve_session_id_from_path(file_path, session_id)
     cache_key = (sid, file_path, limit_w, quality)
 
@@ -1036,40 +1040,43 @@ class MarkdownPreview(ft.Container):
         print(f"[DEBUG][CAN_IN_PLACE] can_in_place={can_in_place}, reason={reason}")
 
         if can_in_place:
-            changed_controls = []
-            for ctrl, item in zip(existing_controls, items):
-                if item[0] == "text":
-                    if ctrl.value != item[1]:
-                        ctrl.value = item[1]
-                        changed_controls.append(ctrl)
-                elif item[0] == "img":
-                    img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
-                    if ctrl.alignment != main_align:
-                        ctrl.alignment = main_align
-                        changed_controls.append(ctrl)
-                    if ctrl.controls and isinstance(ctrl.controls[0], ft.Container):
-                        container = ctrl.controls[0]
-                        container.tooltip = f"{alt} (Nhấn để chỉnh sửa)" if action_url else alt
-                        img_ctrl = None
-                        if isinstance(container.content, ft.GestureDetector):
-                            img_ctrl = container.content.content
-                            if action_url and getattr(container.content, "data", "") != action_url:
-                                container.content.data = action_url
-                        elif isinstance(container.content, ft.Image):
-                            img_ctrl = container.content
+            try:
+                changed_controls = []
+                for ctrl, item in zip(existing_controls, items):
+                    if item[0] == "text":
+                        if ctrl.value != item[1]:
+                            ctrl.value = item[1]
+                            changed_controls.append(ctrl)
+                    elif item[0] == "img":
+                        img_idx, main_align, src, alt, action_url = item[1], item[2], item[3], item[4], item[5]
+                        if ctrl.alignment != main_align:
+                            ctrl.alignment = main_align
+                            changed_controls.append(ctrl)
+                        if ctrl.controls and isinstance(ctrl.controls[0], ft.Container):
+                            container = ctrl.controls[0]
+                            container.tooltip = f"{alt} (Nhấn để chỉnh sửa)" if action_url else alt
+                            img_ctrl = None
+                            if isinstance(container.content, ft.GestureDetector):
+                                img_ctrl = container.content.content
+                                if action_url and getattr(container.content, "data", "") != action_url:
+                                    container.content.data = action_url
+                            elif isinstance(container.content, ft.Image):
+                                img_ctrl = container.content
 
-                        if isinstance(img_ctrl, ft.Image):
-                            if img_ctrl.src != src:
-                                img_ctrl.src = src
-                                if ctrl not in changed_controls:
-                                    changed_controls.append(ctrl)
-            for c in changed_controls:
-                try:
-                    if hasattr(c, "page") and c.page:
-                        c.update()
-                except Exception:
-                    pass
-            return True
+                            if isinstance(img_ctrl, ft.Image):
+                                if img_ctrl.src != src:
+                                    img_ctrl.src = src
+                                    if ctrl not in changed_controls:
+                                        changed_controls.append(ctrl)
+                for c in changed_controls:
+                    try:
+                        if hasattr(c, "page") and c.page:
+                            c.update()
+                    except Exception:
+                        pass
+                return True
+            except Exception as in_place_err:
+                print(f"[DEBUG][IN_PLACE_FALLBACK] In-place update failed ({in_place_err}), falling back to full re-render")
 
         # Fallback: construct new controls tree
         new_controls = []

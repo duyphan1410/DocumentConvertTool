@@ -136,6 +136,7 @@ class DocumentConvertApp:
             on_quick_open=lambda: self.quick_open_dialog.show(self.page),
             on_save_convert=self.file_controller.handle_save_shortcut,
             on_find_replace=lambda: self.search_controller.toggle_search(),
+            on_replace_shortcut=lambda: self.search_controller.toggle_search(show_replace=True),
             on_toggle_sidebar=lambda: self.layout_controller.toggle_sidebar(tab_name="explorer"),
             on_undo=self.editor_controller.perform_undo,
             on_redo=self.editor_controller.perform_redo,

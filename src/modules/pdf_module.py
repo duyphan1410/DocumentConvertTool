@@ -251,23 +251,32 @@ class PDFModule(BaseDocumentModule):
         def get_lines_from_chars(block_chars: list[dict]) -> list[list[dict]]:
             if not block_chars:
                 return []
-            chars_sorted = sorted(block_chars, key=lambda c: (c['top'], c['x0']))
+            # Sort chars by vertical center, then by horizontal position x0
+            chars_sorted = sorted(block_chars, key=lambda c: ((c.get('top', 0.0) + c.get('bottom', c.get('top', 0.0) + c.get('size', 10.0))) / 2.0, c.get('x0', 0.0)))
             lines = []
-            curr = []
-            curr_top = None
             for c in chars_sorted:
-                top = c['top']
-                if curr_top is None:
-                    curr_top = top
-                    curr.append(c)
-                elif abs(top - curr_top) <= 3.8:
-                    curr.append(c)
-                else:
-                    lines.append(curr)
-                    curr = [c]
-                    curr_top = top
-            if curr:
-                lines.append(curr)
+                c_top = c.get('top', 0.0)
+                c_bot = c.get('bottom', c_top + c.get('size', 10.0))
+                c_mid = (c_top + c_bot) / 2.0
+                c_size = c.get('size', 10.0)
+
+                placed = False
+                for l in lines:
+                    l_top = min(x.get('top', 0.0) for x in l)
+                    l_bot = max(x.get('bottom', x.get('top', 0.0) + x.get('size', 10.0)) for x in l)
+                    l_mid = (l_top + l_bot) / 2.0
+                    l_size = max(x.get('size', 10.0) for x in l)
+
+                    # Two characters belong to the same line if their vertical extents overlap or vertical centers are close
+                    overlap = min(c_bot, l_bot) - max(c_top, l_top)
+                    if overlap >= 0.35 * min(c_size, l_size) or abs(c_mid - l_mid) <= 0.40 * max(c_size, l_size):
+                        l.append(c)
+                        placed = True
+                        break
+                if not placed:
+                    lines.append([c])
+
+            lines.sort(key=lambda l: min(x.get('top', 0.0) for x in l))
             return lines
 
         raw_lines = get_lines_from_chars(chars)
@@ -871,6 +880,8 @@ class PDFModule(BaseDocumentModule):
                     el3 = doc_elements[next_table_idx]
                     t1_cols = el1["columns"]
                     t2_cols = el3["columns"]
+                    if len(t1_cols) != len(t2_cols):
+                        continue
                     t2_rows = el3["content"]
                     
                     mapped_rows = []
@@ -939,7 +950,11 @@ class PDFModule(BaseDocumentModule):
             global_img_counter = 1
 
             with pdfplumber.open(file_path) as pdf:
-                for page_idx, page in enumerate(pdf.pages):
+                for page_idx, raw_page in enumerate(pdf.pages):
+                    # Filter out off-page / negative-coordinate ghost characters on raw page before any cropping
+                    page = raw_page.filter(
+                        lambda obj: obj.get("object_type") != "char" or (obj.get("top", 0) >= 0 and obj.get("x0", 0) >= 0)
+                    )
                     page_fitz = fitz_doc[page_idx] if fitz_doc and page_idx < len(fitz_doc) else None
                     page_images = []
 
@@ -1006,6 +1021,48 @@ class PDFModule(BaseDocumentModule):
 
                         if has_paragraph_header or is_scrambled_noise:
                             print(f"[DEBUG] PDFModule: Skipped illustration diagram pseudo-table on page {page_idx + 1} — fallback to rich text")
+                            continue
+
+                        # Guard: Reject pseudo-tables where cells slice a sentence/word across columns (e.g. "Mi" | "crosoft")
+                        has_word_split = False
+                        for row in cleaned_table:
+                            valid_cells = [str(c).strip() for c in row if c and str(c).strip()]
+                            for k in range(len(valid_cells) - 1):
+                                c1, c2 = valid_cells[k], valid_cells[k + 1]
+                                if c1.count('(') > c1.count(')') and c2.count(')') > c2.count('('):
+                                    has_word_split = True
+                                    break
+                                if c1.endswith(('-', '‐', '–')):
+                                    has_word_split = True
+                                    break
+                                w1 = c1.split()[-1] if c1.split() else ""
+                                w2 = c2.split()[0] if c2.split() else ""
+                                if len(w1) <= 2 and w1.isalpha() and w2.isalpha() and w2[0].islower():
+                                    has_word_split = True
+                                    break
+                            if has_word_split:
+                                break
+
+                        if has_word_split:
+                            print(f"[DEBUG] PDFModule: Skipped pseudo-table with mid-word sliced cells on page {page_idx + 1} — fallback to rich text")
+                            continue
+
+                        # Guard: Reject tables that over-captured document sections/headings or bullet blocks into cells
+                        has_embedded_document_text = False
+                        for row in cleaned_table:
+                            for cell in row:
+                                c_str = str(cell).strip()
+                                if re.search(r'(?:^|\n)(?:#{1,6}\s+|Phần\s+\d+:|Mục\s+\d+\.\d+:|\d+\.\s+Tệp\s+tin)', c_str, re.IGNORECASE):
+                                    has_embedded_document_text = True
+                                    break
+                                if c_str.count('\n') > 5 and any(line.strip().startswith(('-', '*', '○', '•')) for line in c_str.split('\n')):
+                                    has_embedded_document_text = True
+                                    break
+                            if has_embedded_document_text:
+                                break
+
+                        if has_embedded_document_text:
+                            print(f"[DEBUG] PDFModule: Skipped table over-capturing document text on page {page_idx + 1} — fallback to rich text")
                             continue
 
                         bx0, btop, bx1, bbottom = t.bbox

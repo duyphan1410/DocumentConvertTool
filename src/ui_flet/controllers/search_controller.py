@@ -25,13 +25,25 @@ class SearchController:
         self.editor_view = editor_view
         self.ribbon_bar = ribbon_bar
 
-    def toggle_search(self, visible=None):
+    def toggle_search(self, visible=None, show_replace=None):
         """Toggle or set search panel visibility for keyboard shortcuts (Ctrl+F / Ctrl+H).
         Pass visible=None to toggle, True to open, False to close.
+        Pass show_replace=True to explicitly expand the Replace row and focus replace input.
         """
         if self.ribbon_bar:
+            if show_replace is True:
+                # If already visible with replace open, toggle it off; otherwise open and expand replace
+                if self.ribbon_bar._search_visible and self.search_bar and self.search_bar.replace_container.visible:
+                    self.ribbon_bar.toggle_search(False)
+                    return
+                if not self.ribbon_bar._search_visible:
+                    self.ribbon_bar.toggle_search(True)
+                if self.search_bar:
+                    self.search_bar.set_replace_visible(True)
+                    self.search_bar.focus_replace_input()
+                return
+
             self.ribbon_bar.toggle_search(visible)
-            # ribbon_bar.toggle_search manages focus internally; derive open state from ribbon flag
             opening = self.ribbon_bar._search_visible
         else:
             if visible is None:
@@ -40,10 +52,14 @@ class SearchController:
             opening = visible
 
         if opening and self.search_bar:
-            try:
-                self.search_bar.focus_search_input()
-            except Exception:
-                pass
+            if show_replace is True:
+                self.search_bar.set_replace_visible(True)
+                self.search_bar.focus_replace_input()
+            else:
+                try:
+                    self.search_bar.focus_search_input()
+                except Exception:
+                    pass
 
     def toggle_search_panel(self, e=None):
         if isinstance(e, bool):

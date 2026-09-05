@@ -145,6 +145,10 @@ class FooterBar:
     def set_processing(self, is_processing: bool):
         self.progress_bar.visible = is_processing
         self.btn_convert.disabled = is_processing
+        if is_processing:
+            self.btn_convert.tooltip = t("footer.loading_wait") if t("footer.loading_wait") != "footer.loading_wait" else "Đang xử lý tài liệu, vui lòng đợi hoàn tất..."
+        else:
+            self.btn_convert.tooltip = None
         if self.progress_bar.page:
             self.progress_bar.update()
         if self.btn_convert.page:
@@ -169,8 +173,14 @@ class FooterBar:
 
         self.btn_convert.style = ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=8),
-            bgcolor=btn_bg,
-            color=ft.Colors.WHITE,
+            bgcolor={
+                ft.ControlState.DISABLED: ft.Colors.with_opacity(0.35, btn_bg),
+                ft.ControlState.DEFAULT: btn_bg,
+            },
+            color={
+                ft.ControlState.DISABLED: ft.Colors.WHITE38,
+                ft.ControlState.DEFAULT: ft.Colors.WHITE,
+            },
             padding=ft.Padding(left=24, top=16, right=24, bottom=16),
         )
 

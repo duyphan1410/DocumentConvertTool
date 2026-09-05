@@ -25,8 +25,8 @@ def show_message_dialog(
     Displays a modern, theme-aware, production-grade unified MessageDialog.
     Automatically logs DocumentErrors to persistent log file.
     """
-    # Clean up previous unmounted dialogs from overlay list
-    page.overlay[:] = [c for c in page.overlay if not isinstance(c, ft.AlertDialog)]
+    # Clean up only previous closed/unmounted dialogs from overlay list
+    page.overlay[:] = [c for c in page.overlay if not (isinstance(c, ft.AlertDialog) and not getattr(c, "open", False))]
 
     # Normalize payload into DocumentError
     if isinstance(payload, DocumentError):
@@ -184,33 +184,46 @@ def show_message_dialog(
         content_controls.append(toggle_btn)
         content_controls.append(detail_container)
 
-    def close_dialog(e):
-        dialog.open = False
-        page.update()
+    def close_dialog(e=None):
+        if dialog.open:
+            dialog.open = False
+            try:
+                page.update()
+            except Exception:
+                pass
 
     def copy_full_log(e):
         set_clipboard_text(doc_err.to_log_string(), page=page)
-        try:
-            snack = ft.SnackBar(
-                content=ft.Row(
-                    controls=[
-                        ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=ft.Colors.WHITE, size=18),
-                        ft.Text(t("dialog.details_copied_toast"), color=ft.Colors.WHITE, weight=ft.FontWeight.W_500),
-                    ],
-                    spacing=8,
-                ),
-                bgcolor=ft.Colors.GREEN_700,
-                duration=3000,
+        if dialog.open:
+            dialog.open = False
+            try:
+                page.update()
+            except Exception:
+                pass
+
+    actions_list = []
+    if dialog_type in (DialogType.ERROR, DialogType.WARNING):
+        actions_list.append(
+            ft.TextButton(
+                t("dialog.btn_copy_details"),
+                icon=ft.Icons.COPY_ALL_ROUNDED,
+                on_click=copy_full_log,
             )
-            page.snack_bar = snack
-            snack.open = True
-        except Exception as ex_snack:
-            print(f"[DEBUG] SnackBar display error: {ex_snack}")
-        dialog.open = False
-        page.update()
+        )
+
+    actions_list.append(
+        ft.Button(
+            t("dialog.btn_close"),
+            on_click=close_dialog,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=6),
+            ),
+        )
+    )
 
     dialog = ft.AlertDialog(
-        modal=True,
+        modal=False,
+        on_dismiss=close_dialog,
         title=ft.Row(
             controls=[
                 ft.Icon(icon_data, color=accent_color, size=28),
@@ -234,20 +247,7 @@ def show_message_dialog(
             width=500,
             padding=10,
         ),
-        actions=[
-            ft.TextButton(
-                t("dialog.btn_copy_details"),
-                icon=ft.Icons.COPY_ALL_ROUNDED,
-                on_click=copy_full_log,
-            ),
-            ft.ElevatedButton(
-                t("dialog.btn_close"),
-                on_click=close_dialog,
-                style=ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=6),
-                ),
-            ),
-        ],
+        actions=actions_list,
         actions_alignment=ft.MainAxisAlignment.END,
     )
 

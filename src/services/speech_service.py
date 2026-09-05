@@ -1,7 +1,7 @@
 """
-Lightweight Non-AI Audio Speech-to-Text Recognition Service.
-Transcribes audio from videos without subtitles using Google Web Speech / Windows SAPI.
-Does not require downloading or running any heavy AI models.
+Local AI Speech-to-Text Transcription Service.
+Transcribes audio from videos using locally installed faster-whisper models.
+Requires a model to be downloaded via the Model Hub — no internet needed at runtime.
 Adheres to the project Lazy Import standard.
 """
 import os
@@ -15,7 +15,7 @@ from src.services.youtube_service import extract_video_id, fetch_video_metadata,
 def download_youtube_audio(video_id: str, target_dir: str) -> Optional[str]:
     """
     Downloads lightweight audio stream from YouTube video into target_dir.
-    Returns the absolute path to the downloaded audio file (.wav or .m4a/.webm).
+    Returns the absolute path to the downloaded audio file (.m4a/.webm).
     """
     try:
         import yt_dlp
@@ -25,11 +25,16 @@ def download_youtube_audio(video_id: str, target_dir: str) -> Optional[str]:
 
     out_template = os.path.join(target_dir, f"{video_id}.%(ext)s")
     ydl_opts = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio/18/best",
         "outtmpl": out_template,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
     }
 
     try:
@@ -46,81 +51,46 @@ def download_youtube_audio(video_id: str, target_dir: str) -> Optional[str]:
     return None
 
 
-def transcribe_audio_file(
-    audio_path: str,
-    language: str = "vi",
-    chunk_seconds: int = 20,
-) -> List[Tuple[float, str]]:
-    """
-    Transcribes an audio file in chunks without loading any heavy AI models.
-    Uses Google Web Speech API (speech_recognition) with language support (vi-VN, en-US).
-
-    Returns:
-        List of (start_timestamp_seconds, recognized_text)
-    """
-    try:
-        import speech_recognition as sr
-    except ImportError as e:
-        print(f"[DEBUG] Missing speech_recognition: {e}")
-        return []
-
-    lang_code = "vi-VN" if language.lower().startswith("vi") else "en-US"
-    r = sr.Recognizer()
-    results = []
-
-    try:
-        with sr.AudioFile(audio_path) as source:
-            total_duration = getattr(source, "DURATION", 0.0) or 0.0
-            current_time = 0.0
-
-            while current_time < total_duration:
-                # Read next chunk
-                audio_chunk = r.record(source, duration=chunk_seconds)
-                try:
-                    text = r.recognize_google(audio_chunk, language=lang_code)
-                    if text and text.strip():
-                        results.append((current_time, text.strip()))
-                except sr.UnknownValueError:
-                    # Silence or unrecognizable sound in this segment
-                    pass
-                except sr.RequestError as req_err:
-                    print(f"[DEBUG] SpeechRecognition request error at {current_time}s: {req_err}")
-                except Exception as chunk_ex:
-                    print(f"[DEBUG] Error processing audio chunk at {current_time}s: {chunk_ex}")
-
-                current_time += chunk_seconds
-    except Exception as e:
-        print(f"[DEBUG] transcribe_audio_file failed: {e}")
-
-    return results
+from src.services.whisper_service import (
+    get_best_installed_model,
+    preprocess_audio,
+    transcribe_audio_whisper,
+)
 
 
 def transcribe_youtube_speech(
     url_or_id: str,
-    language: str = "vi",
+    language: Optional[str] = "vi",
     include_timestamps: bool = True,
+    status_callback=None,
 ) -> Tuple[bool, str, Optional[str]]:
     """
-    Full pipeline to transcribe speech from a YouTube video when no subtitles exist.
+    Full pipeline to transcribe speech from a YouTube video using local Whisper AI.
+    No internet connection required for transcription (only for audio download).
 
     Args:
         url_or_id: YouTube video URL or ID.
-        language: Language code ('vi', 'en').
+        language: Language code ('vi', 'en', 'auto', or None for auto-detect).
         include_timestamps: Whether to prepend timestamp markers.
+        status_callback: Optional callable(stage_name) for UI progress updates.
 
     Returns:
-        (success: bool, markdown_content: str, error_message: Optional[str])
+        (success: bool, markdown_content: str, error_code: Optional[str])
     """
     video_id = extract_video_id(url_or_id)
     if not video_id:
         return False, "", "ERR_INVALID_URL"
 
-    # Lazy check dependencies
+    # Check local model availability
+    model_id = get_best_installed_model()
+    if not model_id:
+        return False, "", "ERR_NO_LOCAL_MODEL"
+
+    # Check yt_dlp available for audio download
     try:
         import yt_dlp  # noqa: F401
-        import speech_recognition as sr  # noqa: F401
-    except ImportError as e:
-        return False, "", f"Missing dependencies for speech recognition: {e}"
+    except ImportError:
+        return False, "", "ERR_MISSING_YTDLP"
 
     temp_dir = tempfile.mkdtemp(prefix="docconvert_speech_")
     try:
@@ -130,17 +100,36 @@ def transcribe_youtube_speech(
         author_name = meta.get("author") or ""
 
         # 2. Download audio stream
+        if status_callback:
+            status_callback("downloading")
         audio_file = download_youtube_audio(video_id, temp_dir)
         if not audio_file or not os.path.exists(audio_file):
             return False, "", "ERR_AUDIO_DOWNLOAD_FAILED"
 
-        # 3. Transcribe audio in chunks
-        chunks = transcribe_audio_file(audio_file, language=language, chunk_seconds=20)
+        # 3. Preprocess & Transcribe with local Whisper
+        print(f"[SPEECH] Starting Whisper transcription with model: {model_id}")
+        chunks, detected_lang = transcribe_audio_whisper(
+            audio_file,
+            model_id=model_id,
+            language=language,
+            status_callback=status_callback,
+            return_info=True,
+        )
         if not chunks:
             return False, "", "ERR_NO_SPEECH_DETECTED"
 
         # 4. Format into Markdown
-        lang_display = "Vietnamese (vi)" if language.startswith("vi") else "English (en)"
+        from src.services.model_manager import AVAILABLE_MODELS
+        model_display = AVAILABLE_MODELS.get(model_id, {})
+        model_name = getattr(model_display, "display_name", model_id) if model_display else model_id
+
+        if detected_lang == "vi":
+            lang_display = "Vietnamese (vi)"
+        elif detected_lang == "en":
+            lang_display = "English (en)"
+        else:
+            lang_display = f"{detected_lang.upper()} ({detected_lang})"
+
         md_lines = [
             f"# {video_title}",
             "",
@@ -149,7 +138,7 @@ def transcribe_youtube_speech(
             md_lines.append(f"- **Channel / Author**: {author_name}")
         md_lines.extend([
             f"- **Source URL**: https://www.youtube.com/watch?v={video_id}",
-            f"- **Language**: {lang_display} [Speech Recognition]",
+            f"- **Language**: {lang_display} [AI Transcription — {model_name}]",
             "",
             "---",
             "",
@@ -157,13 +146,18 @@ def transcribe_youtube_speech(
             "",
         ])
 
-        for start_sec, text in chunks:
+        # Group snippets into coherent paragraphs (similar to standard YouTube transcripts)
+        from src.services.youtube_service import _group_snippets_into_sentences
+        snippets = [{"start": s, "text": t} for s, t in chunks]
+        timestamps, paragraph_list = _group_snippets_into_sentences(snippets)
+
+        for ts, p_text in zip(timestamps, paragraph_list):
             if include_timestamps:
-                ts_str = format_timestamp(start_sec)
-                sec = int(start_sec)
-                md_lines.append(f"**[[{ts_str}]](yt://{video_id}?t={sec})** {text}\n")
+                ts_str = format_timestamp(ts)
+                sec = int(ts)
+                md_lines.append(f"**[[{ts_str}]](yt://{video_id}?t={sec})** {p_text}\n")
             else:
-                md_lines.append(f"{text}\n")
+                md_lines.append(f"{p_text}\n")
 
         markdown_output = "\n".join(md_lines)
         return True, markdown_output, None
@@ -171,9 +165,96 @@ def transcribe_youtube_speech(
     except Exception as e:
         return False, "", f"ERR_SPEECH_TRANSCRIPTION: {str(e)}"
     finally:
-        # Clean up temporary directory and downloaded audio
         if os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception:
                 pass
+
+
+def transcribe_drive_speech(
+    file_id: str,
+    audio_path: str,
+    file_name: str = "",
+    language: Optional[str] = "vi",
+    include_timestamps: bool = True,
+    status_callback=None,
+) -> Tuple[bool, str, Optional[str]]:
+    """
+    Transcribes speech from a locally downloaded Google Drive audio/video file.
+
+    Args:
+        file_id: Google Drive file ID.
+        audio_path: Local path to the downloaded audio/video file.
+        file_name: Original filename for Markdown header.
+        language: Language code ('vi', 'en', 'auto', or None for auto-detect).
+        include_timestamps: Whether to include timestamp markers.
+        status_callback: Optional callable(stage_name) for UI progress updates.
+
+    Returns:
+        (success: bool, markdown_content: str, error_code: Optional[str])
+    """
+    # Check local model availability
+    model_id = get_best_installed_model()
+    if not model_id:
+        return False, "", "ERR_NO_LOCAL_MODEL"
+
+    if not audio_path or not os.path.exists(audio_path):
+        return False, "", "ERR_AUDIO_DOWNLOAD_FAILED"
+
+    try:
+        # Transcribe with local Whisper + Audio Preprocessing
+        print(f"[SPEECH] Starting Whisper transcription (Drive) with model: {model_id}")
+        chunks, detected_lang = transcribe_audio_whisper(
+            audio_path,
+            model_id=model_id,
+            language=language,
+            status_callback=status_callback,
+            return_info=True,
+        )
+        if not chunks:
+            return False, "", "ERR_NO_SPEECH_DETECTED"
+
+        # Format into Markdown
+        from src.services.model_manager import AVAILABLE_MODELS
+        model_meta = AVAILABLE_MODELS.get(model_id)
+        model_name = model_meta.display_name if model_meta else model_id
+
+        if detected_lang == "vi":
+            lang_display = "Vietnamese (vi)"
+        elif detected_lang == "en":
+            lang_display = "English (en)"
+        else:
+            lang_display = f"{detected_lang.upper()} ({detected_lang})"
+
+        title = file_name or f"Google Drive Video ({file_id})"
+        drive_url = f"https://drive.google.com/file/d/{file_id}/view"
+
+        md_lines = [
+            f"# {title}",
+            "",
+            f"- **Source URL**: {drive_url}",
+            f"- **Language**: {lang_display} [AI Transcription — {model_name}]",
+            "",
+            "---",
+            "",
+            "## Speech Transcript",
+            "",
+        ]
+
+        # Group snippets into coherent paragraphs (similar to standard YouTube transcripts)
+        from src.services.youtube_service import _group_snippets_into_sentences
+        snippets = [{"start": s, "text": t} for s, t in chunks]
+        timestamps, paragraph_list = _group_snippets_into_sentences(snippets)
+
+        for ts, p_text in zip(timestamps, paragraph_list):
+            if include_timestamps:
+                ts_str = format_timestamp(ts)
+                md_lines.append(f"**[{ts_str}]** {p_text}\n")
+            else:
+                md_lines.append(f"{p_text}\n")
+
+        return True, "\n".join(md_lines), None
+
+    except Exception as e:
+        return False, "", f"ERR_SPEECH_TRANSCRIPTION: {str(e)}"

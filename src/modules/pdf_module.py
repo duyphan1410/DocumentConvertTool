@@ -3,6 +3,7 @@ import sys
 import re
 import io
 import hashlib
+from typing import Optional, Callable
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 
@@ -250,23 +251,32 @@ class PDFModule(BaseDocumentModule):
         def get_lines_from_chars(block_chars: list[dict]) -> list[list[dict]]:
             if not block_chars:
                 return []
-            chars_sorted = sorted(block_chars, key=lambda c: (c['top'], c['x0']))
+            # Sort chars by vertical center, then by horizontal position x0
+            chars_sorted = sorted(block_chars, key=lambda c: ((c.get('top', 0.0) + c.get('bottom', c.get('top', 0.0) + c.get('size', 10.0))) / 2.0, c.get('x0', 0.0)))
             lines = []
-            curr = []
-            curr_top = None
             for c in chars_sorted:
-                top = c['top']
-                if curr_top is None:
-                    curr_top = top
-                    curr.append(c)
-                elif abs(top - curr_top) <= 3.8:
-                    curr.append(c)
-                else:
-                    lines.append(curr)
-                    curr = [c]
-                    curr_top = top
-            if curr:
-                lines.append(curr)
+                c_top = c.get('top', 0.0)
+                c_bot = c.get('bottom', c_top + c.get('size', 10.0))
+                c_mid = (c_top + c_bot) / 2.0
+                c_size = c.get('size', 10.0)
+
+                placed = False
+                for l in lines:
+                    l_top = min(x.get('top', 0.0) for x in l)
+                    l_bot = max(x.get('bottom', x.get('top', 0.0) + x.get('size', 10.0)) for x in l)
+                    l_mid = (l_top + l_bot) / 2.0
+                    l_size = max(x.get('size', 10.0) for x in l)
+
+                    # Two characters belong to the same line if their vertical extents overlap or vertical centers are close
+                    overlap = min(c_bot, l_bot) - max(c_top, l_top)
+                    if overlap >= 0.35 * min(c_size, l_size) or abs(c_mid - l_mid) <= 0.40 * max(c_size, l_size):
+                        l.append(c)
+                        placed = True
+                        break
+                if not placed:
+                    lines.append([c])
+
+            lines.sort(key=lambda l: min(x.get('top', 0.0) for x in l))
             return lines
 
         raw_lines = get_lines_from_chars(chars)
@@ -799,8 +809,15 @@ class PDFModule(BaseDocumentModule):
                         page_area = page.width * page.height
                         img_area = (rect.x1 - rect.x0) * (rect.y1 - rect.y0)
                         if page_area > 0 and img_area > page_area * 0.85:
-                            print(f"[DEBUG] PDFModule: Skipped likely-background image (page {page_idx+1})")
-                            continue
+                            # A full-page image is a background only if the page has readable text on top of it.
+                            # If the page has no text (e.g. rasterized slide deck, infographics, photo slides),
+                            # the image IS the entire page content and must be preserved!
+                            page_text = page_fitz.get_text().strip() if page_fitz else ""
+                            if len(page_text) > 0:
+                                print(f"[DEBUG] PDFModule: Skipped likely-background image (page {page_idx+1})")
+                                continue
+                            else:
+                                print(f"[DEBUG] PDFModule: Retained full-page slide/content image on textless page {page_idx+1}")
 
                         candidates.append({
                             "xref": xref,
@@ -863,6 +880,8 @@ class PDFModule(BaseDocumentModule):
                     el3 = doc_elements[next_table_idx]
                     t1_cols = el1["columns"]
                     t2_cols = el3["columns"]
+                    if len(t1_cols) != len(t2_cols):
+                        continue
                     t2_rows = el3["content"]
                     
                     mapped_rows = []
@@ -892,7 +911,11 @@ class PDFModule(BaseDocumentModule):
     # MAIN DOCUMENT INGESTION (PDF -> Markdown)
     # =========================================================================
 
-    def load_to_markdown(self, file_path: str) -> str:
+    def load_to_markdown(
+        self,
+        file_path: str,
+        progress_callback: Optional[Callable[[int, int, str, Optional[str]], None]] = None,
+    ) -> str:
         """
         Extracts PDF content to clean Markdown text with table structure recognition using pdfplumber.
         Supports table stitching across page breaks and image deduplication.
@@ -927,7 +950,11 @@ class PDFModule(BaseDocumentModule):
             global_img_counter = 1
 
             with pdfplumber.open(file_path) as pdf:
-                for page_idx, page in enumerate(pdf.pages):
+                for page_idx, raw_page in enumerate(pdf.pages):
+                    # Filter out off-page / negative-coordinate ghost characters on raw page before any cropping
+                    page = raw_page.filter(
+                        lambda obj: obj.get("object_type") != "char" or (obj.get("top", 0) >= 0 and obj.get("x0", 0) >= 0)
+                    )
                     page_fitz = fitz_doc[page_idx] if fitz_doc and page_idx < len(fitz_doc) else None
                     page_images = []
 
@@ -996,6 +1023,48 @@ class PDFModule(BaseDocumentModule):
                             print(f"[DEBUG] PDFModule: Skipped illustration diagram pseudo-table on page {page_idx + 1} — fallback to rich text")
                             continue
 
+                        # Guard: Reject pseudo-tables where cells slice a sentence/word across columns (e.g. "Mi" | "crosoft")
+                        has_word_split = False
+                        for row in cleaned_table:
+                            valid_cells = [str(c).strip() for c in row if c and str(c).strip()]
+                            for k in range(len(valid_cells) - 1):
+                                c1, c2 = valid_cells[k], valid_cells[k + 1]
+                                if c1.count('(') > c1.count(')') and c2.count(')') > c2.count('('):
+                                    has_word_split = True
+                                    break
+                                if c1.endswith(('-', '‐', '–')):
+                                    has_word_split = True
+                                    break
+                                w1 = c1.split()[-1] if c1.split() else ""
+                                w2 = c2.split()[0] if c2.split() else ""
+                                if len(w1) <= 2 and w1.isalpha() and w2.isalpha() and w2[0].islower():
+                                    has_word_split = True
+                                    break
+                            if has_word_split:
+                                break
+
+                        if has_word_split:
+                            print(f"[DEBUG] PDFModule: Skipped pseudo-table with mid-word sliced cells on page {page_idx + 1} — fallback to rich text")
+                            continue
+
+                        # Guard: Reject tables that over-captured document sections/headings or bullet blocks into cells
+                        has_embedded_document_text = False
+                        for row in cleaned_table:
+                            for cell in row:
+                                c_str = str(cell).strip()
+                                if re.search(r'(?:^|\n)(?:#{1,6}\s+|Phần\s+\d+:|Mục\s+\d+\.\d+:|\d+\.\s+Tệp\s+tin)', c_str, re.IGNORECASE):
+                                    has_embedded_document_text = True
+                                    break
+                                if c_str.count('\n') > 5 and any(line.strip().startswith(('-', '*', '○', '•')) for line in c_str.split('\n')):
+                                    has_embedded_document_text = True
+                                    break
+                            if has_embedded_document_text:
+                                break
+
+                        if has_embedded_document_text:
+                            print(f"[DEBUG] PDFModule: Skipped table over-capturing document text on page {page_idx + 1} — fallback to rich text")
+                            continue
+
                         bx0, btop, bx1, bbottom = t.bbox
                         block_regions.append({
                             "type": "table",
@@ -1047,6 +1116,30 @@ class PDFModule(BaseDocumentModule):
                             
                     if page_idx < len(pdf.pages) - 1:
                         doc_elements.append({"type": "page_break", "content": "\n\n---\n\n"})
+
+                    if progress_callback:
+                        try:
+                            partial_parts = []
+                            for el in doc_elements:
+                                if el["type"] == "text":
+                                    partial_parts.append(el["content"].strip())
+                                elif el["type"] == "table":
+                                    md_t = self._format_markdown_table(el["content"])
+                                    if md_t:
+                                        partial_parts.append(md_t)
+                                elif el["type"] == "image":
+                                    partial_parts.append(el["content"].strip())
+                                elif el["type"] == "page_break":
+                                    partial_parts.append(el["content"])
+                            partial_md = "\n\n".join(partial_parts)
+                            progress_callback(
+                                page_idx + 1,
+                                len(pdf.pages),
+                                f"Trang {page_idx + 1}/{len(pdf.pages)}",
+                                partial_md,
+                            )
+                        except Exception:
+                            pass
 
             if fitz_doc:
                 try:
@@ -1273,6 +1366,30 @@ class PDFModule(BaseDocumentModule):
             height: auto;
             border-radius: 4px;
         }
+        p[align="center"], div[align="center"], center {
+            text-align: center;
+        }
+        p[align="right"], div[align="right"] {
+            text-align: right;
+        }
+        p[align="left"], div[align="left"] {
+            text-align: left;
+        }
+        p[align="center"] img, div[align="center"] img, center img, img[align="center"] {
+            display: inline-block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        p[align="right"] img, div[align="right"] img, img[align="right"] {
+            display: inline-block;
+            margin-left: auto;
+            margin-right: 0;
+        }
+        p[align="left"] img, div[align="left"] img, img[align="left"] {
+            display: inline-block;
+            margin-left: 0;
+            margin-right: auto;
+        }
         hr {
             border: 0;
             border-top: 1px solid #d0d7de;
@@ -1294,11 +1411,18 @@ class PDFModule(BaseDocumentModule):
             session_dir = asset_mgr.get_session_dir()
             os.makedirs(session_dir, exist_ok=True)
 
+            out_dir = os.path.dirname(out_path) if out_path else None
+
             def prepare_image(src_url: str) -> str:
                 if not src_url or src_url.startswith("http://") or src_url.startswith("https://"):
                     return src_url
 
-                resolved = asset_mgr.resolve_uri(src_url)
+                resolved = asset_mgr.resolve_uri(src_url, base_dir=out_dir)
+                if not os.path.isabs(resolved) and out_dir:
+                    possible_path = os.path.join(out_dir, resolved)
+                    if os.path.exists(possible_path):
+                        resolved = possible_path
+
                 if not os.path.isabs(resolved):
                     possible_path = os.path.join(session_dir, resolved)
                     if os.path.exists(possible_path):
@@ -1328,11 +1452,11 @@ class PDFModule(BaseDocumentModule):
                 src = match.group(2)
                 suffix = match.group(3)
                 new_src = prepare_image(src)
-                return f'{prefix}src="{new_src}"{suffix}'
+                return f'{prefix}{new_src}{suffix}'
 
             if "!" in markdown_content or "<img" in markdown_content:
                 processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', resolve_img_markdown, markdown_content, flags=re.IGNORECASE)
-                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md)
+                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', resolve_img_html, processed_md, flags=re.IGNORECASE)
             else:
                 processed_md = markdown_content
 

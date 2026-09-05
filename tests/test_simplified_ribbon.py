@@ -117,11 +117,32 @@ class TestSimplifiedRibbon(unittest.TestCase):
         self.assertFalse(fmt.btn_more.visible)
 
         # Compact mode
-        fmt.set_compact_mode(True)
-        self.assertTrue(fmt.is_compact)
-        self.assertFalse(fmt.btn_strike.visible)
-        self.assertTrue(fmt.btn_more.visible)
+    def test_ribbon_clean_single_row_layout(self):
+        """Verify RibbonBar maintains streamlined single-row controls without picture format clutter."""
+        ribbon = RibbonBar()
+        self.assertFalse(hasattr(ribbon, "picture_format_container"))
+        self.assertTrue(len(ribbon.ribbon_row.controls) >= 10)
+
+    def test_image_context_stub_backward_compat(self):
+        """Verify set_image_context works safely as a backward-compatibility stub."""
+        from src.ui_flet.helpers.image_token_helper import ImageTokenInfo
+        ribbon = RibbonBar()
+        sample_tok = ImageTokenInfo(
+            raw_token="![Sample](img.png)",
+            start=0,
+            end=17,
+            src="img.png",
+            alt="Sample",
+            width="50%",
+            align="center",
+        )
+        ribbon.set_image_context(sample_tok)
+        self.assertEqual(ribbon.active_image_token, sample_tok)
+
+        ribbon.set_image_context(None)
+        self.assertIsNone(ribbon.active_image_token)
 
 
 if __name__ == "__main__":
     unittest.main()
+

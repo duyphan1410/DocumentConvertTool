@@ -219,12 +219,13 @@ SENTENCE_END_RE = re.compile(r'[.!?。！？]["\'\)\]]*$')
 def _group_snippets_into_sentences(
     snippets: List[dict],
     group_interval_seconds: float = 15.0,
-    max_interval_seconds: float = 35.0,
+    max_interval_seconds: float = 30.0,
+    pause_threshold: Optional[float] = None,
 ) -> Tuple[List[float], List[str]]:
     """
     Groups subtitle snippets into coherent paragraphs of complete sentences.
-    Ensures that a timestamp block completes full sentences (ending with . / ? / !)
-    before advancing to the next timestamp marker.
+    Splits when full sentences complete, when max interval is reached, or when
+    a natural pause / silence gap (>= pause_threshold) occurs between snippets.
     """
     import html
 
@@ -236,6 +237,22 @@ def _group_snippets_into_sentences(
 
     curr_snippets = []
     paragraph_start = None
+    last_item_start = None
+
+    def _flush_paragraph(p_start: Optional[float], texts: List[str]):
+        if not texts:
+            return
+        joined = re.sub(r"\s+", " ", " ".join(texts)).strip()
+        if not joined:
+            return
+        # Clean trailing commas/semicolons before ending sentence
+        joined = re.sub(r"[,;: ]+$", "", joined)
+        if not SENTENCE_END_RE.search(joined):
+            joined += "."
+        # Capitalize first character if lowercase
+        joined = joined[0].upper() + joined[1:] if len(joined) > 1 else joined.upper()
+        timestamps.append(p_start if p_start is not None else 0.0)
+        paragraph_list.append(joined)
 
     for item in snippets:
         raw_text = html.unescape(item.get("text", "")).strip()
@@ -243,45 +260,45 @@ def _group_snippets_into_sentences(
             continue
         start = float(item.get("start", 0.0))
 
+        # Check if there is a noticeable pause / silence since last snippet
+        if (
+            curr_snippets
+            and last_item_start is not None
+            and pause_threshold is not None
+            and (start - last_item_start >= pause_threshold)
+        ):
+            _flush_paragraph(paragraph_start, curr_snippets)
+            curr_snippets = []
+            paragraph_start = None
+
         if paragraph_start is None:
             paragraph_start = start
 
         curr_snippets.append(raw_text)
         duration = start - paragraph_start
+        last_item_start = start
 
-        # Check if the current snippet finishes a sentence
+        # Check if current snippet finishes a sentence
         is_sentence_end = bool(SENTENCE_END_RE.search(raw_text))
 
-        # Advance to next timestamp if:
-        # 1. Full sentence completed AND duration >= group_interval_seconds
-        # 2. OR safety max interval reached (e.g. unpunctuated auto-subs) with at least 3 snippets
+        # Split when sentence is complete AND duration >= group_interval_seconds,
+        # OR when max duration is reached with at least 3 snippets
         should_split = (is_sentence_end and duration >= group_interval_seconds) or (
             duration >= max_interval_seconds and len(curr_snippets) >= 3
         )
 
         if should_split:
-            joined = re.sub(r"\s+", " ", " ".join(curr_snippets)).strip()
-            if joined:
-                if not SENTENCE_END_RE.search(joined):
-                    joined += "."
-                # Capitalize first character if lowercase
-                joined = joined[0].upper() + joined[1:] if len(joined) > 1 else joined.upper()
-                timestamps.append(paragraph_start)
-                paragraph_list.append(joined)
-
+            _flush_paragraph(paragraph_start, curr_snippets)
             curr_snippets = []
             paragraph_start = None
 
     if curr_snippets:
-        joined = re.sub(r"\s+", " ", " ".join(curr_snippets)).strip()
-        if joined:
-            if not SENTENCE_END_RE.search(joined):
-                joined += "."
-            joined = joined[0].upper() + joined[1:] if len(joined) > 1 else joined.upper()
-            timestamps.append(paragraph_start if paragraph_start is not None else 0.0)
-            paragraph_list.append(joined)
+        _flush_paragraph(paragraph_start, curr_snippets)
 
     return timestamps, paragraph_list
+
+
+group_snippets_into_sentences = _group_snippets_into_sentences
 
 
 def fetch_youtube_transcript(

@@ -50,9 +50,90 @@ def save_markdown_from_text(content: str, out_path: str) -> str:
     return f"Markdown file saved successfully -> {os.path.basename(out_path)}"
 
 
+def resolve_mermaid_for_export(text: str) -> str:
+    """
+    Renders any ```mermaid code blocks into actual image files registered with
+    MediaAssetManager so export modules (Word, PDF, HTML, PPTX) embed the diagram
+    as a real picture.
+    """
+    if not text or "```mermaid" not in text.lower():
+        return text
+
+    import hashlib
+    import json
+    import base64
+    import shutil
+    import subprocess
+    import tempfile
+    import urllib.request
+    from src.services.media_asset_manager import MediaAssetManager
+
+    asset_mgr = MediaAssetManager()
+    mermaid_pattern = r"(?<!`)(?:`{3,4})mermaid[^\n]*\n([\s\S]*?)\n\s*(?:`{3,4})"
+
+    def replace_mermaid_match(match):
+        diagram_code = match.group(1).strip()
+        if not diagram_code:
+            return match.group(0)
+
+        d_hash = hashlib.md5(diagram_code.encode("utf-8")).hexdigest()[:12]
+        img_filename = f"mermaid_{d_hash}.png"
+        session_dir = asset_mgr.get_session_dir()
+        existing_path = os.path.join(session_dir, img_filename)
+
+        if os.path.exists(existing_path) and os.path.getsize(existing_path) > 0:
+            return f"\n\n![Mermaid Diagram]({existing_path})\n\n"
+
+        # Tier 1: Local mmdc CLI
+        mmdc_path = shutil.which("mmdc")
+        if mmdc_path:
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".mmd", mode="w", encoding="utf-8", delete=False) as in_f, \
+                     tempfile.NamedTemporaryFile(suffix=".png", mode="r", encoding="utf-8", delete=False) as out_f:
+                    in_f.write(diagram_code)
+                    in_path = in_f.name
+                    out_path = out_f.name
+
+                cmd = [mmdc_path, "-i", in_path, "-o", out_path, "-t", "default", "-b", "white"]
+                result = subprocess.run(cmd, capture_output=True, timeout=10)
+
+                if result.returncode == 0 and os.path.exists(out_path):
+                    with open(out_path, "rb") as f:
+                        png_bytes = f.read()
+                    try:
+                        os.remove(in_path)
+                        os.remove(out_path)
+                    except Exception:
+                        pass
+                    saved_path = asset_mgr.register_image(png_bytes, img_filename)
+                    return f"\n\n![Mermaid Diagram]({saved_path})\n\n"
+            except Exception as e:
+                print(f"[DEBUG] Export mmdc failed: {e}")
+
+        # Tier 2: Cloud mermaid.ink endpoint
+        try:
+            payload = {"code": diagram_code, "mermaid": {"theme": "default"}}
+            b64_str = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+            url = f"https://mermaid.ink/img/{b64_str}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as res:
+                if res.status == 200:
+                    img_bytes = res.read()
+                    saved_path = asset_mgr.register_image(img_bytes, img_filename)
+                    return f"\n\n![Mermaid Diagram]({saved_path})\n\n"
+        except Exception as e:
+            print(f"[DEBUG] Export mermaid download failed: {e}")
+
+        # Tier 3: Fallback keep code block
+        return match.group(0)
+
+    return re.sub(mermaid_pattern, replace_mermaid_match, text)
+
+
 def prepare_markdown_for_export(text: str) -> str:
     """
     Preprocesses Markdown text prior to document export across all modules (HTML, PDF, PPTX, Word):
+    0. Renders Mermaid diagram blocks into real picture assets for full export compatibility.
     1. Standardizes bullet characters (•, ·, ⁃, ▪) into clean Markdown list items (- ).
     2. Prevents the Markdown 'Lazy List Continuation Trap':
        Inserts a blank line if a bold title line (e.g., **Social Network Website**) or header line
@@ -60,6 +141,9 @@ def prepare_markdown_for_export(text: str) -> str:
     """
     if not text:
         return text
+
+    # 0. Render Mermaid diagrams into embedded picture assets
+    text = resolve_mermaid_for_export(text)
 
     # 1. Convert bullet symbols (•, ·, ⁃, ▪) into -
     text = re.sub(r'^[•·⁃▪]\s*', '- ', text, flags=re.MULTILINE)

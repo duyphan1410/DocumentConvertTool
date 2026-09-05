@@ -252,6 +252,272 @@ def _update_win32_title_bar(title: str, hex_color: str, is_dark: bool):
         pass
 
 
+def get_diagram_theme_variables(palette_name: str = "Violet Cyberpunk", is_dark: bool = False, custom_palette: dict = None) -> dict:
+    """
+    Generates unified Mermaid diagram themeVariables for the active palette and mode.
+    Guarantees crisp readability, high-contrast edges, and harmonious palette branding
+    across all 13 diagram types (Flowchart, Sequence, Class, State, ER, Gantt, Git,
+    Pie, Journey, Timeline, Quadrant, Mindmap, C4).
+    """
+    palette = custom_palette or PALETTES.get(palette_name, PALETTES["Violet Cyberpunk"])
+    accent_primary = resolve_color(palette, "text_accent_primary", is_dark)
+    accent_secondary = resolve_color(palette, "text_accent_secondary", is_dark)
+    bg_comp = resolve_color(palette, "bg_component", is_dark)
+    bg_head = resolve_color(palette, "bg_header", is_dark)
+    border_col = resolve_color(palette, "border_color", is_dark)
+
+    if is_dark:
+        return {
+            "darkMode": True,
+            "background": bg_comp,
+            "fontFamily": "Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+            "fontSize": "13px",
+
+            # Core Node Surfaces & Text
+            "primaryColor": bg_comp,
+            "primaryTextColor": "#f8fafc",
+            "primaryBorderColor": accent_primary,
+            "secondaryColor": bg_head,
+            "secondaryTextColor": "#f1f5f9",
+            "secondaryBorderColor": accent_secondary,
+            "tertiaryColor": "#1e222e",
+            "tertiaryTextColor": "#e2e8f0",
+            "tertiaryBorderColor": border_col,
+
+            # Edges & Connectors
+            "lineColor": "#94a3b8",
+            "textColor": "#f8fafc",
+            "mainBkg": bg_comp,
+            "nodeBorder": accent_primary,
+            "nodeTextColor": "#f8fafc",
+            "titleColor": "#f8fafc",
+            "edgeLabelBackground": "#1e222e",
+
+            # Subgraphs / Clusters
+            "clusterBkg": "#141722",
+            "clusterBorder": "#475569",
+
+            # Sequence Diagrams
+            "actorBkg": bg_comp,
+            "actorBorder": accent_primary,
+            "actorTextColor": "#f8fafc",
+            "actorLineColor": "#94a3b8",
+            "signalColor": "#94a3b8",
+            "signalTextColor": "#f8fafc",
+            "labelBoxBkgColor": "#1e222e",
+            "labelBoxBorderColor": "#475569",
+            "labelTextColor": "#f8fafc",
+            "loopTextColor": "#f8fafc",
+            "noteBkgColor": "#2d2410",
+            "noteBorderColor": "#f59e0b",
+            "noteTextColor": "#fef08a",
+            "activationBkgColor": bg_head,
+            "activationBorderColor": accent_primary,
+
+            # Class & State Diagrams
+            "classText": "#f8fafc",
+            "labelColor": "#f8fafc",
+            "altBackground": "#181a22",
+            "stateBkg": bg_comp,
+            "stateBorder": accent_primary,
+            "stateLabelColor": "#f8fafc",
+            "compositeTitleColor": "#f8fafc",
+
+            # Pie Chart
+            "pie1": accent_primary,
+            "pie2": accent_secondary,
+            "pie3": "#f59e0b",
+            "pie4": "#10b981",
+            "pie5": "#8b5cf6",
+            "pie6": "#ec4899",
+            "pie7": "#06b6d4",
+            "pie8": "#3b82f6",
+            "pieTitleTextColor": "#f8fafc",
+            "pieSectionTextColor": "#ffffff",
+            "pieLegendTextColor": "#f8fafc",
+            "pieStrokeColor": bg_comp,
+
+            # User Journey
+            "sectionBkgColor": bg_comp,
+            "altSectionBkgColor": "#1e222e",
+            "sectionBkgColor2": bg_head,
+            "taskBorderColor": accent_primary,
+            "taskBkgColor": "#1e222e",
+            "taskTextColor": "#f8fafc",
+            "taskTextLightColor": "#f8fafc",
+            "taskTextDarkColor": "#f8fafc",
+            "taskTextOutsideColor": "#f8fafc",
+            "taskTextClickableColor": accent_secondary,
+            "activeTaskBorderColor": accent_secondary,
+            "activeTaskBkgColor": bg_comp,
+            "gridColor": "#475569",
+            "faceColor": "#fef08a",
+
+            # Gantt Chart
+            "todayLineColor": "#f59e0b",
+
+            # Git / Flowchart Branches
+            "git0": accent_primary,
+            "git1": accent_secondary,
+            "git2": "#f59e0b",
+            "git3": "#ec4899",
+            "gitBranchLabel0": "#f8fafc",
+            "gitBranchLabel1": "#f8fafc",
+            "gitBranchLabel2": "#f8fafc",
+            "gitCommitLabelColor": "#f8fafc",
+            "gitCommitLabelBackground": "#1e222e",
+            "gitTagLabelColor": "#f8fafc",
+            "gitTagLabelBackground": bg_comp,
+
+            # Timeline & Quadrant Chart
+            "cScale0": accent_primary,
+            "cScale1": accent_secondary,
+            "cScale2": "#f59e0b",
+            "cScale3": "#10b981",
+            "cScaleLabel0": "#f8fafc",
+            "cScaleLabel1": "#f8fafc",
+            "cScaleLabel2": "#f8fafc",
+            "quadrant1Fill": bg_comp,
+            "quadrant2Fill": "#1e222e",
+            "quadrant3Fill": bg_head,
+            "quadrant4Fill": "#141722",
+            "quadrant1TextFill": "#f8fafc",
+            "quadrant2TextFill": "#f8fafc",
+            "quadrant3TextFill": "#f8fafc",
+            "quadrant4TextFill": "#f8fafc",
+            "quadrantPointFill": accent_secondary,
+            "quadrantPointTextFill": "#f8fafc",
+            "quadrantXAxisTextFill": "#f8fafc",
+            "quadrantYAxisTextFill": "#f8fafc",
+            "quadrantTitleFill": "#f8fafc",
+        }
+    else:
+        return {
+            "darkMode": False,
+            "background": "#ffffff",
+            "fontFamily": "Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+            "fontSize": "13px",
+
+            # Core Node Surfaces & Text
+            "primaryColor": bg_head,
+            "primaryTextColor": "#0f172a",
+            "primaryBorderColor": accent_primary,
+            "secondaryColor": "#f8fafc",
+            "secondaryTextColor": "#0f172a",
+            "secondaryBorderColor": accent_secondary,
+            "tertiaryColor": "#f1f5f9",
+            "tertiaryTextColor": "#334155",
+            "tertiaryBorderColor": border_col,
+
+            # Edges & Connectors
+            "lineColor": "#475569",
+            "textColor": "#0f172a",
+            "mainBkg": "#ffffff",
+            "nodeBorder": accent_primary,
+            "nodeTextColor": "#0f172a",
+            "titleColor": "#0f172a",
+            "edgeLabelBackground": "#ffffff",
+
+            # Subgraphs / Clusters
+            "clusterBkg": "#f8fafc",
+            "clusterBorder": "#cbd5e1",
+
+            # Sequence Diagrams
+            "actorBkg": "#ffffff",
+            "actorBorder": accent_primary,
+            "actorTextColor": "#0f172a",
+            "actorLineColor": "#475569",
+            "signalColor": "#475569",
+            "signalTextColor": "#0f172a",
+            "labelBoxBkgColor": "#f8fafc",
+            "labelBoxBorderColor": "#cbd5e1",
+            "labelTextColor": "#0f172a",
+            "loopTextColor": "#0f172a",
+            "noteBkgColor": "#fef9c3",
+            "noteBorderColor": "#ca8a04",
+            "noteTextColor": "#713f12",
+            "activationBkgColor": bg_head,
+            "activationBorderColor": accent_primary,
+
+            # Class & State Diagrams
+            "classText": "#0f172a",
+            "labelColor": "#0f172a",
+            "altBackground": "#f8fafc",
+            "stateBkg": "#ffffff",
+            "stateBorder": accent_primary,
+            "stateLabelColor": "#0f172a",
+            "compositeTitleColor": "#0f172a",
+
+            # Pie Chart
+            "pie1": accent_primary,
+            "pie2": accent_secondary,
+            "pie3": "#d97706",
+            "pie4": "#059669",
+            "pie5": "#7c3aed",
+            "pie6": "#db2777",
+            "pie7": "#0891b2",
+            "pie8": "#2563eb",
+            "pieTitleTextColor": "#0f172a",
+            "pieSectionTextColor": "#ffffff",
+            "pieLegendTextColor": "#0f172a",
+            "pieStrokeColor": "#ffffff",
+
+            # User Journey
+            "sectionBkgColor": bg_head,
+            "altSectionBkgColor": "#f8fafc",
+            "sectionBkgColor2": "#f1f5f9",
+            "taskBorderColor": accent_primary,
+            "taskBkgColor": "#ffffff",
+            "taskTextColor": "#0f172a",
+            "taskTextLightColor": "#0f172a",
+            "taskTextDarkColor": "#0f172a",
+            "taskTextOutsideColor": "#0f172a",
+            "taskTextClickableColor": accent_secondary,
+            "activeTaskBorderColor": accent_secondary,
+            "activeTaskBkgColor": bg_head,
+            "gridColor": "#cbd5e1",
+            "faceColor": "#fef9c3",
+
+            # Gantt Chart
+            "todayLineColor": "#d97706",
+
+            # Git / Flowchart Branches
+            "git0": accent_primary,
+            "git1": accent_secondary,
+            "git2": "#d97706",
+            "git3": "#db2777",
+            "gitBranchLabel0": "#0f172a",
+            "gitBranchLabel1": "#0f172a",
+            "gitBranchLabel2": "#0f172a",
+            "gitCommitLabelColor": "#0f172a",
+            "gitCommitLabelBackground": "#f1f5f9",
+            "gitTagLabelColor": "#0f172a",
+            "gitTagLabelBackground": "#ffffff",
+
+            # Timeline & Quadrant Chart
+            "cScale0": accent_primary,
+            "cScale1": accent_secondary,
+            "cScale2": "#d97706",
+            "cScale3": "#059669",
+            "cScaleLabel0": "#0f172a",
+            "cScaleLabel1": "#0f172a",
+            "cScaleLabel2": "#0f172a",
+            "quadrant1Fill": "#f8fafc",
+            "quadrant2Fill": bg_head,
+            "quadrant3Fill": "#f1f5f9",
+            "quadrant4Fill": "#ffffff",
+            "quadrant1TextFill": "#0f172a",
+            "quadrant2TextFill": "#0f172a",
+            "quadrant3TextFill": "#0f172a",
+            "quadrant4TextFill": "#0f172a",
+            "quadrantPointFill": accent_secondary,
+            "quadrantPointTextFill": "#0f172a",
+            "quadrantXAxisTextFill": "#0f172a",
+            "quadrantYAxisTextFill": "#0f172a",
+            "quadrantTitleFill": "#0f172a",
+        }
+
+
 def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
     """Configures page theme_mode and color_scheme based on palette and mode."""
     if mode_name == "Light":
@@ -294,8 +560,27 @@ def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
             secondary=secondary_color,
             surface=bg_surface,
             surface_container=bg_main,
+            on_surface="#f8f8f2" if is_dark else "#1d1d1f",
+            on_primary="#ffffff",
+            outline="#8f93a7" if is_dark else "#6b7280",
+            outline_variant="#343952" if is_dark else "#d1d5db",
         ),
         font_family=STYLE["font_family_body"],
+        checkbox_theme=ft.CheckboxTheme(
+            check_color=ft.Colors.WHITE,
+            fill_color={
+                ft.ControlState.SELECTED: primary_color,
+                ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT,
+            },
+            border_side=ft.BorderSide(
+                width=1.8,
+                color="#8f93a7" if is_dark else "#4b5563",
+            ),
+            overlay_color={
+                ft.ControlState.HOVERED: ft.Colors.with_opacity(0.1, primary_color),
+                ft.ControlState.FOCUSED: ft.Colors.with_opacity(0.15, primary_color),
+            },
+        ),
         scrollbar_theme=ft.ScrollbarTheme(
             thickness=8,
             radius=4,
@@ -306,4 +591,5 @@ def apply_theme(page: ft.Page, palette_name: str, mode_name: str):
     )
     page.theme = app_theme
     page.dark_theme = app_theme
+
 

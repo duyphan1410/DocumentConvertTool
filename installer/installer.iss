@@ -2,7 +2,7 @@
 ; Document Converter Desktop Application Packaging Script
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.7.2"
+  #define MyAppVersion "1.9.2"
 #endif
 
 #define MyAppName "Document Converter"

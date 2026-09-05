@@ -1,0 +1,53 @@
+name: 🛡️ CI & AI Model Hash Auditor
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'src/services/model_manager.py'
+      - 'src/services/hardware_detector.py'
+      - 'scripts/verify_model_hashes.py'
+      - 'requirements.txt'
+      - '.github/workflows/ci-verify.yml'
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'src/services/model_manager.py'
+      - 'src/services/hardware_detector.py'
+      - 'scripts/verify_model_hashes.py'
+      - 'requirements.txt'
+
+jobs:
+  verify-and-test:
+    name: 🔍 Audit Model Hashes & Unit Tests
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.0'
+          cache: 'pip'
+
+      - name: 📦 Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🛡️ Audit Model SHA256 Checksums (Hugging Face)
+        run: |
+          python scripts/verify_model_hashes.py
+
+      - name: 🧪 Run Automated Unit Tests
+        run: |
+          python -m unittest tests/test_hardware_detector.py tests/test_model_manager.py tests/test_model_hub_ui.py tests/test_settings_view.py

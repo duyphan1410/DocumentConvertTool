@@ -29,6 +29,10 @@ class EditorController:
         self._push_undo_state()
         self.editor_view.apply_heading(level)
 
+    def apply_image_size(self, image_info, width: str = "", height: str = "", align: str = "", alt: str | None = None, src: str | None = None):
+        self._push_undo_state()
+        self.editor_view.apply_image_size(image_info, width=width, height=height, align=align, alt=alt, src=src)
+
     def on_editor_changed(self, e=None, file_controller=None):
         if not self.state.is_undo_redo_op:
             self.state.redo_stack.clear()
@@ -42,23 +46,43 @@ class EditorController:
                 self._undo_timer = threading.Timer(0.3, self._push_undo_state)
                 self._undo_timer.start()
 
-        self.state.is_dirty = True
         current_text = self.editor_view.get_text()
         self.state.full_content = current_text
+
+        active_tab = self.state.active_tab
+        saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+        new_dirty = (current_text != saved)
+        was_dirty = getattr(self.state, "is_dirty", False)
+
+        if was_dirty != new_dirty:
+            self.state.is_dirty = new_dirty
+            if active_tab:
+                active_tab.is_dirty = new_dirty
+            tab_bar = self.app_controls.get("workspace_tab_bar")
+            if tab_bar and hasattr(tab_bar, "render_tabs"):
+                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
         words = len(current_text.split())
         chars = len(current_text)
         self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
-        if self.preview.doc_info_text.page:
-            try:
+        try:
+            if self.preview.doc_info_text.page:
                 self.preview.doc_info_text.update()
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+        if active_tab:
+            active_tab.full_content = current_text
+            session_id = active_tab.media_session_id
+        else:
+            session_id = None
 
         base_dir = (
             os.path.dirname(self.state.in_path) if self.state.in_path else None
         )
-        self.preview.update_preview(current_text, base_dir=base_dir)
+        self.preview.update_preview(current_text, base_dir=base_dir, session_id=session_id)
+        if active_tab:
+            active_tab.cached_preview_md = getattr(self.preview, "_cached_processed_text", "")
 
         fc = file_controller or self.app_controls.get("file_controller")
         if fc and getattr(self.state, "autosave_enabled", True):
@@ -120,6 +144,17 @@ class EditorController:
             start_idx, end_idx = self._compute_diff_range(current, prev_text)
             self.editor_view.set_text_with_selection(prev_text, start_idx, end_idx, focus=True)
 
+            active_tab = self.state.active_tab
+            saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+            new_dirty = (prev_text != saved)
+            if getattr(self.state, "is_dirty", False) != new_dirty:
+                self.state.is_dirty = new_dirty
+                if active_tab:
+                    active_tab.is_dirty = new_dirty
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None
             )
@@ -143,6 +178,17 @@ class EditorController:
             start_idx, end_idx = self._compute_diff_range(prev_text, next_text)
             self.editor_view.set_text_with_selection(next_text, start_idx, end_idx, focus=True)
 
+            active_tab = self.state.active_tab
+            saved = active_tab.saved_content if active_tab else getattr(self.state, "saved_content", "")
+            new_dirty = (next_text != saved)
+            if getattr(self.state, "is_dirty", False) != new_dirty:
+                self.state.is_dirty = new_dirty
+                if active_tab:
+                    active_tab.is_dirty = new_dirty
+                tab_bar = self.app_controls.get("workspace_tab_bar")
+                if tab_bar and hasattr(tab_bar, "render_tabs"):
+                    tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+
             base_dir = (
                 os.path.dirname(self.state.in_path) if self.state.in_path else None
             )
@@ -162,18 +208,28 @@ class EditorController:
 
         self.editor_view.set_text("")
         self.state.full_content = ""
+        self.state.in_path = ""
+        self.state.out_path = ""
+        self.state.is_dirty = False
         self.state.redo_stack.clear()
         self.state.undo_stack.append("")
 
-        self.preview.doc_info_text.value = t("editor.doc_info", words="0", chars="0")
-        if self.preview.doc_info_text.page:
+        if self.preview:
+            self.preview.doc_info_text.value = t("editor.doc_info", words="0", chars="0")
             try:
                 self.preview.doc_info_text.update()
             except Exception:
                 pass
-        self.preview.update_preview(
-            "", base_dir=os.path.dirname(self.state.in_path) if self.state.in_path else None
-        )
+            self.preview.update_preview("", base_dir=None)
+
+        file_path_bar = self.app_controls.get("file_path_bar")
+        if file_path_bar:
+            file_path_bar.set_in_path("")
+            file_path_bar.set_out_path("")
+
+        explorer_view = self.app_controls.get("explorer_view")
+        if explorer_view:
+            explorer_view.set_active_file("")
 
         file_controller = self.app_controls.get("file_controller")
         if file_controller:

@@ -1,8 +1,8 @@
 # 📌 Nhật Ký Phát Triển & Tổng Kết PR: PowerPoint Module & Universal Dynamic Window Focus
 
-**Ngày thực hiện:** 12/08/2026  
-**Tác giả:** duyphan1410  
-**Nhánh làm việc:** `feat/duy-12082026-pptx-conversion-enhancements`  
+**Ngày cập nhật:** 12/08/2026  
+**Tính năng:** Chuyển đổi Markdown sang PowerPoint Presentation (`.pptx`)  
+
 **Phiên bản phát hành:** `v1.6.0`  
 
 ---

@@ -3,13 +3,55 @@
 # ==============================================================================
 param (
     [switch]$SkipPyInstaller,
-    [switch]$SkipInnoSetup
+    [switch]$SkipInnoSetup,
+    [string]$CertPath = "",
+    [string]$CertPassword = "",
+    [string]$TimestampServer = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RootDir
+
+function Sign-Binary {
+    param (
+        [string]$FilePath,
+        [string]$Description = "Document Converter"
+    )
+    if (-not $CertPath) {
+        return
+    }
+    if (-not (Test-Path $FilePath)) {
+        Write-Warning "File to sign not found: $FilePath"
+        return
+    }
+
+    Write-Host "`n--- Code Signing: $FilePath ---" -ForegroundColor Yellow
+    try {
+        if (Test-Path $CertPath) {
+            $cert = $null
+            if ($CertPassword) {
+                $securePass = ConvertTo-SecureString $CertPassword -AsPlainText -Force
+                $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertPath, $securePass)
+            } else {
+                $cert = Get-PfxCertificate -FilePath $CertPath
+            }
+            
+            $sig = Set-AuthenticodeSignature -FilePath $FilePath -Certificate $cert -TimestampServer $TimestampServer -HashAlgorithm SHA256
+            if ($sig.Status -eq "Valid") {
+                Write-Host "✔ Successfully signed: $FilePath" -ForegroundColor Green
+            } else {
+                Write-Host "ℹ Signature applied (Status: $($sig.StatusMessage))" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Warning "Certificate file not found at: $CertPath"
+        }
+    } catch {
+        Write-Warning "Code signing failed: $_"
+    }
+}
+
 
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host " Document Converter - Desktop Packaging & Installer Pipeline" -ForegroundColor Cyan
@@ -26,7 +68,7 @@ $versionContent = Get-Content $versionFile -Raw
 if ($versionContent -match '__version__\s*=\s*["'']([^"'']+)["'']') {
     $AppVersion = $matches[1]
 } else {
-    $AppVersion = "1.7.2"
+    $AppVersion = "1.8.0"
 }
 Write-Host "[1/4] Target Version: v$AppVersion" -ForegroundColor Green
 
@@ -73,6 +115,9 @@ if (-not $SkipPyInstaller) {
         Write-Host "ℹ Status: Webview / pythonnet standalone assemblies verified." -ForegroundColor Green
     }
 
+
+    # Sign the executable if certificate provided
+    Sign-Binary -FilePath $exePath -Description "Document Converter Application"
 
     Write-Host "✔ PyInstaller build succeeded -> dist/Document Converter/" -ForegroundColor Green
 } else {
@@ -121,6 +166,9 @@ if (-not $SkipInnoSetup) {
 
         $setupExe = "$RootDir\dist\installer\Document_Converter_Setup_v$AppVersion.exe"
         if (Test-Path $setupExe) {
+            # Sign the installer setup binary
+            Sign-Binary -FilePath $setupExe -Description "Document Converter Setup Installer"
+
             $sizeMB = [math]::Round(((Get-Item $setupExe).Length / 1MB), 2)
             Write-Host "`n=================================================================" -ForegroundColor Green
             Write-Host " SUCCESS: Installer created at:" -ForegroundColor Green

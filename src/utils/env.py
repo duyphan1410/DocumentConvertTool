@@ -144,6 +144,8 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
         folder_dir = target_path if os.path.isdir(target_path) else os.path.dirname(target_path)
         folder_name = os.path.basename(folder_dir).lower()
 
+    own_pid = os.getpid()
+
     system_shell_classes = {
         "progman", "workerw", "shell_traywnd", "searchhost",
         "startmenuexperiencehost", "windows.immersivecontextmenu"
@@ -153,28 +155,37 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
     if is_folder:
         expected_classes = {"cabinetwclass", "explorer"}
     elif ext in (".xlsx", ".xls", ".csv"):
-        expected_classes = {"xlmain"}
+        expected_classes = {"xlmain", "wps_mainwindow", "kwps_mainwindow"}
     elif ext in (".docx", ".doc"):
-        expected_classes = {"opusapp"}
+        expected_classes = {"opusapp", "wps_mainwindow", "kwps_mainwindow"}
     elif ext in (".pptx", ".ppt"):
-        expected_classes = {"pptframeclass"}
-    elif ext in (".pdf", ".html"):
-        expected_classes = {"chrome_widgetwin_1", "mozilla_window_class", "pdf_realm"}
+        expected_classes = {"pptframeclass", "wps_mainwindow", "kwps_mainwindow"}
+    elif ext in (".pdf", ".html", ".htm"):
+        expected_classes = {
+            "chrome_widgetwin_1", "mozilla_window_class", "pdf_realm",
+            "acrobatsdwindow", "sumatrapdf_frame", "foxitreaderapp", "microsoftedge"
+        }
 
     def poll_and_force_foreground():
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
 
-        for attempt in range(25):
+        for attempt in range(30):
             time.sleep(0.1)
             found_hwnds = []
 
             def enum_windows_callback(hwnd, lparam):
                 if user32.IsWindowVisible(hwnd):
+                    # 1. Ignore Document Converter's own process to prevent self-focus hijacking
+                    win_pid = ctypes.wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(win_pid))
+                    if win_pid.value == own_pid:
+                        return True
+
                     class_buff = ctypes.create_unicode_buffer(256)
                     user32.GetClassNameW(hwnd, class_buff, 256)
                     cls_name = class_buff.value.lower()
 
-                    if cls_name in system_shell_classes:
+                    if cls_name in system_shell_classes or "flutter_runner" in cls_name:
                         return True
 
                     length = user32.GetWindowTextLengthW(hwnd)
@@ -185,7 +196,7 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                     user32.GetWindowTextW(hwnd, buff, length + 1)
                     title = buff.value.lower()
 
-                    if "antigravity" in title:
+                    if "antigravity" in title or "document converter" in title:
                         return True
 
                     is_iconic = bool(user32.IsIconic(hwnd))
@@ -199,8 +210,11 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
                         if file_name and file_name in title:
                             score = 200 if not is_iconic else 180
                         elif file_stem and len(file_stem) > 2 and file_stem in title:
-                            # Reject title if it contains a DIFFERENT document extension (e.g. ignore .html when opening .docx)
-                            other_exts = {".pdf", ".html", ".htm", ".docx", ".doc", ".xlsx", ".pptx"} - {ext}
+                            # Reject title if it contains a DIFFERENT document extension (e.g. ignore .md or .html when opening .docx)
+                            other_exts = {
+                                ".pdf", ".html", ".htm", ".docx", ".doc",
+                                ".xlsx", ".xls", ".pptx", ".ppt", ".md", ".markdown", ".txt"
+                            } - {ext}
                             if any(o_ext in title for o_ext in other_exts):
                                 score = 0
                             else:
@@ -333,3 +347,123 @@ def open_file_or_folder_foreground(target_path: str, is_folder: bool = False):
             print(f"[DEBUG] Timeout: no matching window found for '{target_path}'")
 
     threading.Thread(target=poll_and_force_foreground, daemon=True).start()
+
+
+def force_process_window_foreground(pid: int = 0, delay: float = 0.1, retries: int = 25):
+    """
+    Guarantees bringing an application window (by PID or current process)
+    to top Z-Index (#1) and steals OS input focus using Win32 4-layer elevation.
+    """
+    if sys.platform != "win32":
+        return
+
+    import ctypes
+    import ctypes.wintypes
+    import threading
+    import time
+
+    target_pid = pid or os.getpid()
+    user32 = ctypes.windll.user32
+
+    VK_MENU = 0x12
+    KEYEVENTF_EXTENDEDKEY = 0x0001
+    KEYEVENTF_KEYUP = 0x0002
+    HWND_TOP = ctypes.wintypes.HWND(0)
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_SHOWWINDOW = 0x0040
+    SW_RESTORE = 9
+    SW_SHOW = 5
+    SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000
+    SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001
+
+    def _elevate():
+        time.sleep(delay)
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+
+        for _ in range(retries):
+            found_hwnd = None
+
+            def enum_cb(hwnd, lparam):
+                nonlocal found_hwnd
+                if user32.IsWindowVisible(hwnd):
+                    w_pid = ctypes.wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(w_pid))
+                    if w_pid.value == target_pid:
+                        class_buff = ctypes.create_unicode_buffer(256)
+                        user32.GetClassNameW(hwnd, class_buff, 256)
+                        cls_name = class_buff.value.lower()
+                        if "flutter" in cls_name or user32.GetWindowTextLengthW(hwnd) > 0:
+                            found_hwnd = hwnd
+                            return False
+                return True
+
+            user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
+
+            if found_hwnd:
+                hwnd = found_hwnd
+                try:
+                    # 1. Unlock Windows OS ForegroundLockTimeout via simulated ALT key tap
+                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                    user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                except Exception:
+                    pass
+
+                try:
+                    user32.AllowSetForegroundWindow(target_pid)
+                except Exception:
+                    pass
+
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                else:
+                    user32.ShowWindow(hwnd, SW_SHOW)
+
+                old_timeout = ctypes.wintypes.DWORD()
+                user32.SystemParametersInfoW(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(old_timeout), 0)
+                user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(0), 0)
+
+                attached = False
+                fg_thread_id = 0
+                target_thread_id = 0
+
+                try:
+                    user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                    curr_fg = user32.GetForegroundWindow()
+                    if curr_fg and curr_fg != hwnd:
+                        fg_thread_id = user32.GetWindowThreadProcessId(curr_fg, None)
+                        target_thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+                        if fg_thread_id and target_thread_id and fg_thread_id != target_thread_id:
+                            attached = bool(user32.AttachThreadInput(fg_thread_id, target_thread_id, True))
+
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.SetFocus(hwnd)
+                finally:
+                    if attached and fg_thread_id and target_thread_id:
+                        try:
+                            user32.AttachThreadInput(fg_thread_id, target_thread_id, False)
+                        except Exception:
+                            pass
+                    user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(old_timeout.value), 0)
+
+                # Delayed re-assertion
+                def reassert():
+                    try:
+                        if user32.IsWindow(hwnd) and user32.GetForegroundWindow() != hwnd:
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | 0, 0)
+                            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+                            user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                            user32.BringWindowToTop(hwnd)
+                            user32.SetForegroundWindow(hwnd)
+                            user32.SetFocus(hwnd)
+                    except Exception:
+                        pass
+
+                threading.Timer(0.15, reassert).start()
+                threading.Timer(0.4, reassert).start()
+                break
+
+            time.sleep(0.1)
+
+    threading.Thread(target=_elevate, daemon=True).start()

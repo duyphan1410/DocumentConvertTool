@@ -13,6 +13,8 @@ from src.ui_flet.constants import MODES, MODE_DISPLAY_KEYS
 from src.ui_flet.theme import PALETTES, resolve_color, make_border
 from src.ui_flet.components.formatting_toolbar import FormattingToolbar
 
+from src.ui_flet.helpers.image_token_helper import ImageTokenInfo
+
 if TYPE_CHECKING:
     from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 
@@ -30,6 +32,7 @@ class RibbonBar(ft.Container):
         on_browse_out: Optional[Callable] = None,
         on_clear_editor: Optional[Callable] = None,
         on_import_youtube: Optional[Callable] = None,
+        on_open_model_hub: Optional[Callable] = None,
         on_format_action: Optional[Callable[[str, str], None]] = None,
         on_heading_change: Optional[Callable[[int], None]] = None,
         on_toggle_search: Optional[Callable] = None,
@@ -39,6 +42,11 @@ class RibbonBar(ft.Container):
         on_toggle_editor: Optional[Callable] = None,
         on_toggle_status_bar: Optional[Callable] = None,
         on_insert_image: Optional[Callable] = None,
+        on_image_size_preset: Optional[Callable[[str], None]] = None,
+        on_image_align_preset: Optional[Callable[[str], None]] = None,
+        on_open_image_size_dialog: Optional[Callable[[], None]] = None,
+        on_replace_image: Optional[Callable[[], None]] = None,
+        on_reset_image_size: Optional[Callable[[], None]] = None,
         on_ribbon_toggle: Optional[Callable] = None,
         on_show_settings: Optional[Callable] = None,
         on_show_help: Optional[Callable] = None,
@@ -54,6 +62,7 @@ class RibbonBar(ft.Container):
         self.on_browse_out = on_browse_out
         self.on_clear_editor = on_clear_editor
         self.on_import_youtube = on_import_youtube
+        self.on_open_model_hub = on_open_model_hub
         self.on_format_action = on_format_action
         self.on_heading_change = on_heading_change
         self.on_toggle_search = on_toggle_search
@@ -63,11 +72,18 @@ class RibbonBar(ft.Container):
         self.on_toggle_editor = on_toggle_editor
         self.on_toggle_status_bar = on_toggle_status_bar
         self.on_insert_image = on_insert_image
+        self.on_image_size_preset = on_image_size_preset
+        self.on_image_align_preset = on_image_align_preset
+        self.on_open_image_size_dialog = on_open_image_size_dialog
+        self.on_replace_image = on_replace_image
+        self.on_reset_image_size = on_reset_image_size
         self.on_ribbon_toggle = on_ribbon_toggle
         self.on_show_settings = on_show_settings
         self.on_show_help = on_show_help
         self.on_show_editor = on_show_editor
         self.search_replace_bar = search_replace_bar
+
+        self.active_image_token: Optional[ImageTokenInfo] = None
 
         self._search_visible = False
         self._search_toggling = False
@@ -159,6 +175,12 @@ class RibbonBar(ft.Container):
             tooltip=t("ribbon.btn_youtube"),
             icon_size=18,
             on_click=self._on_youtube_click,
+        )
+        self.btn_model_hub = ft.IconButton(
+            icon=ft.Icons.AUTO_AWESOME_MOSAIC_ROUNDED,
+            tooltip=t("ribbon.btn_model_hub"),
+            icon_size=18,
+            on_click=self._on_model_hub_click,
         )
 
         # Backward compatibility references for tests and legacy callers
@@ -257,7 +279,7 @@ class RibbonBar(ft.Container):
                 self.btn_file_open,
                 self.btn_file_save,
                 self.btn_file_clear,
-                self.btn_youtube,
+                self.btn_model_hub,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
@@ -315,10 +337,14 @@ class RibbonBar(ft.Container):
         ]
         if preferred_mode and preferred_mode in valid_modes:
             self.mode_dropdown.value = preferred_mode
-        elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
-            pass
         else:
-            self.mode_dropdown.value = valid_modes[0]
+            # Fallback priority: if file is .md and preferred mode is incompatible (e.g. PDF -> MD), default to "MD -> Markdown" (Save .md)
+            if input_ext.lower() == ".md" and "MD -> Markdown" in valid_modes:
+                self.mode_dropdown.value = "MD -> Markdown"
+            elif self.mode_dropdown.value and self.mode_dropdown.value in valid_modes:
+                pass
+            else:
+                self.mode_dropdown.value = valid_modes[0]
 
         if self.mode_dropdown.page:
             self.mode_dropdown.update()
@@ -496,6 +522,10 @@ class RibbonBar(ft.Container):
         if self.on_import_youtube:
             self.on_import_youtube(e)
 
+    def _on_model_hub_click(self, e):
+        if self.on_open_model_hub:
+            self.on_open_model_hub(e)
+
     def _on_search_click(self, e):
         self.toggle_search()
 
@@ -514,6 +544,30 @@ class RibbonBar(ft.Container):
     def _on_toggle_status_bar_click(self, e):
         if self.on_toggle_status_bar:
             self.on_toggle_status_bar(e)
+
+    def _on_img_preset_click(self, preset: str):
+        if self.on_image_size_preset:
+            self.on_image_size_preset(preset)
+
+    def _on_img_align_click(self, align: str):
+        if self.on_image_align_preset:
+            self.on_image_align_preset(align)
+
+    def _on_img_custom_click(self, e):
+        if self.on_open_image_size_dialog:
+            self.on_open_image_size_dialog()
+
+    def _on_img_replace_click(self, e):
+        if self.on_replace_image:
+            self.on_replace_image()
+
+    def _on_img_reset_click(self, e):
+        if self.on_reset_image_size:
+            self.on_reset_image_size()
+
+    def set_image_context(self, image_info: Optional[ImageTokenInfo]):
+        """Backward-compatibility stub for image context updates."""
+        self.active_image_token = image_info
 
     # ─────────────────────────────────────────────────────────────────────────
     # Search & Replace Panel Toggle
@@ -584,6 +638,14 @@ class RibbonBar(ft.Container):
             dd.label_style = ft.TextStyle(color=accent_primary, size=12)
 
         self.formatting_toolbar.apply_palette(palette, is_dark)
+
+        # Apply palette to Picture Format container and controls
+        if hasattr(self, "picture_format_container"):
+            self.picture_format_container.border = make_border(1, accent_primary)
+            self.picture_format_container.bgcolor = ft.Colors.with_opacity(0.08, accent_primary)
+            self.badge_picture_format_icon.color = accent_primary
+            self.badge_picture_format_text.color = accent_primary
+
         self._update_tab_highlights()
 
         try:
@@ -611,6 +673,15 @@ class RibbonBar(ft.Container):
         self.btn_tab_view_statusbar.tooltip = t("ribbon.tooltip_statusbar")
         self.btn_settings.tooltip = t("ribbon.tab_settings")
         self.btn_help.tooltip = t("ribbon.tab_help")
+
+        if hasattr(self, "badge_picture_format_text"):
+            self.badge_picture_format_text.value = t("ribbon.picture_format")
+            self.btn_img_align_left.tooltip = t("image_dialog.align_left")
+            self.btn_img_align_center.tooltip = t("image_dialog.align_center")
+            self.btn_img_align_right.tooltip = t("image_dialog.align_right")
+            self.btn_img_custom.tooltip = t("ribbon.img_custom_size")
+            self.btn_img_replace.tooltip = t("ribbon.img_replace")
+            self.btn_img_reset.tooltip = t("ribbon.img_reset")
 
         # Text button backward compatibility
         self.btn_tab_file.content = ft.Text(t("ribbon.tab_file"))

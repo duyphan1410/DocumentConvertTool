@@ -1,13 +1,12 @@
-# Document Converter Workspace — Roadmap v2.0 & Flet UI Release
+# Document Converter Workspace — Product Roadmap
 
 ---
 
-## Tổng quan hiện trạng (v1.4.0 - Flet 3-Tier MVC, Ribbon Bar & PDF Engine Release)
+## 📌 Tổng quan hiện trạng & Lịch sử phát hành
 
-### ✅ Đã hoàn thành (Phase 0–4.3):
-
+### ✅ Đã hoàn thành (v1.0 – v1.4.0):
 | Phase / Feature | Nội dung chính | Trạng thái |
-| :--- | :--- | :---: |
+| :--- | :--- | :--- |
 | **P0 – Stabilization** | File extension validation, overwrite confirmation, fallback engines, unsaved warning | ✅ Completed |
 | **P1 – UX & Format** | CSV ↔ MD, search & replace (Smart Hybrid focus), formatting toolbar, autosave draft (1.5s debounce) | ✅ Completed |
 | **P2 – Format Expansion** | PDF ➔ MD (stitching tables, multiline cell continuation, slide image extraction), HTML ↔ MD | ✅ Completed |
@@ -17,11 +16,9 @@
 | **P4.3 – PDF Polish & Packaging** | PDF list/bullet preservation, Vietnamese font handling, HTML code fence regex auto-repair, PyInstaller `hiddenimports`, Pinned requirements | ✅ Completed |
 | **P4.4 – Settings, i18n & User Guide** | Option Settings View (i18n, font size, autosave interval), Help & User Guide View, Word Exporter Image Embed (`@media/`), Win32 Z-Order Focus Enhancement | ✅ Completed |
 
-
 ---
 
-### ✅ v1.7.0 Release (Simplified Single-Row Ribbon, YouTube Extractor, Direct MD Export & UI Polish):
-
+### ✅ v1.7.0 (Simplified Single-Row Ribbon, YouTube Extractor, Direct MD Export & UI Polish):
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **YouTube Subtitle & Speech Transcriber** | `src/services/youtube_service.py`, `src/services/speech_service.py` | Kiến trúc đa tầng: Tầng 1 lấy phụ đề gốc/Server Auto-Translate (0% CPU/RAM); Tầng 2 Fallback nhận diện giọng nói Non-AI (`SpeechRecognition` + `yt-dlp`), phân đoạn 20s kèm timestamp `[mm:ss]`. | ✅ Completed (v1.7.0) |
@@ -37,56 +34,139 @@
 
 ---
 
-### ✅ v1.7.2 Release (YouTube In-App Companion Player, Interactive Timestamps & WebView2 Optimization):
-
+### ✅ v1.7.2 (YouTube In-App Companion Player, Interactive Timestamps & Packaging):
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **In-App YouTube Companion Player** | `src/services/youtube_player.py` | Cửa sổ WebView2 (`540x335`, 16:9, Top-Left `x=24, y=65`), Local HTTP Bridge Server `127.0.0.1` chống Error 153, cờ `--autoplay-policy=no-user-gesture-required`. | ✅ Completed (v1.7.2) |
 | **Interactive Timestamps (`yt://...`)** | `src/ui_flet/views/preview_view.py` | Tự động phân tích mốc `[mm:ss]` thành link tương tác `[mm:ss](yt://<id>?t=sec)`, click để tua video trực tiếp trong app hoặc fallback trình duyệt. | ✅ Completed (v1.7.2) |
 | **Dynamic Win32 Window Focus (Non-Pinning)** | `src/services/youtube_player.py` | `on_top=False`, sử dụng `_force_window_foreground` với Win32 `AttachThreadInput` và `SetForegroundWindow` đưa cửa sổ lên đỉnh tức thì khi click timestamp. | ✅ Completed (v1.7.2) |
-| **Auto YouTube Draft Restoration** | `src/ui_flet/controllers/file_controller.py` | Nhận diện phụ đề YouTube khi nạp lại bản nháp khởi động, tự động bật nút `▶ Watch Video` và phân giải timestamp. | ✅ Completed (v1.7.2) |
-| **3-Layer Sync Auto-Close & PyInstaller Packaging** | `Document Converter.spec`, `run.py`, `layout_controller.py` | Đóng đồng bộ khi tắt app chính qua Window Event + `atexit` + `stdin` EOF; hỗ trợ chạy subprocess độc lập trong file `.exe`. | ✅ Completed (v1.7.2) |
-
----
-
-### 🔄 v1.8.0 Roadmap (Studio Workspace & Multi-Doc Architecture):
-
-| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
-| :--- | :--- | :--- | :---: |
-| **Activity Bar & File Explorer** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/views/explorer_view.py` | Dải dọc 48px Vector Icons (`ft.Icons.*`) + Sidebar cây thư mục dự án (`ft.ListView` + `ft.ExpansionTile` / Indent). | ⏳ Planned (v1.8) |
-| **Draggable Split Panes (Splitter)** | `src/ui_flet/components/draggable_splitter.py` | Thanh kéo co giãn phân vùng linh hoạt giữa Editor ↔ Preview và Sidebar ↔ Workspace (`ft.GestureDetector`, `on_pan_update`, `MouseCursor.RESIZE_LEFT_RIGHT`, persistence `settings.json`). | ⏳ Planned (v1.8) |
-| **Draggable Multi-Tab Workspace** | `src/ui_flet/views/workspace_view.py` | Quản lý đa Tab độc lập, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), chuyển đổi nhanh giữa các file đang mở. | ⏳ Planned (v1.8) |
-| **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation để giảm thiểu thay đổi ở code cũ; Autosave draft theo `drafts/{tab_id}.md`. | ⏳ Planned (v1.8) |
-| **Batch & ZIP Converter** | `src/services/batch_service.py` | Chuyển đổi hàng loạt tệp trong thư mục hoặc file nén `.zip`. | ⏳ Planned (v1.8) |
-
----
-
-### 🔮 v2.0+ Roadmap (Personal Knowledge Base & Advanced Distribution):
-
-| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
-| :--- | :--- | :--- | :---: |
-| **Manual Wikilink `[[...]]`** | `src/services/link_parser.py` | Cú pháp `[[Tên File]]` tách biệt với link markdown cũ; Fuzzy Match (lowercase, bỏ dấu tiếng Việt `NFD`, trim space); In-memory graph index. | 🔮 Planned (v2.0) |
-| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng màu cảnh báo / gạch chân; hỗ trợ Click để tự động tạo file `.md` mới trong workspace. | 🔮 Planned (v2.0) |
-| **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel thanh bên hiển thị danh sách các tài liệu đang dẫn liên kết tới tài liệu hiện hành. | 🔮 Planned (v2.0) |
 | **Folder Mode (`--onedir`) & Inno Setup 7 Installer** | `Document Converter.spec` / `installer/` | Chuyển đổi đóng gói sang Thư mục (`--onedir`) kết hợp bộ cài đặt Inno Setup 7 (`Setup.exe`), khởi động tức thì < 1s, phân quyền `%LocalAppData%\Programs`. | ✅ Completed (v1.7.2) |
+| **Auto YouTube Draft Restoration** | `src/ui_flet/controllers/file_controller.py` | Nhận diện phụ đề YouTube khi nạp lại bản nháp khởi động, tự động bật nút `▶ Watch Video` và phân giải timestamp. | ✅ Completed (v1.7.2) |
+| **3-Layer Sync Auto-Close & Packaging** | `Document Converter.spec`, `run.py`, `layout_controller.py` | Đóng đồng bộ khi tắt app chính qua Window Event + `atexit` + `stdin` EOF; hỗ trợ chạy subprocess độc lập trong file `.exe`. | ✅ Completed (v1.7.2) |
 
 ---
 
-### ⏳ Các Tính Năng & Module Mở Rộng Khác (Format & Feature Expansion):
+### ✅ v1.8.0 / v1.8.1 (Studio Workspace & Multi-Doc Architecture):
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Activity Bar & File Explorer** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/views/explorer_view.py` | Dải dọc 48px Vector Icons (`ft.Icons.*`) + Sidebar cây thư mục dự án (Lazy-loading, Async I/O, Inline Real-time File Filter, phím tắt `Ctrl+B`). | ✅ Completed (v1.8.0) |
+| **Quick Open File Switcher (`Ctrl+P`)** | `src/ui_flet/components/quick_open_dialog.py` | Modal Palette tìm kiếm mờ (fuzzy search) duyệt toàn bộ file trong Workspace, điều hướng bàn phím (`Enter`, `Esc`, Click outside dismiss). | ✅ Completed (v1.8.0) |
+| **Draggable Split Panes (Splitter)** | `src/ui_flet/components/draggable_splitter.py` | Thanh kéo co giãn 60fps mượt mà giữa Sidebar ↔ Workspace và Editor ↔ Preview, Snap-to-Collapse (<100px), bounds (150-500px, 20%-80%), persistence `settings.json`. | ✅ Completed (v1.8.0) |
+| **Overhauled 2x2 Welcome Screen** | `src/ui_flet/views/welcome_view.py` | Lưới 4 Thẻ tác vụ 2x2 trực quan, phím tắt vật lý `<kbd>`, độ tương phản màu chuẩn xác Dark/Light Mode. | ✅ Completed (v1.8.0) |
+| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py`, `src/utils/mermaid_renderer.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Hybrid Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ✅ Completed (v1.8.0) |
+| **Explorer Context Menu & Safe File Ops** | `src/ui_flet/components/context_menu.py`, `src/ui_flet/components/file_modals.py`, `src/utils/file_ops.py`, `src/ui_flet/views/explorer_view.py` | Menu chuột phải nổi IDE, Win32 `SHFileOperationW` Recycle Bin (zero data loss), Smart 2-Tier Quick Convert (1-click to MD, 8 export formats flyout), Rename, Safe Delete (cảnh báo `is_dirty`), New File/Folder, nút *Collapse All Folders*, và Responsive Header (Actions Dropdown khi < 210px). | ✅ Completed (v1.8.1a) |
+| **Draggable Multi-Tab Workspace** | `src/ui_flet/components/workspace_tab_bar.py`, `src/ui_flet/controllers/layout_controller.py` | Quản lý đa Tab độc lập, hỗ trợ kéo thả sắp xếp lại thứ tự Tab (`ft.Draggable` & `ft.DragTarget`), animated `ProgressRing` loading cho file nặng, phím tắt chuyển tab `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+T`, `Ctrl+W`. Menu chuột phải quản lý Tab (Đóng tab, đóng các tab khác, đóng tab bên phải, đóng tất cả, copy path, reveal explorer) và thanh cuộn 3px siêu mỏng. | ✅ Completed (v1.8.1b) |
+| **Multi-Tab `AppState` & Draft Sessions** | `src/ui_flet/state.py`, `src/services/media_asset_manager.py`, `src/ui_flet/controllers/file_controller.py` | Nâng cấp `AppState` sang `DocumentTabState` với Property Delegation không gây breaking change; Autosave draft riêng biệt theo `drafts/{tab_id}.md` & `tab_session.json`; Cô lập bộ nhớ đệm ảnh theo `media_session_id`; Bộ nhớ đệm 0ms RAM Preview và Atomic Concurrency Guard. | ✅ Completed (v1.8.1b) |
+| **Smart Drag & Drop (Editor Insert)** | `src/ui_flet/views/explorer_view.py`, `src/ui_flet/views/editor_view.py` | Kéo file từ Explorer thả vào Editor để tự động chèn cú pháp Link `[Tên](path)` hoặc nhúng ảnh `![Ảnh](path)` vào tab đang active; Hỗ trợ mở link tương đối từ Workspace trong tab Untitled. | ✅ Completed (v1.8.1c) |
+| **Filesystem Drag & Drop (Move)** | `src/ui_flet/views/explorer_view.py`, `src/utils/file_ops.py` | Kéo thả tệp/thư mục nội bộ cây thư mục Explorer để di chuyển tệp vật lý (`ft.Draggable` & `ft.DragTarget` nội bộ Flet), tích hợp bộ kiểm tra an toàn `validate_move_operation` và đồng bộ hóa Workspace Tabs. | ✅ Completed (v1.8.1c) |
+| **Batch & Archive Converter** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Chuyển đổi hàng loạt tài liệu theo Thư mục hoặc Tệp nén (`.zip`, `.rar`, `.7z`, `.tar.gz`) chạy ngầm (`ThreadPoolExecutor`), tự động cô lập lỗi (Error Isolation), giữ nguyên cây thư mục và đóng gói xuất ra `.zip` hoặc folder kết quả. Bổ sung hook *"Batch Convert this Folder"* vào Context Menu và Archive File Picker chuyên dụng. | ✅ Completed (v1.8.1c) |
+
+---
+
+### ✅ v1.8.2 (Floating Image Formatting, Multi-Tab Footer Sync & Explorer UX Polish):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **Audio/Video Speech Transcriber** | `src/services/speech_service.py` | Plugin Whisper AI trích xuất giọng nói từ video `.mp4` và audio `.mp3` thành văn bản Markdown ghi chú cuộc họp. | ⏳ Planned |
-| **EPub eBook Engine (`.epub`)** | `src/modules/epub_module.py` | Đọc và đóng gói sách điện tử `.epub` hai chiều với Markdown (`EPUB ↔ MD`). | ⏳ Planned |
-| **Mermaid Diagram Live Preview** | `src/ui_flet/views/preview_view.py` | Hỗ trợ hiển thị sơ đồ Mermaid trong Live Preview bằng giải pháp Interceptor (chuyển khối mã ````mermaid```` thành ảnh SVG/PNG Base64 nhúng trực tiếp vào `ft.Markdown`). | ⏳ Planned |
-| **Image Settings Dialog & Format Tab** | `src/ui_flet/views/editor_view.py` | Hộp thoại tùy chỉnh kích thước/tỷ lệ hình ảnh (Nhỏ 25%, Vừa 50%, Gốc 100%, hoặc tùy chỉnh Width/Height HTML) và bổ sung Contextual Format Tab trên thanh Ribbon Bar khi thao tác với hình ảnh. | ⏳ Planned |
-| **Recent Files History** | `src/ui_flet/views/welcome_view.py` | Lưu danh sách tệp vừa mở gần đây (Recent Documents) để mở lại nhanh từ Welcome Dashboard. | ⏳ Planned |
-| **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết thông minh giữa các ghi chú dựa trên Semantic Embeddings / Local Vector Search. | ⏳ Planned |
-
+| **Floating Image Format & Alignment Engine** | `src/modules/word_module.py`, `src/ui_flet/components/context_menu.py`, `src/ui_flet/views/preview_view.py` | Engine căn lề ảnh (Trái, Giữa, Phải) sử dụng cú pháp chuẩn `<p align="...">`, đồng bộ 100% khi xuất sang Word `.docx` bằng `WD_ALIGN_PARAGRAPH`. Menu chuột phải trên Live Preview nhấp vào ảnh để chỉnh kích thước hoặc căn lề. | ✅ Completed (v1.8.2) |
+| **Redesigned `ImageSizeDialog`** | `src/ui_flet/components/image_size_dialog.py` | Giao diện điều chỉnh kích thước ảnh trực quan, cân đối chiều cao input/dropdown, loại bỏ khoảng trắng thừa, phím bấm hàng ngang (`Reset`, `Cancel`, `Apply Sizing`), hỗ trợ nhấp ra ngoài để đóng và xử lý vòng đời overlay an toàn. | ✅ Completed (v1.8.2) |
+| **Multi-Tab Conversion State & Per-Tab FooterBar Sync** | `src/ui_flet/controllers/layout_controller.py`, `src/ui_flet/controllers/file_controller.py`, `src/ui_flet/layout/footer_bar.py` | Đồng bộ hóa trạng thái chuyển đổi và 2 nút `Open File` / `Open Location` theo từng Tab độc lập (`Per-Tab Hydration`); tự động ẩn khi nạp tệp mới từ Explorer hoặc khi Tab chưa được chuyển đổi. | ✅ Completed (v1.8.2) |
+| **Explorer Tree Scrolling & Clipping Fix** | `src/ui_flet/views/explorer_view.py` | Sửa triệt để lỗi mất thanh cuộn cây thư mục và lỗi hiển thị tràn viền xuống thanh Footer bằng `ClipBehavior.HARD_EDGE` và cấu trúc Flex Container chuẩn mực tương tự `EditorView`. | ✅ Completed (v1.8.2) |
+| **Smart Expanded Folder State Preservation** | `src/ui_flet/views/explorer_view.py` | Ghi nhớ đệ quy danh sách thư mục đang mở trước khi làm mới (`restore_expanded`), phân biệt hoàn hảo giữa `Refresh` (giữ nguyên các folder đang mở) và `Collapse All` (thu gọn toàn bộ). | ✅ Completed (v1.8.2) |
+| **Full Folder Zone Drag & Drop** | `src/ui_flet/views/explorer_view.py` | Kéo thả tệp vào bất kỳ tệp con nào bên trong một thư mục đang mở rộng sẽ chuyển tệp vào đúng thư mục đó; loại bỏ vùng bắt rác toàn cục và gán điểm đón an toàn cho thư mục gốc. | ✅ Completed (v1.8.2) |
+| **Fixed Keyboard Shortcut `Ctrl+B`** | `src/ui_flet/controllers/layout_controller.py` | Khắc phục lỗi phím tắt `Ctrl+B` không đóng mở được Sidebar do điều kiện event `e is not None`. | ✅ Completed (v1.8.2) |
 
 ---
 
-## Hướng dẫn khởi chạy & Đóng gói sản phẩm
+## 🚀 Kế hoạch phát triển các phiên bản tiếp theo
+
+### 🛠️ v1.8.3 (Patch, Backlog & Memory Optimization):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **`PERF-001` Bounded LRU Cache & Session Purge** | `src/ui_flet/views/preview_view.py`, `src/services/media_asset_manager.py` | Chuyển đổi `_BASE64_CACHE` sang `OrderedDict` (tối đa 128 mục) thread-safe; Cấu trúc Tuple Key `(session_id, path, width, quality)`; Tích hợp Observer Hook `purge_session_base64_cache()` giải phóng 100% RAM ảnh khi đóng Tab. *(Xem `docs/backlog/PERF_001_base64_cache_lru_eviction.md`)*. | ✅ Completed (v1.8.3) |
+| **Batch Collision Disambiguation & Polish** | `src/services/batch_service.py`, `src/ui_flet/components/batch_dialog.py` | Tự động gắn hậu tố `(docx)`, `(pdf)` khi nhiều tệp trùng tên gốc trong cùng thư mục xuất sang `.md`; Nâng cấp `open_file_or_foreground` (Win32 Z-Index #1) cho nút Open Result. | ✅ Completed (v1.8.3) |
+
+---
+
+### ✅ v1.9.0 (AI Model Hub, Offline Speech Transcriber & Background Transcription):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **AI Model Hub & Marketplace** | `src/ui_flet/components/model_hub_dialog.py`, `src/ui_flet/views/settings_view.py` | Giao diện quản lý tải/xóa Model AI độc lập (`tiny`, `base`, `small`); Tự động quét phần cứng đa hãng (RAM, CPU Cores, GPU NVIDIA/AMD/Intel) gắn nhãn gợi ý; Quản lý dung lượng ổ cứng tại `%APPDATA%\DocConvert\models\`; Stream Chunking 64KB với Instant Cancel; Xác thực 2 lớp (File Hash + Runtime Load). *(Xem `docs/archive/20260903_whisper_feature_plan.md`)*. | ✅ Completed (v1.9.0) |
+| **Offline Audio/Video Speech Transcriber** | `src/services/whisper_service.py` | Engine `faster-whisper` + CTranslate2 (`int8`); Giải mã âm thanh đa định dạng `.mp3`, `.wav`, `.m4a`, `.flac`, `.aac`, `.ogg`, `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`; Voice Activity Detection (VAD) phân đoạn mốc thời gian `[mm:ss]`; Volume normalization -0.9 dBFS; Format Markdown có cấu trúc kèm bảng metadata quốc tế hóa (Vi/En). | ✅ Completed (v1.9.0) |
+| **Background Transcription & Smart Tab Integration** | `src/ui_flet/controllers/file_controller.py`, `src/ui_flet/components/transcribe_dialog.py` | Transcription chạy ngầm không đóng băng GUI; Tự động tạo Tab mới trong Workspace với mode "Save as .md" và autosave draft tức thì; Activity Bar Smart Context Routing (icon spinning + re-open dialog); Universal Media Container file dialog. *(Xem `docs/archive/20260903_background_transcription_and_tabs.md`)*. | ✅ Completed (v1.9.0) |
+
+---
+
+### ✅ v1.9.1 (OCR Scanned PDF Engine & Preview Scroll Synchronization):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **OCR Scanned PDF Engine & Scroll Synchronization** | `src/services/ocr_service.py`, `src/modules/pdf_scan_module.py`, `src/ui_flet/views/preview_view.py` | Tích hợp OCR đa tầng (Tesseract/RapidOCR) nhận diện PDF quét ảnh sang Markdown; Đồng bộ hóa 2-Pass Frame Layout Scroll khóa vị trí cuộn Preview khi mở Menu ảnh và áp dụng preset. *(Xem `docs/archive/20260904_ocr_pdf_scan_and_preview_scroll_synchronization.md`)*. | ✅ Completed (v1.9.1) |
+
+---
+
+### ✅ v1.9.2 (Recent Folders, File History, Multi-Window & Welcome Studio Dashboard):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Recent Files & Folders History** | `src/services/history_service.py`, `src/ui_flet/views/welcome_view.py`, `src/ui_flet/controllers/file_controller.py` | Quản lý & lưu trữ LRU danh sách tệp và thư mục mở gần đây tại `%APPDATA%\DocConvert\recent_history.json`; Hỗ trợ Ghim cố định (`📌 Pin`), Xóa mục (`✖`), Xóa toàn bộ (`Clear All`), lọc Search, Tab lọc `All`/`Files`/`Folders`, và phát hiện file bị xóa/di chuyển. | ✅ Completed (v1.9.2) |
+| **2-Column Welcome Studio Dashboard** | `src/ui_flet/views/welcome_view.py`, `src/ui_flet/views/workspace_view.py` | Tái thiết kế bố cục 2 cột Studio (`920px`): Cột trái (Quick Actions & Branding), Cột phải (Lịch sử hoạt động kèm icon định dạng màu sắc theo đuôi file Word, Excel, PDF, Markdown, Media, Folder và nhãn thời gian tương đối). | ✅ Completed (v1.9.2) |
+| **Home Button & Navigation Anywhere** | `src/ui_flet/layout/activity_bar.py`, `src/ui_flet/app.py` | Bổ sung Icon Home (`ft.Icons.HOME_ROUNDED`) trên Activity Bar giúp quay lại Welcome Dashboard bất cứ lúc nào mà không làm mất tab soạn thảo đang mở. | ✅ Completed (v1.9.2) |
+| **New Window (`Ctrl+Shift+N`) & Close Workspace** | `src/ui_flet/helpers/shortcut_manager.py`, `src/ui_flet/views/explorer_view.py`, `src/ui_flet/app.py` | Phím tắt mở cửa sổ tiến trình ứng dụng mới độc lập (`Ctrl+Shift+N`) và nút Đóng thư mục dự án (`Close Workspace`) trên Header File Explorer. | ✅ Completed (v1.9.2) |
+
+> 📌 **Ghi chú kỹ thuật về Mô hình Whisper**:  
+> Bộ model chuẩn hiện tại (`base`, `small`, `medium`, `large-v3`) đã chốt và đáp ứng toàn diện theo cả 3 tiêu chí: nhẹ hơn, nhanh hơn, và chính xác hơn — đặc biệt đối với các file âm thanh có xen lẫn thuật ngữ tiếng Anh/kỹ thuật.  
+> Do đó, **`PhoWhisper-base` được rút khỏi roadmap chính thức của v1.9.1** và chỉ lưu ý lại như một **Optional Add-on dự phòng** (tùy mục tiêu sau này, nếu có nhóm người dùng chuyên biệt yêu cầu xử lý âm thanh thuần Việt 100% như phỏng vấn, bài giảng không thuật ngữ ngoại lai).
+
+---
+
+### 🚀 v1.10.0 (Tagging & Wikilinks — nền tảng PKB):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **SQLite Metadata Index** | `%APPDATA%\DocConvert\index.db` | Bảng `documents`, `tags`, `document_tags`, `wikilinks` — nền tảng dữ liệu chung cho MCP, Graph View, Export. | ⏳ Planned |
+| **Manual Wikilinks `[[...]]`** | `src/services/link_parser.py` | Liên kết hai chiều kiểu Obsidian; Fuzzy Match tiếng Việt (bỏ dấu NFD, case-insensitive, trim space). | ⏳ Planned |
+| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng cảnh báo màu; Click tạo file `.md` mới tự động. | ⏳ Planned |
+| **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel *Linked References* & *Unlinked Mentions*. | ⏳ Planned |
+
+*(Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.11.0 (MCP Server cho Claude Desktop/Code):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **MCP Server (stdio)** | `src/mcp/server.py` (mới) | Expose `search_documents`, `read_document`, `convert_document`, `tag_document`, `list_backlinks` qua MCP stdio transport (local subprocess, không mở port/tunnel); mọi tool dùng `document_id` nội bộ. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.12.0 (Knowledge Graph View):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Interactive Knowledge Graph View** | `src/ui_flet/views/graph_view.py` | Đồ thị 2D, layout `networkx`, render SVG trong Flet; filter theo tag/tên/độ sâu liên kết; mặc định giới hạn 2-hop quanh note đang mở. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+### 🚀 v1.13.0 (Export Module — Obsidian & Claude Projects):
+
+| Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **Obsidian Export-sync** | `src/services/export_service.py` (mới) | Ghi `.md` + frontmatter (`title`, `tags`, `docconvert_id`) vào vault folder; sync 1 chiều. | ⏳ Planned |
+| **Claude Projects Export** | `src/services/export_service.py` | Đóng gói `.zip` giữ nguyên cấu trúc thư mục + frontmatter, mỗi note là 1 file riêng (tối ưu cho RAG retrieval của Claude Projects); dữ liệu tĩnh, user tự re-export khi cần cập nhật. | ⏳ Planned |
+| **AI Auto-Link Engine** | `src/services/ai_link_service.py` | Gợi ý liên kết dựa trên Semantic Embeddings / Local Vector Search. | ⏳ Planned |
+
+*(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
+
+---
+
+## 🛠️ Hướng dẫn khởi chạy & Đóng gói sản phẩm
 
 ### 1. Khởi chạy ứng dụng (Development):
 ```powershell
@@ -97,10 +177,9 @@ python run.py
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 ```
-Tự động xuất ra thư mục `--onedir` tại `dist/Document Converter/` và file cài đặt tại `dist/installer/Document_Converter_Setup_v1.7.2.exe`.
+Tự động xuất ra thư mục `--onedir` tại `dist/Document Converter/` và file cài đặt tại `dist/installer/Document_Converter_Setup_v1.8.1.exe`.
 
 ### 3. Đóng gói thủ công bằng PyInstaller:
 ```powershell
 python -m PyInstaller "Document Converter.spec"
 ```
-

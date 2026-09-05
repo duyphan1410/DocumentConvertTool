@@ -17,8 +17,11 @@ def enable_high_dpi_awareness():
                 pass
 
 INPUT_FILETYPES = [
-    ("Supported Documents (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml"),
+    ("Supported Documents & Media (*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml;*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.md;*.docx;*.xlsx;*.xls;*.csv;*.pdf;*.html;*.htm;*.pptx;*.json;*.yaml;*.yml;*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm"),
     ("Markdown (*.md)", "*.md"),
+    ("Audio & Video (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg;*.mp4;*.mkv;*.avi;*.mov;*.webm"),
+    ("Audio Files (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg)", "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.ogg"),
+    ("Video Files (*.mp4;*.mkv;*.avi;*.mov;*.webm)", "*.mp4;*.mkv;*.avi;*.mov;*.webm"),
     ("PowerPoint (*.pptx)", "*.pptx"),
     ("Excel (*.xlsx, *.xls)", "*.xlsx;*.xls"),
     ("Word (*.docx)", "*.docx"),
@@ -86,7 +89,51 @@ def pick_input_file_sync() -> str | None:
     return None
 
 
-def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx") -> str | None:
+ARCHIVE_FILETYPES = [
+    ("Supported Archives (*.zip;*.rar;*.7z;*.tar.gz;*.tgz;*.tar)", "*.zip;*.rar;*.7z;*.tar.gz;*.tgz;*.tbz2;*.tar;*.bz2"),
+    ("ZIP Archive (*.zip)", "*.zip"),
+    ("RAR Archive (*.rar)", "*.rar"),
+    ("7-Zip Archive (*.7z)", "*.7z"),
+    ("Tarball (*.tar.gz;*.tgz;*.tar)", "*.tar.gz;*.tgz;*.tar;*.tbz2;*.bz2"),
+    ("All Files (*.*)", "*.*"),
+]
+
+
+
+def pick_archive_file_sync() -> str | None:
+    """Synchronous worker that opens transient Windows Open File Dialog filtered for compressed archives."""
+    ensure_tcl_tk()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_path = filedialog.askopenfilename(
+            title="Select Compressed Archive File",
+            filetypes=ARCHIVE_FILETYPES,
+        )
+        if selected_path:
+            return os.path.normpath(selected_path)
+    except Exception as e:
+        print(f"[DEBUG] Native archive filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "output.docx", initial_dir: str | None = None) -> str | None:
     """Synchronous worker that opens transient Windows Save File Dialog."""
     ensure_tcl_tk()
     try:
@@ -102,11 +149,21 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
+
+        # Prioritize the matching default_ext filter to be the first selected in Windows dialog
+        sorted_filetypes = list(OUTPUT_FILETYPES)
+        if default_ext:
+            ext_pat = f"*{default_ext.lower()}"
+            matched = [ft for ft in OUTPUT_FILETYPES if ext_pat in ft[1].lower()]
+            unmatched = [ft for ft in OUTPUT_FILETYPES if ft not in matched]
+            sorted_filetypes = matched + unmatched
+
         save_path = filedialog.asksaveasfilename(
             title="Select Output Destination",
             defaultextension=default_ext,
             initialfile=initial_file,
-            filetypes=OUTPUT_FILETYPES,
+            initialdir=initial_dir,
+            filetypes=sorted_filetypes,
             confirmoverwrite=True,
         )
         if save_path:
@@ -120,6 +177,7 @@ def pick_output_file_sync(default_ext: str = ".docx", initial_file: str = "outpu
             except Exception:
                 pass
     return None
+
 
 
 async def pick_input_file_async(page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
@@ -140,7 +198,7 @@ async def pick_input_file_async(page: ft.Page | None = None, picker: ft.FilePick
     return await asyncio.to_thread(pick_input_file_sync)
 
 
-async def pick_output_file_async(default_ext: str = ".docx", initial_file: str = "output.docx", page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
+async def pick_output_file_async(default_ext: str = ".docx", initial_file: str = "output.docx", initial_dir: str | None = None, page: ft.Page | None = None, picker: ft.FilePicker | None = None) -> str | None:
     """
     Async wrapper running output dialog.
     Uses native Tkinter on Desktop; falls back to Flet FilePicker on Web/Mobile if provided.
@@ -153,7 +211,7 @@ async def pick_output_file_async(default_ext: str = ".docx", initial_file: str =
                 allowed_extensions=[default_ext.lstrip(".")],
             )
             return path
-    return await asyncio.to_thread(pick_output_file_sync, default_ext, initial_file)
+    return await asyncio.to_thread(pick_output_file_sync, default_ext, initial_file, initial_dir)
 
 
 IMAGE_FILETYPES = [
@@ -211,6 +269,53 @@ async def pick_image_file_async(page: ft.Page | None = None, picker: ft.FilePick
                 return files[0].path
             return None
     return await asyncio.to_thread(pick_image_file_sync)
+
+
+MEDIA_FILETYPES = [
+    (
+        "Audio & Video Files (*.mp3;*.wav;*.m4a;*.flac;*.aac;*.mp4;*.mkv;*.mov;*.webm;*.avi)",
+        "*.mp3;*.wav;*.m4a;*.flac;*.aac;*.mp4;*.mkv;*.mov;*.webm;*.avi;*.ogg",
+    ),
+    ("All Files (*.*)", "*.*"),
+]
+
+
+def pick_media_file_sync() -> str | None:
+    """Synchronous worker that opens transient Windows File Dialog for media files."""
+    ensure_tcl_tk()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("[DEBUG] tkinter not available on this platform")
+        return None
+
+    enable_high_dpi_awareness()
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected_path = filedialog.askopenfilename(
+            title="Select Audio / Video File",
+            filetypes=MEDIA_FILETYPES,
+        )
+        if selected_path:
+            return os.path.normpath(selected_path)
+    except Exception as e:
+        print(f"[DEBUG] Native media filedialog error: {e}")
+    finally:
+        if root:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    return None
+
+
+async def pick_media_file_async() -> str | None:
+    """Async wrapper running native media file picker dialog."""
+    return await asyncio.to_thread(pick_media_file_sync)
 
 
 def confirm_overwrite_sync(file_path: str) -> bool:

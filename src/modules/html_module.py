@@ -214,10 +214,18 @@ class HTMLModule(BaseDocumentModule):
                 alt, src = match.group(1), match.group(2)
                 return f"![{alt}]({resolve_to_base64(src)})"
 
+            def replace_html_image(match):
+                prefix = match.group(1)
+                src = match.group(2)
+                suffix = match.group(3)
+                new_src = resolve_to_base64(src)
+                return f'{prefix}{new_src}{suffix}'
+
             # Step 1: Base64 media resolution
             t1 = time.time()
             if "!" in markdown_content or "<img" in markdown_content:
                 processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', replace_md_image, markdown_content, flags=re.IGNORECASE)
+                processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', replace_html_image, processed_md, flags=re.IGNORECASE)
             else:
                 processed_md = markdown_content
             t_base64 = time.time() - t1
@@ -532,6 +540,31 @@ class HTMLModule(BaseDocumentModule):
         img {{
             max-width: 100%;
             height: auto;
+        }}
+
+        p[align="center"], div[align="center"], center {{
+            text-align: center;
+        }}
+        p[align="right"], div[align="right"] {{
+            text-align: right;
+        }}
+        p[align="left"], div[align="left"] {{
+            text-align: left;
+        }}
+        p[align="center"] img, div[align="center"] img, center img, img[align="center"] {{
+            display: inline-block;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        p[align="right"] img, div[align="right"] img, img[align="right"] {{
+            display: inline-block;
+            margin-left: auto;
+            margin-right: 0;
+        }}
+        p[align="left"] img, div[align="left"] img, img[align="left"] {{
+            display: inline-block;
+            margin-left: 0;
+            margin-right: auto;
         }}
     </style>
 </head>

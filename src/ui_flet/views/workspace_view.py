@@ -41,6 +41,8 @@ class WorkspaceView(ft.Container):
                 pass
 
     def show_welcome(self, ribbon_bar=None):
+        if hasattr(self.welcome_view, "refresh_history"):
+            self.welcome_view.refresh_history(silent=True)
         if hasattr(self.welcome_view, "update_locale"):
             self.welcome_view.update_locale()
         self.content = self.welcome_view

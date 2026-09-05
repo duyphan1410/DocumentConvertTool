@@ -48,5 +48,31 @@ class TestWordInlineImageFix(unittest.TestCase):
         self.assertIn("Header Bold", extracted_md)
         self.assertIn("code_cell", extracted_md)
 
+    def test_word_export_and_import_html_image_with_width_and_align(self):
+        img_path = os.path.join(self.test_dir, "test_resized.png")
+        img = PILImage.new("RGB", (800, 600), color="green")
+        img.save(img_path)
+
+        norm_path = img_path.replace("\\", "/")
+        md_content = f'## Header 2\n\n<p align="center"><img src="{norm_path}" alt="diagram" width="75%" /></p>\n\nFooter paragraph'
+        out_docx = os.path.join(self.test_dir, "resized_output.docx")
+
+        self.word_module.save_from_markdown(md_content, out_docx)
+        self.assertTrue(os.path.exists(out_docx))
+
+        # Ensure python-docx can open and parse it cleanly (no XML corruption)
+        import docx
+        doc = docx.Document(out_docx)
+        self.assertGreater(len(doc.paragraphs), 0)
+
+        # Re-read Word file back to Markdown to verify width 75% was extracted cleanly
+        extracted_md = self.word_module.load_to_markdown(out_docx)
+        self.assertIn("Header 2", extracted_md)
+        self.assertIn("Footer paragraph", extracted_md)
+        self.assertIn('width="75%"', extracted_md)
+        self.assertNotIn("/>", extracted_md.replace('<img', '').replace('/>', ''))
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -4,66 +4,6 @@ Welcome to the central documentation hub for **DocumentConvertTool**. This repos
 
 ---
 
-## 📂 Documentation Directory Architecture
-
-```text
-docs/
-├── README.md                             # Central index catalog
-├── architecture/                         # Architecture Decision Records (ADRs)
-│   ├── 001_portable_image_pipeline.md
-│   ├── 002_overwrite_dialog_logic.md
-│   ├── 003_flet_framework_limitations.md
-│   ├── 004_win32_native_drag_drop_research.md
-│   ├── 005_universal_dynamic_window_focus.md
-│   ├── 006_parentheses_image_path_resolution_fix.md
-│   └── 007_module_architecture_and_pptx_refactoring.md
-├── roadmaps/                             # Active feature roadmaps & UI specifications
-│   ├── pkb/                              # PKB-001 Detailed Phase Specifications
-│   │   ├── phase1_tagging_wikilinks.md   # Phase 1: SQLite Index, Wikilinks & Backlinks (v1.10.0)
-│   │   ├── phase2_mcp_server.md          # Phase 2: Local stdio MCP Server for Claude (v1.11.0)
-│   │   ├── phase3_graph_view.md          # Phase 3: Interactive Knowledge Graph View (v1.12.0)
-│   │   └── phase4_export_sync.md         # Phase 4: Obsidian Sync & Claude Projects Export (v1.13.0)
-│   ├── pkb_feature_plan.md               # PKB-001 Master Architecture & Phased Blueprint
-│   └── product_roadmap.md                # Master product roadmap
-├── releases/                             # Version changelogs & release notes
-│   ├── v1.5.0.md
-│   ├── v1.5.3.md
-│   ├── v1.6.0.md
-│   ├── v1.6.0_en.md
-│   └── v1.7.0.md
-└── archive/                              # Completed snapshots, feature plans & PR logs
-    ├── 20260904_whisper_model_optimization_and_vision_alignment.md
-    ├── 20260903_whisper_feature_plan.md
-    ├── 20260903_background_transcription_and_tabs.md
-    ├── 20260902_image_regex_parentheses_and_preview_scroll_stabilization.md
-    ├── 20260901_whisper_model_hub_and_hardware_orchestrator.md
-    ├── 20260901_base64_cache_lru_eviction.md
-    ├── 20260830_floating_image_formatting_multitab_footer_sync_and_explorer_polish.md
-    ├── 20260829_tab_context_menu_micro_scrollbar_and_batch_polish.md
-    ├── 20260829_multitab_session_performance_and_atomic_guards.md
-    ├── 20260828_multi_tab_workspace.md
-    ├── 20260828_explorer_context_menu_and_safe_file_operations.md
-    ├── 20260827_studio_workspace_roadmap.md
-    ├── 20260827_activity_bar_and_studio_workspace.md
-    ├── 20260818_youtube_transcript_and_json_yaml_formatting_fixes.md
-    ├── 20260818_simplified_ribbon_and_ui_polish.md
-    ├── 20260818_plan_setup_exe.md
-    ├── 20260817_pdf_card_tables_and_image_pipeline.md
-    ├── 20260814_json_yaml_conversion_modules.md
-    ├── 20260813_pptx_module_refactoring_and_table_deduplication.md
-    ├── 20260812_pptx_conversion.md
-    ├── 20260810_auto_draft_loading_ux_summary.md
-    ├── 20260806_error_handling_draft_protection.md
-    ├── 20260806_settings_help_ribbon_ui.md
-    ├── 20260731_focus_zorder_analysis.md
-    ├── 20260730_conversion_performance_analysis.md
-    ├── 20260730_project_summary.md
-    ├── 20260730_ribbon_ui_summary.md
-    └── 20260729_refactoring_summary.md
-```
-
----
-
 ## 📑 Documentation Catalog
 
 ### 🏛️ 1. Architecture Decision Records (`docs/architecture/`)
@@ -96,6 +36,7 @@ docs/
 
 ### 🚀 3. Release Notes (`docs/releases/`)
 
+- [v1.9.2.md](releases/v1.9.2.md) ([Tiếng Việt](releases/v1.9.2_vi.md)): Version 1.9.2 Release Notes (Recent Files & Folders History, Welcome Studio Dashboard, Multi-Window Focus Elevation, Offline AI Whisper Speech Transcriber & AI Model Hub, Scanned PDF OCR Engine, Floating Image Formatter, Multi-Tab Workspace, and Batch/Archive Converter).
 - [v1.8.0.md](releases/v1.8.0.md): Version 1.8.0 Release Notes (Studio Workspace, Activity Bar Dock, Recursive File Explorer Tree with Inline Filter, Draggable Splitter, Quick Open `Ctrl+P`, and Overhauled 2x2 Welcome Screen).
 - [v1.7.2.md](releases/v1.7.2.md): Version 1.7.2 Release Notes (Embedded Microsoft Edge WebView2 YouTube Companion Player with Clickable Transcript Seeking, Local HTTP Bridge Server, Win32 Dynamic Focus Elevation, and Inno Setup 7 Desktop Installer).
 - [v1.7.0.md](releases/v1.7.0.md): Version 1.7.0 Release Notes (YouTube Subtitles/Transcript Extractor with Auto-Translate & Non-AI Speech Fallback, Direct Markdown Export, Win32 Clipboard URL Auto-Fill, Simplified Single-Row Ribbon, and JSON/YAML multiline fixes).

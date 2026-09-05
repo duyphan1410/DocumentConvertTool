@@ -164,15 +164,16 @@ if (-not $SkipInnoSetup) {
             exit $LASTEXITCODE
         }
 
-        $setupExe = "$RootDir\dist\installer\Document_Converter_Setup_v$AppVersion.exe"
+        $setupExe = Join-Path $RootDir "dist\installer\Document_Converter_Setup_v$AppVersion.exe"
         if (Test-Path $setupExe) {
             # Sign the installer setup binary
             Sign-Binary -FilePath $setupExe -Description "Document Converter Setup Installer"
 
-            $sizeMB = [math]::Round(((Get-Item $setupExe).Length / 1MB), 2)
+            $fileItem = Get-Item $setupExe
+            $sizeMB = [math]::Round(($fileItem.Length / 1048576.0), 2)
             Write-Host "`n=================================================================" -ForegroundColor Green
             Write-Host " SUCCESS: Installer created at:" -ForegroundColor Green
-            Write-Host " $setupExe ($sizeMB MB)" -ForegroundColor Cyan
+            Write-Host ("   {0} ({1} MB)" -f $setupExe, $sizeMB) -ForegroundColor Cyan
             Write-Host "=================================================================" -ForegroundColor Green
         }
     } else {

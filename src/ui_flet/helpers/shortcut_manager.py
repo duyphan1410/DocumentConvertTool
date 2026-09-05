@@ -13,6 +13,7 @@ class ShortcutManager:
         on_open_file: Optional[Callable] = None,
         on_save_convert: Optional[Callable] = None,
         on_find_replace: Optional[Callable] = None,
+        on_replace_shortcut: Optional[Callable] = None,
         on_undo: Optional[Callable] = None,
         on_redo: Optional[Callable] = None,
         on_toggle_sidebar: Optional[Callable] = None,
@@ -42,6 +43,11 @@ class ShortcutManager:
                     on_save_convert()
             elif key == "F":
                 if on_find_replace:
+                    on_find_replace()
+            elif key == "H":
+                if on_replace_shortcut:
+                    on_replace_shortcut()
+                elif on_find_replace:
                     on_find_replace()
             elif key == "B":
                 if on_toggle_sidebar:

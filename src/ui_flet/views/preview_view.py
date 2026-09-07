@@ -408,17 +408,104 @@ def format_preview_image_token(alt_text: str, uri: str, align: str = "", tok_sta
     return md_img
 
 
+def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
+    """
+    Scans for [[Target]] or [[Target|Display]] wikilinks and resolves them into:
+    - [Display](doc://<target_id>) if target note exists in MetadataIndex
+    - [⚠️ Display](doc-create://<raw_target>) if target note is unresolved / broken
+    """
+    if not content or "[[" not in content:
+        return content
+
+    try:
+        from src.services.metadata_index import MetadataIndex
+        index = MetadataIndex.get_instance()
+    except Exception:
+        return content
+
+    import urllib.parse
+    
+    # Identify excluded ranges (code blocks, inline code)
+    excluded_ranges: list[tuple[int, int]] = []
+    for m in re.finditer(r'(?m)^[ \t]*```[^\r\n]*\r?\n[\s\S]*?(?:^[ \t]*```|\Z)', content):
+        excluded_ranges.append((m.start(), m.end()))
+    for m in re.finditer(r'`+[^`\r\n]+`+', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    def _is_excluded(start: int, end: int) -> bool:
+        for ex_s, ex_e in excluded_ranges:
+            if not (end <= ex_s or start >= ex_e):
+                return True
+        return False
+
+    pattern = re.compile(r'\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]')
+    matches = list(pattern.finditer(content))
+    result = list(content)
+
+    for m in reversed(matches):
+        if _is_excluded(m.start(), m.end()):
+            continue
+        target = m.group(1).strip()
+        if not target or re.match(r'^[.\-—_\s]+$', target):
+            continue
+        display = m.group(2).strip() if m.group(2) else target
+        try:
+            doc = index.resolve_target_document(target, source_path=base_dir)
+        except Exception:
+            doc = None
+        if doc and doc.get("id"):
+            replacement = f"[{display}](doc://{doc['id']})"
+        else:
+            encoded = urllib.parse.quote(target)
+            replacement = f"[⚠️ {display}](doc-create://{encoded})"
+        result[m.start():m.end()] = list(replacement)
+
+    return "".join(result)
+
+
+def process_markdown_alerts(content: str) -> str:
+    """
+    Transforms GitHub-style Markdown callout alerts:
+    `> [!NOTE]` -> `> **ℹ️ Note**`
+    `> [!TIP]` -> `> **💡 Tip**`
+    `> [!IMPORTANT]` -> `> **📌 Important**`
+    `> [!WARNING]` -> `> **⚠️ Warning**`
+    `> [!CAUTION]` -> `> **🚨 Caution**`
+    into clean formatted blockquotes so Dart/flutter_markdown renders them natively
+    without unhandled bracket reference syntax errors that cause blank grey preview screens.
+    """
+    if not content or "[!" not in content:
+        return content
+
+    alert_map = {
+        "NOTE": "ℹ️ Note",
+        "TIP": "💡 Tip",
+        "IMPORTANT": "📌 Important",
+        "WARNING": "⚠️ Warning",
+        "CAUTION": "🚨 Caution",
+    }
+
+    def _repl_alert(m):
+        alert_type = m.group(1).upper()
+        label = alert_map.get(alert_type, f"ℹ️ {alert_type.title()}")
+        return f"> **{label}**\n>"
+
+    return re.sub(r"^>\s*\[\!([A-Za-z]+)\]", _repl_alert, content, flags=re.MULTILINE)
+
+
 def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = False, palette_name: str = "Violet Cyberpunk", enable_cloud_mermaid: bool = True, session_id: str | None = None) -> str:
     """
     Parses Markdown content, intercepts Mermaid diagram blocks, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
-    Also links interactive YouTube timestamps and converts custom-sized <img> tags to scaled Markdown images.
+    Also links interactive YouTube timestamps, converts [[wikilinks]], and converts custom-sized <img> tags.
     """
     if not content:
         return ""
 
     content = clean_html_tags_for_preview(content)
+    content = process_markdown_alerts(content)
     content = process_markdown_timestamps(content)
+    content = process_markdown_wikilinks(content, base_dir=base_dir)
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
@@ -490,7 +577,9 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
         return ""
 
     content = clean_html_tags_for_preview(content)
+    content = process_markdown_alerts(content)
     content = process_markdown_timestamps(content)
+    content = process_markdown_wikilinks(content, base_dir=base_dir)
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     import asyncio
     t0 = time.time()
@@ -564,6 +653,8 @@ class MarkdownPreview(ft.Container):
     def __init__(
         self,
         on_open_file: Optional[Callable[[str], None]] = None,
+        on_open_file_by_id: Optional[Callable[[str], None]] = None,
+        on_create_document_from_link: Optional[Callable[[str], None]] = None,
         get_workspace_path: Optional[Callable[[], str]] = None,
         on_image_link_clicked: Optional[Callable[[str], None]] = None,
         on_insert_sample_table: Optional[Callable[[], None]] = None,
@@ -571,6 +662,8 @@ class MarkdownPreview(ft.Container):
     ):
         super().__init__(**kwargs)
         self.on_open_file = on_open_file
+        self.on_open_file_by_id = on_open_file_by_id
+        self.on_create_document_from_link = on_create_document_from_link
         self._get_workspace_path = get_workspace_path
         self.on_image_link_clicked = on_image_link_clicked
         self.on_insert_sample_table = on_insert_sample_table
@@ -642,21 +735,15 @@ class MarkdownPreview(ft.Container):
             selectable=True,
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             code_theme=ft.MarkdownCodeTheme.ATOM_ONE_DARK,
-            expand=True,
             soft_line_break=True,
             on_tap_link=self._on_markdown_link_clicked,
         )
 
-        self.markdown_row = ft.Row(
-            controls=[self.markdown],
-            expand=True,
-            scroll=None,
-        )
-
         self.scroll_column = ft.Column(
-            controls=[self.markdown_row],
+            controls=[self.markdown],
             scroll=ft.ScrollMode.AUTO,
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             on_scroll=self._on_scroll_changed,
             key="markdown_preview_scroll_column",
         )
@@ -668,8 +755,12 @@ class MarkdownPreview(ft.Container):
                 self.scroll_column,
             ],
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             spacing=4,
         )
+
+        from src.ui_flet.theme import PALETTES
+        self.apply_palette(PALETTES.get(self._palette_name, PALETTES["Violet Cyberpunk"]), self._is_dark, self._palette_name)
 
     def _on_markdown_link_clicked(self, e):
         """Handles link clicks in MarkdownPreview. Interactive YouTube timestamps jump video position."""
@@ -683,6 +774,35 @@ class MarkdownPreview(ft.Container):
                     self.on_image_link_clicked(url)
                 except Exception as ex:
                     print(f"[DEBUG] on_image_link_clicked error: {ex}")
+            return
+
+        # PKB Internal Document Links: doc://<doc_id>
+        if url.startswith("doc://"):
+            doc_id = url[6:].strip()
+            if doc_id:
+                try:
+                    from src.services.metadata_index import MetadataIndex
+                    doc = MetadataIndex.get_instance().get_document_by_id(doc_id)
+                    if doc and doc.get("path") and os.path.exists(doc["path"]):
+                        if hasattr(self, "on_open_file") and self.on_open_file:
+                            self.on_open_file(doc["path"])
+                            return
+                    elif hasattr(self, "on_open_file_by_id") and self.on_open_file_by_id:
+                        self.on_open_file_by_id(doc_id)
+                        return
+                except Exception as ex:
+                    print(f"[PreviewView] Failed to open doc://{doc_id}: {ex}")
+            return
+
+        # PKB Broken Link Click-to-Create: doc-create://<raw_target>
+        if url.startswith("doc-create://"):
+            import urllib.parse
+            raw_target = urllib.parse.unquote(url[13:]).strip()
+            if raw_target and hasattr(self, "on_create_document_from_link") and self.on_create_document_from_link:
+                try:
+                    self.on_create_document_from_link(raw_target)
+                except Exception as ex:
+                    print(f"[PreviewView] Failed to handle doc-create://{raw_target}: {ex}")
             return
 
         from src.services.youtube_service import extract_video_id
@@ -970,7 +1090,7 @@ class MarkdownPreview(ft.Container):
         """Renders processed markdown, decomposing aligned images into native Flet Rows for pixel-perfect centering without tables or borders."""
         if not processed_md or not processed_md.strip():
             self.markdown.value = "*No content to preview.*"
-            self.scroll_column.controls = [self.markdown_row]
+            self.scroll_column.controls = [self.markdown]
             return
 
         # Pattern matching preview image tokens formatted with optional alignment
@@ -984,7 +1104,7 @@ class MarkdownPreview(ft.Container):
         matches = list(img_block_pattern.finditer(processed_md))
         if not matches:
             self.markdown.value = processed_md
-            self.scroll_column.controls = [self.markdown_row]
+            self.scroll_column.controls = [self.markdown]
             return False
 
         # Build parsed item descriptors: ("text", content) or ("img", idx, align, src, alt, action_url)
@@ -1125,7 +1245,7 @@ class MarkdownPreview(ft.Container):
                     )
                 new_controls.append(ft.Row([img_container], key=f"preview_row_{img_idx}", alignment=main_align))
 
-        self.scroll_column.controls = new_controls if new_controls else [self.markdown_row]
+        self.scroll_column.controls = new_controls if new_controls else [self.markdown]
         return False
 
     def scroll_to_image(self, idx: int = 0):
@@ -1382,7 +1502,7 @@ class MarkdownPreview(ft.Container):
         if not markdown_text or not markdown_text.strip():
             if self._last_raw_text != "":
                 self.markdown.value = "*No content to preview.*"
-                self.scroll_column.controls = [self.markdown_row]
+                self.scroll_column.controls = [self.markdown]
                 self.markdown_text = ""
                 self._last_raw_text = ""
                 self._cached_processed_text = "*No content to preview.*"
@@ -1417,6 +1537,8 @@ class MarkdownPreview(ft.Container):
             try:
                 if hasattr(self.scroll_column, "page") and self.scroll_column.page:
                     self.scroll_column.update()
+                if hasattr(self, "page") and self.page:
+                    self.update()
             except Exception:
                 pass
 
@@ -1445,6 +1567,8 @@ class MarkdownPreview(ft.Container):
             try:
                 if hasattr(self.scroll_column, "page") and self.scroll_column.page:
                     self.scroll_column.update()
+                if hasattr(self, "page") and self.page:
+                    self.update()
             except Exception:
                 pass
 

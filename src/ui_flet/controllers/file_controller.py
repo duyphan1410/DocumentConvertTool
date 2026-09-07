@@ -332,6 +332,8 @@ class FileController:
                 words = len(content.split())
                 chars = len(content)
                 self.preview.doc_info_text.value = t("editor.doc_info", words=f"{words:,}", chars=f"{chars:,}")
+                if hasattr(self.preview, "_saved_scroll_offset"):
+                    self.preview._saved_scroll_offset = 0.0
                 self.preview.set_processed_content(
                     processed_md, content, base_dir=base_dir, session_id=target_tab.media_session_id
                 )
@@ -364,6 +366,11 @@ class FileController:
                 explorer_view = self.app_controls.get("explorer_view")
                 if explorer_view and hasattr(explorer_view, "set_active_file"):
                     explorer_view.set_active_file(actual_path)
+
+                backlink_view = self.app_controls.get("backlink_view")
+                if backlink_view and hasattr(backlink_view, "set_active_document"):
+                    active_title = os.path.splitext(os.path.basename(actual_path))[0]
+                    backlink_view.set_active_document(actual_path, active_title)
 
         finally:
             target_tab.is_loading = False
@@ -658,6 +665,10 @@ class FileController:
                     tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
                 self.save_tab_session()
                 HistoryService.get_instance().add_file(active_tab.in_path, mode=active_tab.current_mode)
+                
+                # PKB Metadata Indexing on Save
+                self._sync_file_to_metadata_index(active_tab.in_path, content)
+
                 self.footer_bar.set_status(
                     f"Đã lưu -> {os.path.basename(active_tab.in_path)}",
                     color=ft.Colors.GREEN_400,
@@ -703,7 +714,6 @@ class FileController:
 
         init_dir = getattr(self.state, "workspace_folder", "") or None
 
-
         file_path = await pick_output_file_async(
             default_ext=".md",
             initial_file=init_file,
@@ -734,6 +744,10 @@ class FileController:
 
                 self.save_tab_session()
                 HistoryService.get_instance().add_file(file_path, mode="MD -> Markdown")
+                
+                # PKB Metadata Indexing on Save
+                self._sync_file_to_metadata_index(file_path, content)
+
                 self.footer_bar.set_result_buttons_visible(True)
                 self.footer_bar.set_status(
                     f"Đã lưu Markdown -> {os.path.basename(file_path)}",
@@ -745,6 +759,7 @@ class FileController:
                 self.footer_bar.set_status(f"Save error: {ex}", ft.Colors.RED_400)
                 self.page.update()
                 return False
+        return False
         return False
 
     def get_tab_draft_paths(self, tab_id: str) -> tuple[str, str]:
@@ -1204,11 +1219,32 @@ class FileController:
                 self.page.title = f"{tab.title} — Document Converter v{__version__}"
 
         if any_matched:
+            # Invalidate cached preview across tabs on rename
+            for tab in self.state.tabs:
+                tab.cached_preview_md = ""
+
             tab_bar = self.app_controls.get("workspace_tab_bar")
             if tab_bar and hasattr(tab_bar, "render_tabs"):
                 tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
             self.perform_autosave()
             self.save_tab_session()
+
+            # PKB Atomic Rename in SQLite MetadataIndex
+            try:
+                from src.services.metadata_index import MetadataIndex
+                new_title = os.path.splitext(os.path.basename(new_path))[0]
+                MetadataIndex.get_instance().rename_document(old_path, new_path, new_title)
+                
+                # Refresh Backlink and Explorer views if active
+                backlink_view = self.app_controls.get("backlink_view")
+                if backlink_view and hasattr(backlink_view, "refresh_data"):
+                    backlink_view.refresh_data()
+                explorer_view = self.app_controls.get("explorer_view")
+                if explorer_view and hasattr(explorer_view, "refresh_tags"):
+                    explorer_view.refresh_tags()
+            except Exception as ex:
+                print(f"[FileController] MetadataIndex rename error: {ex}")
+
             try:
                 self.page.update()
             except Exception:
@@ -1291,6 +1327,150 @@ class FileController:
                 tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
         self.save_tab_session()
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    # ── PKB Metadata & Wikilink Synchronization ────────────────────────────────
+
+    def _sync_file_to_metadata_index(self, file_path: str, content: str):
+        """Synchronizes a saved markdown file to SQLite MetadataIndex."""
+        if not file_path or not file_path.lower().endswith(".md"):
+            return
+        try:
+            from src.services.metadata_index import MetadataIndex
+            from src.services.link_parser import extract_tags, extract_wikilinks
+            index = MetadataIndex.get_instance()
+            h = index.calculate_hash(content)
+            title = os.path.splitext(os.path.basename(file_path))[0]
+            # Extract title from first # heading if available
+            import re
+            m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+            if m:
+                raw_h1 = m.group(1).strip()
+                clean_h1 = re.sub(r'[*_`]', '', raw_h1)
+                clean_h1 = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_h1).strip()
+                if clean_h1:
+                    title = clean_h1
+
+            tags = extract_tags(content)
+            wikilinks = extract_wikilinks(content)
+            doc_id = index.upsert_document(file_path, title, h)
+            index.set_document_tags(doc_id, tags)
+            index.set_document_wikilinks(doc_id, wikilinks, source_path=file_path)
+            index.re_resolve_broken_wikilinks(doc_id, title)
+            print(f"[PKB Save] Đã lưu index '{os.path.basename(file_path)}' (Title: '{title}', Tags: {len(tags)}, Wikilinks: {len(wikilinks)})")
+
+            # Refresh Backlink and Explorer views if present
+            backlink_view = self.app_controls.get("backlink_view")
+            if backlink_view and hasattr(backlink_view, "refresh_data"):
+                backlink_view.refresh_data()
+            explorer_view = self.app_controls.get("explorer_view")
+            if explorer_view and hasattr(explorer_view, "refresh_tags"):
+                explorer_view.refresh_tags()
+        except Exception as ex:
+            print(f"[FileController] _sync_file_to_metadata_index error: {ex}")
+
+    def open_document_by_id(self, doc_id: str):
+        """Looks up document by UUID from SQLite MetadataIndex and opens it in editor."""
+        try:
+            from src.services.metadata_index import MetadataIndex
+            doc = MetadataIndex.get_instance().get_document_by_id(doc_id)
+            if doc and doc.get("path") and os.path.exists(doc["path"]):
+                asyncio.create_task(self.open_file_by_path(doc["path"]))
+            else:
+                self.footer_bar.set_status(f"Document not found (ID: {doc_id})", color=ft.Colors.RED_400)
+        except Exception as ex:
+            print(f"[FileController] open_document_by_id error: {ex}")
+
+    def create_document_from_wikilink(self, raw_title: str):
+        """
+        Creates a new .md note for an unresolved wikilink [[raw_title]].
+        Proximity rule: creates file in directory of currently active tab (or workspace root).
+        Shows confirmation dialog before creating.
+        """
+        clean_title = raw_title.strip()
+        if not clean_title:
+            return
+
+        import re
+        safe_filename = re.sub(r'[\\/*?:"<>|]', "", clean_title)
+        if not safe_filename:
+            safe_filename = "NewNote"
+
+        # Determine target directory
+        active_tab = self.state.active_tab
+        if active_tab and active_tab.in_path and os.path.exists(os.path.dirname(active_tab.in_path)):
+            target_dir = os.path.dirname(active_tab.in_path)
+        elif self.state.workspace_folder and os.path.exists(self.state.workspace_folder):
+            target_dir = self.state.workspace_folder
+        else:
+            target_dir = get_default_output_dir()
+
+        target_path = os.path.join(target_dir, f"{safe_filename}.md")
+
+        def _do_create():
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+                initial_content = f"# {clean_title}\n\n"
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(initial_content)
+
+                # Invalidate cached_preview_md across all open tabs so wikilinks re-resolve immediately
+                for tab in self.state.tabs:
+                    tab.cached_preview_md = ""
+
+                # Sync to SQLite MetadataIndex
+                self._sync_file_to_metadata_index(target_path, initial_content)
+
+                # Open the new file in workspace tab
+                asyncio.create_task(self.open_file_by_path(target_path))
+
+                # Refresh Explorer and Backlinks
+                explorer_view = self.app_controls.get("explorer_view")
+                if explorer_view and hasattr(explorer_view, "refresh_tree"):
+                    explorer_view.refresh_tree()
+
+                self.footer_bar.set_status(f"Created note -> {os.path.basename(target_path)}", color=ft.Colors.GREEN_400)
+            except Exception as ex:
+                self.footer_bar.set_status(f"Create note error: {ex}", color=ft.Colors.RED_400)
+
+        def _close_and_run(confirmed: bool):
+            dialog.open = False
+            try:
+                self.page.update()
+            except Exception:
+                pass
+            if confirmed:
+                _do_create()
+
+        # Flet 0.86.4 modal dialog with backdrop dismiss support
+        msg = t("dialog.create_note_message", title=safe_filename)
+        dialog = ft.AlertDialog(
+            modal=False,
+            on_dismiss=lambda e: _close_and_run(False),
+            title=ft.Row(
+                [
+                    ft.Icon(ft.Icons.NOTE_ADD_ROUNDED, color=ft.Colors.PRIMARY, size=20),
+                    ft.Text(t("dialog.create_note_title"), weight=ft.FontWeight.BOLD),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            content=ft.Text(msg, size=13),
+            actions=[
+                ft.TextButton(t("dialog.btn_create"), on_click=lambda e: _close_and_run(True)),
+                ft.TextButton(t("dialog.btn_cancel"), on_click=lambda e: _close_and_run(False)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.overlay[:] = [c for c in self.page.overlay if not isinstance(c, ft.AlertDialog)]
+        if dialog not in self.page.overlay:
+            self.page.overlay.append(dialog)
+        self.page.dialog = dialog
+        dialog.open = True
         try:
             self.page.update()
         except Exception:

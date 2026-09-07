@@ -81,6 +81,10 @@ class ThemeController:
         if help_view:
             help_view.apply_palette(palette, is_dark)
 
+        backlink_view = self.app_controls.get("backlink_view")
+        if backlink_view and hasattr(backlink_view, "apply_palette"):
+            backlink_view.apply_palette(palette, is_dark)
+
         try:
             self.page.update()
         except Exception:

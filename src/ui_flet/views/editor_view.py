@@ -295,6 +295,10 @@ class EditorView:
         if ext in image_exts:
             token = f"![{name}]({clean_path})"
             self.insert_image_token(token)
+        elif ext == ".md":
+            doc_name = os.path.splitext(name)[0]
+            token = f"[[{doc_name}]]"
+            self.insert_text_at_cursor(token)
         else:
             token = f"[{name}]({clean_path})"
             self.insert_text_at_cursor(token)

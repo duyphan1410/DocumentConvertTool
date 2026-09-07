@@ -3,8 +3,8 @@
 **Mã định danh**: `PKB-PHASE-1`  
 **Phiên bản mục tiêu**: `v1.10.0`  
 **Tài liệu mẹ**: [pkb_feature_plan.md](../pkb_feature_plan.md)  
-**Phụ trách chính**: 👤 Duy (SQLite Schema, UI Tagging & Backlink View) / 👤 Huy (Link Parser & Tiếng Việt Fuzzy Match Engine)  
-**Trạng thái**: ⏳ Planned
+**Phụ trách chính**: 👤 Duy (SQLite WAL Schema, UI Tagging & Backlink View, Controllers) / 👤 Huy (Wikilink Parser & Tiếng Việt Fuzzy Match Engine)  
+**Trạng thái**: 🟡 In Progress (Bắt đầu triển khai)
 
 ---
 
@@ -89,8 +89,11 @@ CREATE TABLE IF NOT EXISTS wikilinks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id TEXT NOT NULL,            -- Document chứa link
     target_id TEXT,                     -- Document được trỏ tới (NULL nếu là broken link)
-    raw_text TEXT NOT NULL,             -- Cụm từ trong [[...]]
+    target_title_raw TEXT NOT NULL,     -- Cụm từ gốc trong [[...]]
     display_text TEXT,                  -- Tên hiển thị (nếu có [[Target|Display]])
+    snippet TEXT,                       -- Đoạn trích dẫn ngữ cảnh xung quanh link
+    resolved INTEGER DEFAULT 0,         -- 1 nếu resolved, 0 nếu broken
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (source_id) REFERENCES documents(id) ON DELETE CASCADE,
     FOREIGN KEY (target_id) REFERENCES documents(id) ON DELETE SET NULL
 );
@@ -102,6 +105,12 @@ CREATE INDEX IF NOT EXISTS idx_wikilinks_source ON wikilinks(source_id);
 CREATE INDEX IF NOT EXISTS idx_wikilinks_target ON wikilinks(target_id);
 CREATE INDEX IF NOT EXISTS idx_tags_normalized ON tags(normalized_name);
 ```
+
+> 🔒 **Quy chuẩn Thread-Safety & Cleanup**:
+> - Kích hoạt SQLite **WAL mode** (`PRAGMA journal_mode=WAL;`) và `PRAGMA busy_timeout=5000;`.
+> - Mỗi worker thread sử dụng connection riêng qua context manager; toàn bộ transaction ghi (Write) được bao bọc bởi `threading.Lock()`.
+> - Tự động dọn dẹp orphan records (xóa records trong DB nếu file bị xoá ngoài OS) khi quét lại workspace.
+
 
 ### 3.2. Thuật toán Fuzzy Match tiếng Việt (`fuzzy_matcher.py`)
 
@@ -153,8 +162,25 @@ CREATE INDEX IF NOT EXISTS idx_tags_normalized ON tags(normalized_name);
 
 ## 5. Rủi ro & Chiến lược Kiểm thử
 
-| Rủi ro | Giải pháp kỹ thuật |
+| Rủi ro / Trường hợp biên | Giải pháp kỹ thuật |
 | :--- | :--- |
-| **Xung đột tên file trùng lặp** | Khi có 2 file `notes.md` ở 2 folder khác nhau, ưu tiên file cùng thư mục trước; nếu không thì hiển thị đường dẫn thư mục cha để disambiguate. |
-| **Tắc nghẽn I/O khi scan lần đầu** | Toàn bộ quá trình quét folder dự án chạy trong background thread (`asyncio.to_thread`), cập nhật tiến độ lên Footer Bar. |
-| **Thay đổi file ngoài app** | Sử dụng `content_hash` để chỉ cập nhật các file có hash thay đổi, tránh re-index toàn bộ database. |
+| **Xung đột tên file trùng lặp** | Ưu tiên file cùng thư mục (Proximity); nếu khác thư mục thì hiển thị đường dẫn tương đối trên UI Backlink Panel. |
+| **Tắc nghẽn I/O & Thread Safety** | Quét trong background thread (`asyncio.to_thread`), DB chạy WAL Mode, connection per-thread, Write transactions bảo vệ bởi `threading.Lock()`. |
+| **File bị sửa/xoá ngoài app** | Luồng 3-Way Sync Scan: So sánh danh sách file đĩa với DB, xoá orphan records và so khớp `content_hash` (SHA-256) để cập nhật file bị sửa nội dung. |
+| **Đổi tên file làm đứt Wikilinks** | Đổi tên bằng `rename_document` (Atomic `UPDATE documents SET path=?, title=?`), giữ nguyên `id` (UUID) tránh kích hoạt trigger xoá nhầm liên kết. |
+| **Re-resolve khi tạo note mới** | Khi file mới được tạo, tự động chạy query `UPDATE wikilinks SET target_id=?, resolved=1` để kết nối lại tất cả broken links từ các note khác trong workspace. |
+
+---
+
+## 6. Ghi chú mở rộng tương lai (Future Enhancements & Backlog)
+
+- 📌 **Non-Markdown Wikilinks (`[[file.pdf]]`, `[[slides.pptx]]`, `[[doc.docx]]`)**:
+  - Hỗ trợ phân giải và click mở trực tiếp các tệp phi-Markdown hoặc kích hoạt nhanh bộ chuyển đổi tương ứng (PDF/PPTX/Word $\rightarrow$ Markdown).
+- 📌 **Transclusion Embed Syntax (`![[image.png]]`, `![[Note#Section]]`)**:
+  - Hỗ trợ cú pháp nhúng nội dung ảnh hoặc đoạn trích từ ghi chú khác trực tiếp vào Live Preview theo tiêu chuẩn Obsidian/PKB.
+- 📌 **Smart Drag & Drop Expansion**:
+  - Cho phép tùy chọn phím bổ trợ (`Ctrl`/`Alt` + Drag) để linh hoạt chuyển đổi giữa Markdown relative link (`[Name](path)`) và Wikilink (`[[Name]]`).
+- 📌 **Mở rộng ErrorCode cho PKB (`DATABASE_ERROR`, `INDEX_CORRUPTED`)**:
+  - Bổ sung domain error codes vào `ErrorCode` & `ErrorMapper` cho các trường hợp ngoại lệ sâu của SQLite Metadata Index; bàn giao thực hiện cho Huy khi hoàn thiện `fuzzy_matcher.py` và tối ưu tokenizer `link_parser.py`.
+
+

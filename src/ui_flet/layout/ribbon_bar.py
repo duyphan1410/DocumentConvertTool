@@ -31,6 +31,7 @@ class RibbonBar(ft.Container):
         on_browse_in: Optional[Callable] = None,
         on_browse_out: Optional[Callable] = None,
         on_clear_editor: Optional[Callable] = None,
+        on_home_click: Optional[Callable] = None,
         on_import_youtube: Optional[Callable] = None,
         on_open_model_hub: Optional[Callable] = None,
         on_format_action: Optional[Callable[[str, str], None]] = None,
@@ -61,6 +62,7 @@ class RibbonBar(ft.Container):
         self.on_browse_in = on_browse_in
         self.on_browse_out = on_browse_out
         self.on_clear_editor = on_clear_editor
+        self.on_home_click = on_home_click
         self.on_import_youtube = on_import_youtube
         self.on_open_model_hub = on_open_model_hub
         self.on_format_action = on_format_action
@@ -152,6 +154,12 @@ class RibbonBar(ft.Container):
         self.theme_mode_dropdown.on_select = self.on_theme_mode_changed
 
         # ── 3. File Action Buttons (Vector Icons) ────────────────────────────────
+        self.btn_home = ft.IconButton(
+            icon=ft.Icons.HOME_ROUNDED,
+            tooltip=t("welcome.btn_home"),
+            icon_size=18,
+            on_click=self._on_home_click,
+        )
         self.btn_file_open = ft.IconButton(
             icon=ft.Icons.FILE_OPEN_ROUNDED,
             tooltip=t("ribbon.btn_open"),
@@ -276,9 +284,9 @@ class RibbonBar(ft.Container):
                 self.logo_icon,
                 self.logo_text,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
+                self.btn_home,
                 self.btn_file_open,
                 self.btn_file_save,
-                self.btn_file_clear,
                 self.btn_model_hub,
                 ft.VerticalDivider(width=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.formatting_toolbar,
@@ -506,6 +514,10 @@ class RibbonBar(ft.Container):
     # Action Click Handlers
     # ─────────────────────────────────────────────────────────────────────────
 
+    def _on_home_click(self, e):
+        if self.on_home_click:
+            self.on_home_click()
+
     def _on_browse_in_click(self, e):
         if self.on_browse_in:
             self.on_browse_in(e)
@@ -661,6 +673,7 @@ class RibbonBar(ft.Container):
     def _refresh_locale_strings(self):
         """Refresh string values on tooltips and dropdowns."""
         self.logo_text.value = t("ribbon.logo")
+        self.btn_home.tooltip = t("welcome.btn_home")
         self.btn_file_open.tooltip = t("ribbon.btn_open")
         self.btn_file_save.tooltip = t("ribbon.btn_save")
         self.btn_file_clear.tooltip = t("ribbon.btn_clear")
@@ -716,6 +729,7 @@ class RibbonBar(ft.Container):
         self._refresh_locale_strings()
         for ctrl in [
             self.logo_text,
+            self.btn_home,
             self.btn_file_open,
             self.btn_file_save,
             self.btn_file_clear,

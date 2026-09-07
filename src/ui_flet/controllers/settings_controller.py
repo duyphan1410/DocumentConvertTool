@@ -260,7 +260,11 @@ class SettingsController:
     def on_language_changed(self, e):
         """Language dropdown changed -> set locale and refresh all UI text."""
         new_lang = None
-        if e and hasattr(e, "control") and e.control is not None:
+        if isinstance(e, str):
+            new_lang = e
+        elif e and hasattr(e, "data") and e.data:
+            new_lang = e.data
+        elif e and hasattr(e, "control") and e.control is not None:
             new_lang = getattr(e.control, "value", None)
         if not new_lang:
             sv = self.app_controls.get("settings_view")
@@ -308,6 +312,7 @@ class SettingsController:
             "formatting_toolbar",
             "activity_bar",
             "explorer_view",
+            "backlink_view",
             "help_view",
         ]:
             ctrl = self.app_controls.get(key)

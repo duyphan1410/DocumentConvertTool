@@ -35,6 +35,7 @@ from src.ui_flet.views.workspace_view import WorkspaceView
 from src.ui_flet.views.settings_view import SettingsView
 from src.ui_flet.views.help_view import HelpView
 from src.ui_flet.views.explorer_view import ExplorerView
+from src.ui_flet.views.backlink_view import BacklinkView
 from src.ui_flet.native_dialogs import pick_directory_async
 from src.ui_flet.helpers.shortcut_manager import ShortcutManager
 from src.utils import settings_store
@@ -164,8 +165,20 @@ class DocumentConvertApp:
         else:
             self._show_welcome_view()
 
+        # Trigger background PKB sync if workspace_folder exists on startup
+        if self.state.workspace_folder and os.path.exists(self.state.workspace_folder):
+            self._trigger_pkb_workspace_sync(self.state.workspace_folder)
+
         async def _focus_window_async():
             try:
+                if self.state.window_maximized:
+                    self.page.window.maximized = True
+                for delay in (0.08, 0.25, 0.5):
+                    await asyncio.sleep(delay)
+                    if self.state.window_maximized:
+                        self.page.window.maximized = True
+                        if self.page:
+                            self.page.update()
                 self.page.window.focused = True
                 await self.page.window.to_front()
             except Exception:
@@ -249,6 +262,7 @@ class DocumentConvertApp:
             on_browse_in=lambda e: self.file_controller.trigger_browse_input(e),
             on_browse_out=lambda e: self.file_controller.trigger_browse_output(e),
             on_clear_editor=lambda e: self.editor_controller.clear_editor(e),
+            on_home_click=lambda: self._on_activity_bar_item_clicked("home"),
             on_import_youtube=lambda e: self.file_controller.trigger_youtube_import(e),
             on_open_model_hub=lambda e=None: self._open_model_hub_dialog(),
             on_format_action=lambda p, s: self.editor_controller.on_format_action(p, s),
@@ -307,6 +321,8 @@ class DocumentConvertApp:
             on_open_file=lambda path: asyncio.create_task(
                 self.file_controller.open_file_by_path(path)
             ),
+            on_open_file_by_id=lambda did: self.file_controller.open_document_by_id(did),
+            on_create_document_from_link=lambda raw_t: self.file_controller.create_document_from_wikilink(raw_t),
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
             on_image_link_clicked=lambda url: self._handle_preview_image_clicked(url),
             on_insert_sample_table=lambda: self.editor_view.insert_sample_table(),
@@ -369,7 +385,30 @@ class DocumentConvertApp:
             workspace_path=getattr(self.state, "workspace_folder", ""),
             active_file_path=getattr(self.state, "in_path", ""),
             width=getattr(self.state, "sidebar_width", 240),
-            visible=getattr(self.state, "show_sidebar", True),
+            visible=(getattr(self.state, "show_sidebar", True) and getattr(self.state, "active_activity_tab", "explorer") == "explorer"),
+        )
+
+        def _handle_convert_mention_cb(source_p: str, text: str):
+            tab = self.state.find_tab_by_path(source_p)
+            if tab and os.path.exists(source_p):
+                try:
+                    with open(source_p, "r", encoding="utf-8", errors="replace") as f:
+                        updated_txt = f.read()
+                    tab.full_content = updated_txt
+                    if self.state.active_tab_id == tab.tab_id and self.editor_view:
+                        self.editor_view.set_text(updated_txt)
+                        if self.preview:
+                            self.preview.set_content(updated_txt, session_id=tab.media_session_id)
+                except Exception:
+                    pass
+
+        self.backlink_view = BacklinkView(
+            on_open_file=lambda path: asyncio.create_task(self._on_explorer_file_clicked(path)),
+            on_convert_mention=_handle_convert_mention_cb,
+            on_status_message=lambda msg, col=None: self.footer_bar.set_status(msg, color=col),
+            get_workspace_path=lambda: getattr(self.state, "workspace_folder", ""),
+            width=getattr(self.state, "sidebar_width", 240),
+            visible=(getattr(self.state, "show_sidebar", True) and getattr(self.state, "active_activity_tab", "explorer") == "backlinks"),
         )
 
         self.sidebar_splitter = DraggableSplitter(
@@ -404,7 +443,6 @@ class DocumentConvertApp:
             on_reveal=lambda path: reveal_in_windows_explorer(path),
         )
 
-
         self.editor_split_row = ft.Row(
             controls=[
                 self.editor_view.container,
@@ -429,6 +467,7 @@ class DocumentConvertApp:
             controls=[
                 self.activity_bar,
                 self.explorer_view,
+                self.backlink_view,
                 self.sidebar_splitter,
                 self.editor_main_column,
             ],
@@ -473,6 +512,7 @@ class DocumentConvertApp:
             "help_view": self.help_view,
             "activity_bar": self.activity_bar,
             "explorer_view": self.explorer_view,
+            "backlink_view": self.backlink_view,
             "sidebar_splitter": self.sidebar_splitter,
             "editor_splitter": self.editor_splitter,
             "editor_split_row": self.editor_split_row,
@@ -659,6 +699,7 @@ class DocumentConvertApp:
             pass
 
     def _on_activity_bar_item_clicked(self, tab_name: str):
+        print(f"[DEBUG][ACTIVITY_BAR] Clicked item: '{tab_name}'")
         if tab_name == "home":
             # If already on welcome screen and user has open tabs or workspace, toggle back to editor!
             if self.workspace_view.content == self.welcome_view and (self.state.tabs or self.state.workspace_folder):
@@ -681,6 +722,10 @@ class DocumentConvertApp:
             self.layout_controller.toggle_sidebar(e=True, tab_name="explorer")
         elif tab_name == "search":
             self.quick_open_dialog.show(self.page)
+        elif tab_name == "backlinks":
+            if self.workspace_view.content == self.welcome_view:
+                self._show_editor_view(auto_select_edit=False)
+            self.layout_controller.toggle_sidebar(e=True, tab_name="backlinks")
         elif tab_name == "youtube":
             from src.services.transcription_manager import TranscriptionJobManager
             mgr = TranscriptionJobManager.get_instance()
@@ -703,8 +748,31 @@ class DocumentConvertApp:
             HistoryService.get_instance().add_folder(folder_path)
             settings_store.save_settings(self.state)
             self._show_editor_view(auto_select_edit=False)
+
+            # Background PKB 3-Way Synchronization
+            self._trigger_pkb_workspace_sync(folder_path)
         else:
             self.footer_bar.set_status(t("welcome.recent_missing_file"), color=ft.Colors.RED_400)
+
+    def _trigger_pkb_workspace_sync(self, folder_path: str):
+        """Dispatches non-blocking 3-way PKB metadata synchronization."""
+        if not folder_path or not os.path.isdir(folder_path):
+            return
+
+        async def _bg_sync_pkb():
+            try:
+                from src.services.metadata_index import MetadataIndex
+                stats = await asyncio.to_thread(MetadataIndex.get_instance().sync_workspace_incremental, folder_path)
+                folder_name = os.path.basename(folder_path) or folder_path
+                print(f"[PKB Sync] Đã đồng bộ '{folder_name}': {stats['total']} files scan (Thêm mới: {stats['added']}, Cập nhật: {stats['updated']}, Xóa: {stats['deleted']})")
+                if hasattr(self, "explorer_view") and hasattr(self.explorer_view, "refresh_tags"):
+                    self.explorer_view.refresh_tags()
+                if hasattr(self, "backlink_view") and hasattr(self.backlink_view, "refresh_data"):
+                    self.backlink_view.refresh_data()
+            except Exception as ex:
+                print(f"[PKB Sync Error]: {ex}")
+
+        asyncio.create_task(_bg_sync_pkb())
 
     def _on_close_workspace_folder(self):
         self.state.workspace_folder = ""

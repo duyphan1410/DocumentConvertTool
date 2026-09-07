@@ -679,15 +679,50 @@ class ExplorerView(ft.Container):
             visible=bool(workspace_path),
         )
 
-        # Inline File Filter Input
+        # Inline Search & Tag Filter Bar (Single Row)
         self.filter_input = ft.TextField(
             hint_text=t("explorer.filter_hint"),
             text_size=11,
             dense=True,
-            prefix_icon=ft.Icons.SEARCH,
+            prefix_icon=ft.Icons.SEARCH_ROUNDED,
             border_radius=6,
             content_padding=ft.Padding(left=6, top=2, right=6, bottom=2),
+            border_color=ft.Colors.OUTLINE_VARIANT,
             on_change=self._on_filter_changed,
+            expand=3,
+            visible=bool(workspace_path),
+        )
+
+        # Tag Filter Label & Dropdown
+        self.tag_filter_label = ft.Text(
+            t("explorer.filter_by_tag"),
+            size=10,
+            weight=ft.FontWeight.W_600,
+            color=ft.Colors.OUTLINE,
+            visible=False,
+        )
+        self.tag_filter_dropdown = ft.Dropdown(
+            options=[ft.dropdown.Option(key="", text=f"🏷️ {t('explorer.all_tags')}")],
+            value="",
+            text_size=11,
+            dense=True,
+            height=41,
+            border_radius=6,
+            content_padding=ft.Padding(left=6, top=2, right=6, bottom=2),
+            border_color=ft.Colors.OUTLINE_VARIANT,
+            expand=2,
+            visible=bool(workspace_path),
+        )
+        self.tag_filter_dropdown.on_change = self._on_tag_filter_changed
+        self.tag_filter_dropdown.on_select = self._on_tag_filter_changed
+
+        self.filter_row = ft.Row(
+            [
+                self.filter_input,
+                self.tag_filter_dropdown,
+            ],
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
             visible=bool(workspace_path),
         )
 
@@ -736,12 +771,13 @@ class ExplorerView(ft.Container):
                 self.header_row,
                 ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
                 self.folder_title_row,
-                self.filter_input,
+                self.filter_row,
                 self.empty_state,
                 self.tree_list,
             ],
             spacing=4,
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
         super().__init__(
@@ -988,7 +1024,10 @@ class ExplorerView(ft.Container):
         self.btn_collapse_all.visible = False
         self.btn_refresh.visible = False
         self.btn_close_folder.visible = False
+        self.filter_row.visible = False
         self.filter_input.visible = False
+        self.tag_filter_label.visible = False
+        self.tag_filter_dropdown.visible = False
         self.empty_state.visible = True
         self.tree_list.visible = False
         try:
@@ -1011,11 +1050,80 @@ class ExplorerView(ft.Container):
         self.btn_collapse_all.visible = bool(folder_path)
         self.btn_refresh.visible = bool(folder_path)
         self.btn_close_folder.visible = bool(folder_path)
+        self.filter_row.visible = bool(folder_path)
         self.filter_input.visible = bool(folder_path)
         self.filter_input.value = ""
+        self.tag_filter_label.visible = bool(folder_path)
+        self.tag_filter_dropdown.visible = bool(folder_path)
+        self.tag_filter_dropdown.value = ""
         self.empty_state.visible = not bool(folder_path)
         self.tree_list.visible = bool(folder_path)
+        self.refresh_tags()
         self.refresh_tree()
+
+    def refresh_tags(self):
+        """Reloads available tags from MetadataIndex into tag_filter_dropdown."""
+        if not self.workspace_path:
+            return
+        try:
+            from src.services.metadata_index import MetadataIndex
+            tags = MetadataIndex.get_instance().get_all_tags()
+            options = [ft.dropdown.Option(key="", text=f"🏷️ {t('explorer.all_tags')}")]
+            for tg in tags:
+                lbl = f"🏷️ #{tg['name']} ({tg['doc_count']})"
+                options.append(ft.dropdown.Option(key=tg["name"], text=lbl))
+            self.tag_filter_dropdown.options = options
+            try:
+                if hasattr(self.tag_filter_dropdown, "page") and self.tag_filter_dropdown.page:
+                    self.tag_filter_dropdown.update()
+            except Exception:
+                pass
+        except Exception as ex:
+            print(f"[ExplorerView] Failed to refresh tags: {ex}")
+
+    def _on_tag_filter_changed(self, e):
+        """Dispatched when user selects a tag in tag_filter_dropdown."""
+        tag = (self.tag_filter_dropdown.value or "").strip()
+        if not tag:
+            self.refresh_tree()
+            return
+        asyncio.create_task(self._async_filter_by_tag(tag))
+
+    async def _async_filter_by_tag(self, tag: str):
+        if not self.workspace_path:
+            return
+        try:
+            from src.services.metadata_index import MetadataIndex
+            doc_paths = MetadataIndex.get_instance().search_documents_by_tag(tag)
+            folder = self.workspace_path
+
+            self.tree_list.controls.clear()
+            for full_path in doc_paths:
+                if not os.path.exists(full_path):
+                    continue
+                filename = os.path.basename(full_path)
+                rel_dir = os.path.relpath(os.path.dirname(full_path), folder)
+                is_act = (
+                    os.path.normpath(full_path) == os.path.normpath(self.active_file_path)
+                    if self.active_file_path
+                    else False
+                )
+                display_name = f"{filename}  [{rel_dir}]" if rel_dir != "." else filename
+                self.tree_list.controls.append(
+                    FileTreeItem(
+                        file_path=full_path,
+                        name=display_name,
+                        depth=0,
+                        on_click=self._handle_file_click,
+                        on_secondary_tap_down=self._show_file_context_menu,
+                        on_move_entry=self._handle_move_entry,
+                        is_active=is_act,
+                    )
+                )
+            if self.page:
+                self.page.update()
+        except Exception as ex:
+            print(f"[ExplorerView] Filter by tag error: {ex}")
 
     def _on_filter_changed(self, e):
         """Dispatched when user types into the inline search filter."""
@@ -1090,8 +1198,13 @@ class ExplorerView(ft.Container):
             loop = asyncio.get_running_loop()
             loop.create_task(self._async_scan_root(expanded_paths=expanded_paths))
         except RuntimeError:
-            if self.page and hasattr(self.page, "run_task"):
-                self.page.run_task(self._async_scan_root, expanded_paths=expanded_paths)
+            page = None
+            try:
+                page = self.page
+            except RuntimeError:
+                page = None
+            if page and hasattr(page, "run_task"):
+                page.run_task(self._async_scan_root, expanded_paths=expanded_paths)
             else:
                 try:
                     asyncio.run(self._async_scan_root(expanded_paths=expanded_paths))
@@ -1199,10 +1312,24 @@ class ExplorerView(ft.Container):
         self.btn_close_folder.tooltip = t("explorer.close_folder_tooltip")
         self.btn_more.tooltip = t("explorer.more_actions")
         self.filter_input.hint_text = t("explorer.filter_hint")
+        if hasattr(self, "tag_filter_label") and self.tag_filter_label:
+            self.tag_filter_label.value = t("explorer.filter_by_tag")
         if hasattr(self, "empty_state_text") and self.empty_state_text:
             self.empty_state_text.value = t("explorer.empty_title")
         if hasattr(self, "empty_state_btn") and self.empty_state_btn:
-            self.empty_state_btn.text = t("explorer.btn_open")
+            self.empty_state_btn.content = t("explorer.btn_open")
+        if hasattr(self, "tag_filter_dropdown") and self.tag_filter_dropdown:
+            if self.workspace_path:
+                self.refresh_tags()
+            else:
+                self.tag_filter_dropdown.options = [
+                    ft.dropdown.Option(key="", text=f"🏷️ {t('explorer.all_tags')}")
+                ]
+                try:
+                    if hasattr(self.tag_filter_dropdown, "page") and self.tag_filter_dropdown.page:
+                        self.tag_filter_dropdown.update()
+                except Exception:
+                    pass
         try:
             if self.page:
                 self.update()

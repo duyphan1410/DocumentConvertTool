@@ -28,12 +28,12 @@ class LayoutController:
 
         def _sync_geometry():
             try:
-                if "maximize" in evt_name and "un" not in evt_name:
-                    self.state.window_maximized = True
-                elif "unmaximize" in evt_name or "restore" in evt_name:
+                if "unmaximize" in evt_name or "restore" in evt_name:
                     self.state.window_maximized = False
-                elif hasattr(self.page.window, "maximized") and self.page.window.maximized is not None:
-                    self.state.window_maximized = bool(self.page.window.maximized)
+                elif "maximize" in evt_name:
+                    self.state.window_maximized = True
+                elif hasattr(self.page.window, "maximized") and self.page.window.maximized is True:
+                    self.state.window_maximized = True
 
                 if not self.state.window_maximized:
                     if self.page.window.width and self.page.window.width >= 900:
@@ -119,21 +119,29 @@ class LayoutController:
 
         # Restore sidebar visibility & width
         explorer_view = self.app_controls.get("explorer_view")
+        backlink_view = self.app_controls.get("backlink_view")
         sidebar_splitter = self.app_controls.get("sidebar_splitter")
         activity_bar = self.app_controls.get("activity_bar")
         is_sidebar_open = getattr(self.state, "show_sidebar", True)
+        active_tab = getattr(self.state, "active_activity_tab", "explorer")
+        sw = getattr(self.state, "sidebar_width", 240)
         if explorer_view:
-            explorer_view.visible = is_sidebar_open
-            sw = getattr(self.state, "sidebar_width", 240)
+            explorer_view.visible = is_sidebar_open and (active_tab == "explorer")
             if hasattr(explorer_view, "update_responsive_width"):
                 explorer_view.update_responsive_width(sw)
             else:
                 explorer_view.width = sw
+        if backlink_view:
+            backlink_view.visible = is_sidebar_open and (active_tab == "backlinks")
+            if hasattr(backlink_view, "update_responsive_width"):
+                backlink_view.update_responsive_width(sw)
+            else:
+                backlink_view.width = sw
         if sidebar_splitter:
             sidebar_splitter.visible = is_sidebar_open
         if activity_bar:
             activity_bar.set_active_tab(
-                getattr(self.state, "active_activity_tab", "explorer"),
+                active_tab,
                 is_open=is_sidebar_open,
             )
 
@@ -150,6 +158,7 @@ class LayoutController:
         editor_workspace = self.app_controls.get("editor_workspace")
         activity_bar = self.app_controls.get("activity_bar")
         explorer_view = self.app_controls.get("explorer_view")
+        backlink_view = self.app_controls.get("backlink_view")
         sidebar_splitter = self.app_controls.get("sidebar_splitter")
         editor_view = self.app_controls.get("editor_view")
         editor_splitter = self.app_controls.get("editor_splitter")
@@ -167,14 +176,14 @@ class LayoutController:
             main_editor_area = editor_ctrl
 
         controls_to_add = (
-            [activity_bar, explorer_view, sidebar_splitter, main_editor_area]
+            [activity_bar, explorer_view, backlink_view, sidebar_splitter, main_editor_area]
             if is_left
-            else [main_editor_area, sidebar_splitter, explorer_view, activity_bar]
+            else [main_editor_area, sidebar_splitter, explorer_view, backlink_view, activity_bar]
         )
 
         editor_workspace.controls = [c for c in controls_to_add if c is not None]
         try:
-            if editor_workspace.page:
+            if editor_workspace:
                 editor_workspace.update()
         except Exception:
             pass
@@ -253,8 +262,9 @@ class LayoutController:
             pass
 
     def toggle_sidebar(self, e=None, tab_name: str = "explorer"):
-        """Toggle sidebar visibility or switch active tab on ActivityBar."""
+        """Toggle sidebar visibility or switch active tab on ActivityBar (Explorer vs Backlinks)."""
         explorer_view = self.app_controls.get("explorer_view")
+        backlink_view = self.app_controls.get("backlink_view")
         sidebar_splitter = self.app_controls.get("sidebar_splitter")
         activity_bar = self.app_controls.get("activity_bar")
 
@@ -270,14 +280,37 @@ class LayoutController:
             self.state.active_activity_tab = tab_name
 
         new_open = self.state.show_sidebar
+        active_tab = getattr(self.state, "active_activity_tab", "explorer")
+
+        print(f"[DEBUG][ACTIVITY_BAR] toggle_sidebar(tab_name='{tab_name}'): is_open={new_open}, active_tab='{active_tab}', explorer_vis={new_open and (active_tab == 'explorer')}, backlink_vis={new_open and (active_tab == 'backlinks')}")
+
         if explorer_view:
-            explorer_view.visible = new_open
+            explorer_view.visible = new_open and (active_tab == "explorer")
+        if backlink_view:
+            backlink_view.visible = new_open and (active_tab == "backlinks")
+            if backlink_view.visible:
+                backlink_view.width = getattr(self.state, "sidebar_width", 240)
+                # Refresh active document in backlink view
+                active_path = getattr(self.state, "in_path", "")
+                active_title = ""
+                if active_path:
+                    active_title = os.path.splitext(os.path.basename(active_path))[0]
+                backlink_view.set_active_document(active_path, active_title)
+
         if sidebar_splitter:
             sidebar_splitter.visible = new_open
         if activity_bar:
             activity_bar.set_active_tab(self.state.active_activity_tab, is_open=new_open)
 
         self._safe_save_settings()
+
+        editor_workspace = self.app_controls.get("editor_workspace")
+        if editor_workspace:
+            try:
+                editor_workspace.update()
+            except Exception:
+                pass
+
         try:
             if self.page:
                 self.page.update()
@@ -288,13 +321,15 @@ class LayoutController:
         """Handles smooth 60fps drag resizing of the sidebar."""
         self.state.is_ui_resizing = True
         explorer_view = self.app_controls.get("explorer_view")
-        if not explorer_view:
+        backlink_view = self.app_controls.get("backlink_view")
+        active_panel = explorer_view if getattr(self.state, "active_activity_tab", "explorer") == "explorer" else (backlink_view or explorer_view)
+        if not active_panel:
             return
 
         is_left = getattr(self.state, "sidebar_position", "left") == "left"
         actual_delta = delta_x if is_left else -delta_x
 
-        cur_width = explorer_view.width or getattr(self.state, "sidebar_width", 240)
+        cur_width = active_panel.width or getattr(self.state, "sidebar_width", 240)
         target_width = cur_width + actual_delta
 
         # Snap-to-collapse threshold
@@ -309,15 +344,24 @@ class LayoutController:
         max_allowed = min(500, int(page_w * 0.45))
         clamped_width = max(150, min(int(round(target_width)), max_allowed))
 
-        if hasattr(explorer_view, "update_responsive_width"):
-            explorer_view.update_responsive_width(clamped_width)
-        else:
-            explorer_view.width = clamped_width
+        if explorer_view:
+            if hasattr(explorer_view, "update_responsive_width"):
+                explorer_view.update_responsive_width(clamped_width)
+            else:
+                explorer_view.width = clamped_width
+        if backlink_view:
+            if hasattr(backlink_view, "update_responsive_width"):
+                backlink_view.update_responsive_width(clamped_width)
+            else:
+                backlink_view.width = clamped_width
+
         self.state.sidebar_width = clamped_width
 
         try:
-            if explorer_view.page:
-                explorer_view.update()
+            if active_panel.page:
+                active_panel.update()
+        except Exception:
+            pass
         except Exception:
             pass
 
@@ -582,8 +626,17 @@ class LayoutController:
             else:
                 footer_bar.set_status_key("footer.status_ready")
 
+        # 12. Sync Backlink View Active Document
+        backlink_view = self.app_controls.get("backlink_view")
+        if backlink_view and hasattr(backlink_view, "set_active_document"):
+            active_title = ""
+            if incoming_tab.in_path:
+                active_title = os.path.splitext(os.path.basename(incoming_tab.in_path))[0]
+            backlink_view.set_active_document(incoming_tab.in_path, active_title or incoming_tab.title)
+
         try:
-            self.page.update()
+            if self.page:
+                self.page.update()
         except Exception:
             pass
 

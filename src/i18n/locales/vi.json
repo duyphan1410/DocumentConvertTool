@@ -658,5 +658,22 @@
   "transcribe.opt_whisper_base": "Whisper Base (~145 MB) — Siêu nhanh (Tiếng Anh/Ghi âm rõ)",
   "transcribe.opt_whisper_small": "Whisper Small (~480 MB) — ⭐ Khuyên dùng CPU (Cân bằng & Chuẩn)",
   "transcribe.opt_whisper_medium": "Whisper Medium (~1500 MB) — 🎯 Chính xác cao (Hội thảo/Ồn - Chậm trên CPU)",
-  "transcribe.opt_whisper_large_v3": "Whisper Large v3 (~3100 MB) — 🏆 Đỉnh cao AI (Khuyên dùng khi có GPU)"
+  "transcribe.opt_whisper_large_v3": "Whisper Large v3 (~3100 MB) — 🏆 Đỉnh cao AI (Khuyên dùng khi có GPU)",
+  "autocomplete.wikilinks_title": "Gợi ý liên kết [[...]]",
+  "autocomplete.tags_title": "Gợi ý thẻ #...",
+  "autocomplete.no_matches": "Không có kết quả phù hợp",
+  "backlinks.title": "Đồ thị Liên kết & Backlinks",
+  "backlinks.refresh": "Làm mới danh sách",
+  "backlinks.filter_hint": "Lọc liên kết / từ khóa...",
+  "backlinks.no_active_doc": "Chưa chọn tài liệu",
+  "backlinks.no_active_doc_sub": "Mở một tài liệu để xem các ghi chú trích dẫn và liên kết liên quan",
+  "backlinks.active_note": "Ghi chú hiện hành",
+  "backlinks.linked_refs": "Tài liệu trích dẫn (Linked)",
+  "backlinks.unlinked_mentions": "Đề cập chưa gắn link (Unlinked)",
+  "backlinks.empty_linked": "Chưa có tài liệu nào trích dẫn ghi chú này",
+  "backlinks.empty_unlinked": "Không tìm thấy đề cập văn bản chưa gắn link",
+  "backlinks.btn_link": "Gắn link",
+  "backlinks.btn_link_tooltip": "Tự động bao bọc cụm từ này trong [[...]] trong tài liệu gốc",
+  "explorer.filter_by_tag": "Lọc theo Thẻ:",
+  "explorer.all_tags": "Tất cả các thẻ"
 }

@@ -463,6 +463,76 @@ def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
     return "".join(result)
 
 
+def process_markdown_tags(content: str) -> str:
+    """
+    Transforms inline #tags into clickable links [🏷️ #tag](tag://<tag_name>)
+    while carefully excluding code blocks, inline code, markdown headings (# Heading),
+    and URLs/anchors (#section in http://... or [title](url#section)).
+    """
+    if not content or "#" not in content:
+        return content
+
+    import urllib.parse
+
+    # 1. Identify excluded ranges (code blocks, inline code, headings, links/images)
+    excluded_ranges: list[tuple[int, int]] = []
+
+    # Fenced code blocks
+    for m in re.finditer(r'(?m)^[ \t]*```[^\r\n]*\r?\n[\s\S]*?(?:^[ \t]*```|\Z)', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # Inline code
+    for m in re.finditer(r'`+[^`\r\n]+`+', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # Markdown Headings (# Heading, ## Heading, etc.)
+    for m in re.finditer(r'(?m)^[ \t]*#{1,6}\s+[^\r\n]+', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # Standard Markdown Links & Images [text](url) or ![alt](url)
+    for m in re.finditer(r'!*\[[^\]]*\]\([^\)]+\)', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # Wikilinks [[Target]] or [Display](doc://...)
+    for m in re.finditer(r'\[\[[^\]]+\]\]', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # HTML tags / comments <a href="...">, <!-- ... -->
+    for m in re.finditer(r'<[^>]+>', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    # Raw URLs (http://...#anchor)
+    for m in re.finditer(r'https?://[^\s]+', content):
+        excluded_ranges.append((m.start(), m.end()))
+
+    def _is_excluded(start: int, end: int) -> bool:
+        for ex_s, ex_e in excluded_ranges:
+            if not (end <= ex_s or start >= ex_e):
+                return True
+        return False
+
+    # Tag regex: #word where preceding char is start of string or whitespace / punctuation
+    pattern = re.compile(r'(?:^|[\s\(\[\{])(#([a-zA-Z0-9_\-\/]+))(?=[\s\)\.\,\;\:\!\?\]\}]|$)')
+    matches = list(pattern.finditer(content))
+    if not matches:
+        return content
+
+    result = list(content)
+    for m in reversed(matches):
+        start_pos = m.start(1)
+        end_pos = m.end(1)
+        if _is_excluded(start_pos, end_pos):
+            continue
+        tag_name = m.group(2).strip()
+        if not tag_name or tag_name.isdigit():  # Avoid #123 (e.g. issue numbers)
+            continue
+        encoded_tag = urllib.parse.quote(tag_name)
+        replacement = f"[🏷️ #{tag_name}](tag://{encoded_tag})"
+        result[start_pos:end_pos] = list(replacement)
+
+    return "".join(result)
+
+
 def process_markdown_alerts(content: str) -> str:
     """
     Transforms GitHub-style Markdown callout alerts:
@@ -497,7 +567,7 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     """
     Parses Markdown content, intercepts Mermaid diagram blocks, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
-    Also links interactive YouTube timestamps, converts [[wikilinks]], and converts custom-sized <img> tags.
+    Also links interactive YouTube timestamps, converts [[wikilinks]], tags #tag, and converts custom-sized <img> tags.
     """
     if not content:
         return ""
@@ -506,6 +576,7 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     content = process_markdown_alerts(content)
     content = process_markdown_timestamps(content)
     content = process_markdown_wikilinks(content, base_dir=base_dir)
+    content = process_markdown_tags(content)
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     t0 = time.time()
     asset_mgr = MediaAssetManager()
@@ -655,6 +726,7 @@ class MarkdownPreview(ft.Container):
         on_open_file: Optional[Callable[[str], None]] = None,
         on_open_file_by_id: Optional[Callable[[str], None]] = None,
         on_create_document_from_link: Optional[Callable[[str], None]] = None,
+        on_tag_clicked: Optional[Callable[[str], None]] = None,
         get_workspace_path: Optional[Callable[[], str]] = None,
         on_image_link_clicked: Optional[Callable[[str], None]] = None,
         on_insert_sample_table: Optional[Callable[[], None]] = None,
@@ -664,6 +736,7 @@ class MarkdownPreview(ft.Container):
         self.on_open_file = on_open_file
         self.on_open_file_by_id = on_open_file_by_id
         self.on_create_document_from_link = on_create_document_from_link
+        self.on_tag_clicked = on_tag_clicked
         self._get_workspace_path = get_workspace_path
         self.on_image_link_clicked = on_image_link_clicked
         self.on_insert_sample_table = on_insert_sample_table
@@ -803,6 +876,17 @@ class MarkdownPreview(ft.Container):
                     self.on_create_document_from_link(raw_target)
                 except Exception as ex:
                     print(f"[PreviewView] Failed to handle doc-create://{raw_target}: {ex}")
+            return
+
+        # PKB Tag Navigation Links: tag://<tag_name>
+        if url.startswith("tag://"):
+            import urllib.parse
+            raw_tag = urllib.parse.unquote(url[6:]).strip().lstrip("#")
+            if raw_tag and hasattr(self, "on_tag_clicked") and self.on_tag_clicked:
+                try:
+                    self.on_tag_clicked(raw_tag)
+                except Exception as ex:
+                    print(f"[PreviewView] Failed to handle tag://{raw_tag}: {ex}")
             return
 
         from src.services.youtube_service import extract_video_id

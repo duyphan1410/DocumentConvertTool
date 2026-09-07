@@ -613,3 +613,150 @@ class MetadataIndex:
 
         return stats
 
+    def get_wikilink_suggestions(
+        self,
+        query: str = "",
+        workspace_folder: Optional[str] = None,
+        limit: int = 15,
+    ) -> list[dict]:
+        """
+        Returns ranked document suggestions for wikilink autocomplete matching `query`.
+        Uses normalized Vietnamese fuzzy matching and multi-tier relevance ranking:
+        1. Exact match on title (score 100)
+        2. Prefix match on title (score 80)
+        3. Word prefix match on title (score 60)
+        4. Substring containment on normalized title / path (score 40)
+        """
+        from src.services.fuzzy_matcher import normalize_vietnamese
+
+        clean_q = query.strip()
+        norm_q = normalize_vietnamese(clean_q)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if workspace_folder:
+                norm_ws = os.path.normpath(os.path.abspath(workspace_folder))
+                cursor.execute("SELECT id, path, title FROM documents WHERE path LIKE ? ORDER BY updated_at DESC", (f"{norm_ws}%",))
+            else:
+                cursor.execute("SELECT id, path, title FROM documents ORDER BY updated_at DESC")
+            rows = cursor.fetchall()
+
+        # Fallback: if database has 0 documents for this folder, scan folder on disk immediately
+        if not rows and workspace_folder and os.path.isdir(workspace_folder):
+            norm_ws = os.path.normpath(os.path.abspath(workspace_folder))
+            disk_rows = []
+            for root, dirs, files in os.walk(norm_ws):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "build", "__pycache__", "venv", ".venv")]
+                for f in files:
+                    if f.lower().endswith(".md"):
+                        full_p = os.path.normpath(os.path.abspath(os.path.join(root, f)))
+                        title = os.path.splitext(f)[0]
+                        disk_rows.append({"id": full_p, "path": full_p, "title": title})
+                if len(disk_rows) >= 30:
+                    break
+            rows = disk_rows
+
+        candidates = []
+        for r in rows:
+            doc_id = r["id"]
+            doc_path = r["path"]
+            title = r["title"]
+            rel_path = os.path.basename(doc_path)
+            if workspace_folder:
+                try:
+                    rel_path = os.path.relpath(doc_path, workspace_folder)
+                except ValueError:
+                    pass
+
+            if not clean_q:
+                # Return most recently updated docs if query is empty
+                candidates.append({
+                    "id": doc_id,
+                    "title": title,
+                    "path": doc_path,
+                    "relative_path": rel_path,
+                    "score": 50,
+                })
+                continue
+
+            norm_title = normalize_vietnamese(title)
+            score = 0
+
+            if norm_title == norm_q:
+                score = 100
+            elif norm_title.startswith(norm_q):
+                score = 80
+            elif any(w.startswith(norm_q) for w in norm_title.split()):
+                score = 60
+            elif norm_q in norm_title or norm_q in normalize_vietnamese(rel_path):
+                score = 40
+
+            if score > 0:
+                candidates.append({
+                    "id": doc_id,
+                    "title": title,
+                    "path": doc_path,
+                    "relative_path": rel_path,
+                    "score": score,
+                })
+
+        candidates.sort(key=lambda x: (-x["score"], len(x["title"]), x["title"].lower()))
+        return candidates[:limit]
+
+    def get_tag_suggestions(
+        self,
+        query: str = "",
+        limit: int = 15,
+    ) -> list[dict]:
+        """
+        Returns ranked tag suggestions for tag autocomplete matching `query`.
+        """
+        from src.services.fuzzy_matcher import normalize_vietnamese
+
+        clean_q = query.strip().lstrip("#")
+        norm_q = normalize_vietnamese(clean_q)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT t.id, t.name, t.normalized_name, COUNT(dt.document_id) as doc_count
+                FROM tags t
+                LEFT JOIN document_tags dt ON t.id = dt.tag_id
+                GROUP BY t.id, t.name, t.normalized_name
+                ORDER BY doc_count DESC, t.name ASC
+            """)
+            rows = cursor.fetchall()
+
+        candidates = []
+        for r in rows:
+            name = r["name"]
+            norm_name = r["normalized_name"] or normalize_vietnamese(name)
+            doc_count = r["doc_count"]
+
+            if not clean_q:
+                candidates.append({
+                    "name": name,
+                    "doc_count": doc_count,
+                    "score": 50,
+                })
+                continue
+
+            score = 0
+            if norm_name == norm_q:
+                score = 100
+            elif norm_name.startswith(norm_q):
+                score = 80
+            elif norm_q in norm_name:
+                score = 40
+
+            if score > 0:
+                candidates.append({
+                    "name": name,
+                    "doc_count": doc_count,
+                    "score": score,
+                })
+
+        candidates.sort(key=lambda x: (-x["score"], -x["doc_count"], x["name"].lower()))
+        return candidates[:limit]
+
+

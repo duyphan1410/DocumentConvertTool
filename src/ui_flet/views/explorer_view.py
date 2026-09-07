@@ -1081,6 +1081,30 @@ class ExplorerView(ft.Container):
         except Exception as ex:
             print(f"[ExplorerView] Failed to refresh tags: {ex}")
 
+    def filter_by_tag(self, tag: str):
+        """Programmatically filters Explorer file tree by tag name and updates dropdown value."""
+        clean_tag = tag.strip().lstrip("#")
+        self.refresh_tags()
+        opt_keys = [opt.key for opt in self.tag_filter_dropdown.options]
+        if clean_tag and clean_tag not in opt_keys:
+            self.tag_filter_dropdown.options.append(ft.dropdown.Option(key=clean_tag, text=f"🏷️ #{clean_tag}"))
+        self.tag_filter_dropdown.value = clean_tag
+        try:
+            if hasattr(self.tag_filter_dropdown, "page") and self.tag_filter_dropdown.page:
+                self.tag_filter_dropdown.update()
+        except Exception:
+            pass
+
+        if not clean_tag:
+            self.refresh_tree()
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._async_filter_by_tag(clean_tag))
+        except RuntimeError:
+            pass
+
     def _on_tag_filter_changed(self, e):
         """Dispatched when user selects a tag in tag_filter_dropdown."""
         tag = (self.tag_filter_dropdown.value or "").strip()

@@ -671,17 +671,19 @@ class WelcomeView(ft.Container):
             padding=ft.Padding(left=2, top=4, right=2, bottom=4),
         )
 
+        self.empty_state_title = ft.Text(t("welcome.recent_empty"), size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.OUTLINE)
+        self.empty_state_desc = ft.Text(
+            t("welcome.recent_empty_desc"),
+            size=11,
+            color=ft.Colors.OUTLINE,
+            text_align=ft.TextAlign.CENTER,
+        )
         self.empty_state_container = ft.Container(
             content=ft.Column(
                 [
                     ft.Icon(ft.Icons.HISTORY_ROUNDED, size=40, color=ft.Colors.OUTLINE_VARIANT),
-                    ft.Text(t("welcome.recent_empty"), size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.OUTLINE),
-                    ft.Text(
-                        t("welcome.recent_empty_desc"),
-                        size=11,
-                        color=ft.Colors.OUTLINE,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
+                    self.empty_state_title,
+                    self.empty_state_desc,
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -890,21 +892,47 @@ class WelcomeView(ft.Container):
         """Refresh all text to current locale."""
         self.title_text.value = t("welcome.title")
         self.subtitle_text.value = t("welcome.subtitle")
-        self.btn_return_editor.text = t("welcome.btn_return_editor")
+        self.btn_return_editor.content = t("welcome.btn_return_editor")
         self.btn_help.content = t("welcome.btn_help")
         self.btn_model_hub.content = t("welcome.btn_model_hub")
         self.btn_new_window.content = t("welcome.btn_new_window")
         self.recent_title_text.value = t("welcome.recent_title")
         self.btn_clear_history.content = t("welcome.recent_clear_all")
         self.search_field.hint_text = t("welcome.recent_search_placeholder")
-        self.btn_filter_all.text = t("welcome.recent_filter_all")
-        self.btn_filter_files.text = t("welcome.recent_filter_files")
-        self.btn_filter_folders.text = t("welcome.recent_filter_folders")
+        self.btn_filter_all.content = t("welcome.recent_filter_all")
+        self.btn_filter_files.content = t("welcome.recent_filter_files")
+        self.btn_filter_folders.content = t("welcome.recent_filter_folders")
+        self._update_filter_buttons()
+
+        if hasattr(self, "empty_state_title") and self.empty_state_title:
+            self.empty_state_title.value = t("welcome.recent_empty")
+        if hasattr(self, "empty_state_desc") and self.empty_state_desc:
+            self.empty_state_desc.value = t("welcome.recent_empty_desc")
 
         for card in self.cards_list:
             card.update_locale()
 
         self.refresh_history(silent=True)
+        for ctrl in [
+            self.title_text,
+            self.subtitle_text,
+            self.btn_return_editor,
+            self.btn_help,
+            self.btn_model_hub,
+            self.btn_new_window,
+            self.recent_title_text,
+            self.btn_clear_history,
+            self.search_field,
+            self.btn_filter_all,
+            self.btn_filter_files,
+            self.btn_filter_folders,
+        ]:
+            try:
+                if hasattr(ctrl, "page") and ctrl.page:
+                    ctrl.update()
+            except Exception:
+                pass
+
         try:
             if self.page:
                 self.update()

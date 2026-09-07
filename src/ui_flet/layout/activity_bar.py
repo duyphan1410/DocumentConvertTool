@@ -155,6 +155,13 @@ class ActivityBar(ft.Container):
             on_click=self._handle_item_click,
             is_active=(active_tab == "search"),
         )
+        self.item_backlinks = ActivityBarItem(
+            name="backlinks",
+            icon=ft.Icons.SUBDIRECTORY_ARROW_RIGHT_ROUNDED,
+            tooltip=t("activity_bar.backlinks"),
+            on_click=self._handle_item_click,
+            is_active=(active_tab == "backlinks"),
+        )
         self.item_youtube = ActivityBarItem(
             name="youtube",
             icon=ft.Icons.SMART_DISPLAY_OUTLINED,
@@ -164,17 +171,17 @@ class ActivityBar(ft.Container):
         )
 
         self._items = {
-            "home": self.item_home,
             "explorer": self.item_explorer,
             "search": self.item_search,
+            "backlinks": self.item_backlinks,
             "youtube": self.item_youtube,
         }
 
         self.top_column = ft.Column(
             [
-                self.item_home,
                 self.item_explorer,
                 self.item_search,
+                self.item_backlinks,
                 self.item_youtube,
             ],
             spacing=4,
@@ -232,7 +239,9 @@ class ActivityBar(ft.Container):
 
     def update_locale(self):
         """Refresh tooltips when language changes."""
-        self.item_home.update_tooltip(t("welcome.btn_home"))
+        if hasattr(self, "item_home") and self.item_home:
+            self.item_home.update_tooltip(t("welcome.btn_home"))
         self.item_explorer.update_tooltip(t("activity_bar.explorer"))
         self.item_search.update_tooltip(t("activity_bar.search"))
+        self.item_backlinks.update_tooltip(t("activity_bar.backlinks"))
         self.item_youtube.update_tooltip(t("activity_bar.youtube"))

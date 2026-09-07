@@ -216,6 +216,8 @@ class SettingsView(ft.Container):
             width=260,
             dense=True,
         ))
+        self._language_dropdown.on_change = self._on_language_change
+        self._language_dropdown.on_select = self._on_language_change
         # ── Sidebar Position Radio ───────────────────────────────────────────
         sidebar_pos_val = getattr(self._state, "sidebar_position", "left") if self._state else "left"
         self._sidebar_pos_radio = ft.RadioGroup(

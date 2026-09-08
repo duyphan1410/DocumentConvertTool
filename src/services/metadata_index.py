@@ -372,20 +372,36 @@ class MetadataIndex:
     def re_resolve_broken_wikilinks(self, new_doc_id: str, new_doc_title: str) -> int:
         """
         Re-resolves broken wikilinks across all notes when a new file is created.
-        Matches exact target_title_raw (TODO: Huy will add Vietnamese fuzzy match normalization).
+        Matches exact target_title_raw as well as Vietnamese normalized fuzzy match.
         """
+        from src.services.fuzzy_matcher import normalize_vietnamese
+
         clean_title = new_doc_title.strip()
+        norm_title = normalize_vietnamese(clean_title)
+        affected = 0
+
         with self._write_lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                # Exact title match
+                # 1. Exact title match (fast SQL)
                 cursor.execute("""
                     UPDATE wikilinks 
                     SET target_id = ?, resolved = 1 
                     WHERE (LOWER(target_title_raw) = LOWER(?) OR target_title_raw = ?) 
                       AND resolved = 0
                 """, (new_doc_id, clean_title, clean_title))
-                affected = cursor.rowcount
+                affected += cursor.rowcount
+
+                # 2. Vietnamese Normalized Fuzzy Match for remaining unresolved links
+                cursor.execute("SELECT id, target_title_raw FROM wikilinks WHERE resolved = 0")
+                unresolved = cursor.fetchall()
+                for row in unresolved:
+                    wl_id = row["id"]
+                    raw_target = row["target_title_raw"]
+                    if normalize_vietnamese(raw_target) == norm_title:
+                        cursor.execute("UPDATE wikilinks SET target_id = ?, resolved = 1 WHERE id = ?", (new_doc_id, wl_id))
+                        affected += 1
+
                 conn.commit()
                 return affected
 
@@ -612,13 +628,18 @@ class MetadataIndex:
                                 """, (doc_id, target_id, wl.raw_target, wl.display_text, wl.snippet, resolved))
 
                             # Re-resolve broken links pointing to this note
-                            # TODO: Huy will integrate fuzzy_matcher.normalize_vietnamese and calculate_similarity here
+                            norm_doc_title = normalize_vietnamese(title)
                             cursor.execute("""
                                 UPDATE wikilinks 
                                 SET target_id = ?, resolved = 1 
                                 WHERE (LOWER(target_title_raw) = LOWER(?) OR target_title_raw = ?) 
                                   AND resolved = 0
                             """, (doc_id, title.strip(), title.strip()))
+
+                            cursor.execute("SELECT id, target_title_raw FROM wikilinks WHERE resolved = 0")
+                            for u_row in cursor.fetchall():
+                                if normalize_vietnamese(u_row["target_title_raw"]) == norm_doc_title:
+                                    cursor.execute("UPDATE wikilinks SET target_id = ?, resolved = 1 WHERE id = ?", (doc_id, u_row["id"]))
 
                         except Exception as ex:
                             print(f"[MetadataIndex] Error syncing file {file_path}: {ex}")
@@ -638,11 +659,13 @@ class MetadataIndex:
         Returns ranked document suggestions for wikilink autocomplete matching `query`.
         Uses normalized Vietnamese fuzzy matching and multi-tier relevance ranking:
         1. Exact match on title (score 100)
-        2. Prefix match on title (score 80)
-        3. Word prefix match on title (score 60)
-        4. Substring containment on normalized title / path (score 40)
+        2. Exact normalized match on title (score 95)
+        3. Prefix match on title (score 85)
+        4. Word token prefix match on title (score 70)
+        5. Substring containment (score 50)
+        6. Fuzzy Token/Sequence similarity (score 35-65)
         """
-        from src.services.fuzzy_matcher import normalize_vietnamese
+        from src.services.fuzzy_matcher import normalize_vietnamese, calculate_similarity
 
         clean_q = query.strip()
         norm_q = normalize_vietnamese(clean_q)
@@ -697,14 +720,20 @@ class MetadataIndex:
             norm_title = normalize_vietnamese(title)
             score = 0
 
-            if norm_title == norm_q:
+            if title == clean_q:
                 score = 100
+            elif norm_title == norm_q:
+                score = 95
             elif norm_title.startswith(norm_q):
-                score = 80
+                score = 85
             elif any(w.startswith(norm_q) for w in norm_title.split()):
-                score = 60
+                score = 70
             elif norm_q in norm_title or norm_q in normalize_vietnamese(rel_path):
-                score = 40
+                score = 50
+            else:
+                sim = calculate_similarity(clean_q, title)
+                if sim >= 0.45:
+                    score = int(sim * 65)
 
             if score > 0:
                 candidates.append({

@@ -166,15 +166,12 @@ def extract_tags(markdown_text: str) -> list[str]:
 def find_unlinked_mentions(markdown_text: str, target_title: str) -> list[UnlinkedMentionToken]:
     """
     Finds occurrences of `target_title` in markdown text that are NOT already enclosed in [[...]] wikilinks.
-    
-    TODO (Huy): Support fuzzy matching / Vietnamese diacritic variance.
+    Supports Vietnamese diacritic invariant and fuzzy matching.
     """
     if not markdown_text or not target_title or len(target_title) < 2:
         return []
-    
-    # Strip out existing wikilinks and code blocks from search area
-    pattern = re.compile(re.escape(target_title), re.IGNORECASE)
-    mentions: list[UnlinkedMentionToken] = []
+
+    from src.services.fuzzy_matcher import find_fuzzy_substring_occurrences
 
     # Identify ranges to exclude (code blocks, existing wikilinks, existing markdown links, HTML tags)
     excluded_ranges: list[tuple[int, int]] = []
@@ -209,13 +206,16 @@ def find_unlinked_mentions(markdown_text: str, target_title: str) -> list[Unlink
                 break
         return lines[line_idx].strip() if line_idx < len(lines) else ""
 
-    for m in pattern.finditer(markdown_text):
-        if not _is_excluded(m.start(), m.end()):
-            snip = _get_snippet(m.start())
+    occurrences = find_fuzzy_substring_occurrences(markdown_text, target_title, min_similarity=0.88)
+    mentions: list[UnlinkedMentionToken] = []
+
+    for start_p, end_p, matched_str, _ in occurrences:
+        if not _is_excluded(start_p, end_p):
+            snip = _get_snippet(start_p)
             mentions.append(UnlinkedMentionToken(
-                matched_text=m.group(0),
+                matched_text=matched_str,
                 snippet=snip,
-                start_pos=m.start(),
-                end_pos=m.end(),
+                start_pos=start_p,
+                end_pos=end_p,
             ))
     return mentions

@@ -168,9 +168,10 @@ class OCRService:
 
     @classmethod
     def configure_environment(cls) -> None:
-        """Configures pytesseract with detected binary and tessdata paths."""
+        """Configures pytesseract with detected binary, tessdata paths, and silent headless execution."""
         try:
             import pytesseract
+            import subprocess
         except ImportError:
             raise RuntimeError("Thư viện 'pytesseract' chưa được cài đặt trong môi trường Python.")
 
@@ -181,6 +182,23 @@ class OCRService:
         tessdata_dir = cls.get_tessdata_dir()
         if tessdata_dir and os.path.isdir(tessdata_dir):
             os.environ["TESSDATA_PREFIX"] = tessdata_dir
+
+        # Windows headless execution: prevent black console window flash on each OCR call
+        if sys.platform == "win32":
+            orig_subprocess_args = getattr(pytesseract.pytesseract, "subprocess_args", None)
+            if orig_subprocess_args and not getattr(orig_subprocess_args, "_silent_patched", False):
+                def _silent_subprocess_args(include_stdout=True):
+                    kwargs = orig_subprocess_args(include_stdout)
+                    kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                    if hasattr(subprocess, "STARTUPINFO"):
+                        if kwargs.get("startupinfo") is None:
+                            kwargs["startupinfo"] = subprocess.STARTUPINFO()
+                        kwargs["startupinfo"].dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+                        kwargs["startupinfo"].wShowWindow = 0  # SW_HIDE
+                    return kwargs
+
+                _silent_subprocess_args._silent_patched = True
+                pytesseract.pytesseract.subprocess_args = _silent_subprocess_args
 
     @classmethod
     def ocr_image_to_data(

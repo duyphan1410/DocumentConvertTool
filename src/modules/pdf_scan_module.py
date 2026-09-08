@@ -14,6 +14,7 @@ from typing import List, Optional, Callable, Dict, Any
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 from src.core.errors import DocumentError, ErrorCode
+from src.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -320,10 +321,10 @@ class PDFScanModule(BaseDocumentModule):
         is_ready, err_msg = OCRService.check_ocr_readiness("vie")
         if not is_ready:
             raise DocumentError(
-                code=ErrorCode.DEPENDENCY_MISSING,
-                title="Chưa sẵn sàng động cơ Tesseract OCR",
+                code=ErrorCode.MISSING_DEPENDENCY,
+                title=t("ocr.missing_tesseract_title"),
                 message=err_msg,
-                suggestion="Cài đặt Tesseract qua 'winget install UB-Mannheim.TesseractOCR' và đảm bảo có file vie.traineddata.",
+                suggestion=t("ocr.missing_tesseract_sug"),
             )
 
         # 2. Open PDF
@@ -331,10 +332,10 @@ class PDFScanModule(BaseDocumentModule):
             doc = fitz.open(file_path)
         except Exception as e:
             raise DocumentError(
-                code=ErrorCode.FILE_CORRUPTED,
-                title="Không thể mở tệp PDF",
-                message=f"Tệp PDF không thể đọc được bởi PyMuPDF: {str(e)}",
-                suggestion="Kiểm tra lại tệp PDF nguồn để đảm bảo tệp không bị lỗi hoặc có mật khẩu bảo vệ.",
+                code=ErrorCode.CORRUPTED_STRUCTURE,
+                title=t("ocr.cannot_open_pdf_title"),
+                message=t("ocr.cannot_open_pdf_msg", filename=os.path.basename(file_path), error=str(e)),
+                suggestion=t("ocr.cannot_open_pdf_sug"),
             )
 
         total_pages = len(doc)

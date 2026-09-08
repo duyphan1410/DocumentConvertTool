@@ -28,6 +28,22 @@ class TestDocumentTabState(unittest.TestCase):
         tab = DocumentTabState(in_path="/path/to/my_doc.md")
         self.assertEqual(tab.in_path, "/path/to/my_doc.md")
         self.assertEqual(tab.title, "my_doc.md")
+        self.assertEqual(tab.load_generation, 0)
+
+    def test_load_generation_isolation(self):
+        """Verifies load_generation is isolated per DocumentTabState instance and increments independently."""
+        tab1 = DocumentTabState()
+        tab2 = DocumentTabState()
+        self.assertEqual(tab1.load_generation, 0)
+        self.assertEqual(tab2.load_generation, 0)
+
+        tab1.load_generation += 1
+        self.assertEqual(tab1.load_generation, 1)
+        self.assertEqual(tab2.load_generation, 0)
+
+        tab2.load_generation += 5
+        self.assertEqual(tab1.load_generation, 1)
+        self.assertEqual(tab2.load_generation, 5)
 
 
 class TestAppStatePropertyDelegation(unittest.TestCase):

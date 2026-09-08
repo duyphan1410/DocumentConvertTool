@@ -76,6 +76,14 @@ Write-Host "[1/4] Target Version: v$AppVersion" -ForegroundColor Green
 $pythonExe = "python"
 Write-Host "[2/4] Using Python: $pythonExe" -ForegroundColor Green
 
+# Ensure Tesseract OCR Portable is present in assets/tesseract
+Write-Host "`n--- Checking Tesseract OCR Portable Assets ---" -ForegroundColor Yellow
+& $pythonExe "$RootDir\scripts\setup_tesseract.py"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Tesseract Portable setup & cryptographic audit failed! Aborting build to prevent supply chain tampering."
+    exit 1
+}
+
 
 # 3. Build PyInstaller --onedir Bundle
 if (-not $SkipPyInstaller) {

@@ -15,3 +15,4 @@ agent_instructions.md
 /.agents/*
 scratch/
 .vscode
+assets/tesseract/

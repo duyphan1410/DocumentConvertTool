@@ -33,6 +33,7 @@ class DocumentTabState:
     media_session_id: str = ""
     cursor_position: int = 0
     cached_preview_md: str = ""
+    load_generation: int = 0
     created_at: float = field(default_factory=time.time)
 
     def __post_init__(self):

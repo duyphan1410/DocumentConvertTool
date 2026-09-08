@@ -9,6 +9,7 @@ from typing import List
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
 from src.core.errors import DocumentError, ErrorCode
+from src.i18n import t
 
 
 class AudioModule(BaseDocumentModule):
@@ -33,19 +34,19 @@ class AudioModule(BaseDocumentModule):
         model_id = get_best_installed_model()
         if not model_id:
             raise DocumentError(
-                code=ErrorCode.DEPENDENCY_MISSING,
-                title="Chưa cài đặt mô hình Whisper AI",
-                message="Ứng dụng cần ít nhất một mô hình Whisper AI (offline) để nhận diện giọng nói từ tệp âm thanh/video.",
-                suggestion="Mở AI Model Hub trên thanh Ribbon hoặc màn hình Chào mừng để tải nhanh Whisper Base (~145MB) hoặc Whisper Tiny (~75MB).",
+                code=ErrorCode.MISSING_DEPENDENCY,
+                title=t("audio.missing_whisper_title"),
+                message=t("audio.missing_whisper_msg"),
+                suggestion=t("audio.missing_whisper_sug"),
             )
 
         success, content, err = transcribe_file(file_path, model_id=model_id)
         if not success or not content:
             raise DocumentError(
                 code=ErrorCode.CONVERSION_FAILED,
-                title="Nhận diện giọng nói thất bại",
-                message=f"Không thể phiên âm tệp {os.path.basename(file_path)}: {err or 'Không phát hiện giọng nói'}.",
-                suggestion="Kiểm tra lại tệp nguồn để đảm bảo có âm thanh rõ ràng và không bị hỏng.",
+                title=t("audio.transcription_failed_title"),
+                message=t("audio.transcription_failed_msg", filename=os.path.basename(file_path), error=err or t("audio.no_speech_detected")),
+                suggestion=t("audio.transcription_failed_sug"),
             )
 
         return content

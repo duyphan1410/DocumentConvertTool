@@ -6,6 +6,7 @@ and image-to-data / layout-preserving text extraction.
 import os
 import sys
 import shutil
+import string
 import logging
 from typing import Optional, List, Dict, Tuple, Any
 from PIL import Image
@@ -13,6 +14,19 @@ from PIL import Image
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
+
+
+_BUNDLED_TESSERACT_VERSION = "5.4.0"
+
+
+def _get_silent_startupinfo(subprocess_mod):
+    """Creates a Windows STARTUPINFO object configured for silent SW_HIDE execution."""
+    if hasattr(subprocess_mod, "STARTUPINFO"):
+        si = subprocess_mod.STARTUPINFO()
+        si.dwFlags |= getattr(subprocess_mod, "STARTF_USESHOWWINDOW", 1)
+        si.wShowWindow = 0  # SW_HIDE
+        return si
+    return None
 
 
 class OCRService:
@@ -183,22 +197,87 @@ class OCRService:
         if tessdata_dir and os.path.isdir(tessdata_dir):
             os.environ["TESSDATA_PREFIX"] = tessdata_dir
 
-        # Windows headless execution: prevent black console window flash on each OCR call
+        # Windows headless execution: comprehensively silence all pytesseract subprocess entrypoints
         if sys.platform == "win32":
+            # 1. Main OCR process execution (run_tesseract)
             orig_subprocess_args = getattr(pytesseract.pytesseract, "subprocess_args", None)
             if orig_subprocess_args and not getattr(orig_subprocess_args, "_silent_patched", False):
                 def _silent_subprocess_args(include_stdout=True):
                     kwargs = orig_subprocess_args(include_stdout)
                     kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-                    if hasattr(subprocess, "STARTUPINFO"):
-                        if kwargs.get("startupinfo") is None:
-                            kwargs["startupinfo"] = subprocess.STARTUPINFO()
-                        kwargs["startupinfo"].dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-                        kwargs["startupinfo"].wShowWindow = 0  # SW_HIDE
+                    if kwargs.get("startupinfo") is None:
+                        kwargs["startupinfo"] = _get_silent_startupinfo(subprocess)
                     return kwargs
 
                 _silent_subprocess_args._silent_patched = True
                 pytesseract.pytesseract.subprocess_args = _silent_subprocess_args
+
+            # 2. Version check subprocess (get_tesseract_version)
+            orig_get_version = getattr(pytesseract.pytesseract, "get_tesseract_version", None)
+            if orig_get_version and not getattr(orig_get_version, "_silent_patched", False):
+                _cached_version_obj = [None]
+
+                def _silent_get_tesseract_version(*args, **kwargs):
+                    if _cached_version_obj[0] is not None:
+                        return _cached_version_obj[0]
+                    try:
+                        output = subprocess.check_output(
+                            [pytesseract.pytesseract.tesseract_cmd, "--version"],
+                            stderr=subprocess.STDOUT,
+                            env=os.environ,
+                            stdin=subprocess.DEVNULL,
+                            startupinfo=_get_silent_startupinfo(subprocess),
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                        )
+                        raw_version = output.decode(getattr(pytesseract.pytesseract, "DEFAULT_ENCODING", "utf-8"))
+                        str_version, *_ = raw_version.lstrip(string.printable[10:]).partition(" ")
+                        str_version, *_ = str_version.partition("-")
+                        from packaging.version import parse
+                        v = parse(str_version)
+                        _cached_version_obj[0] = v
+                        return v
+                    except Exception as exc:
+                        logger.warning(f"[OCR] Could not detect tesseract version ({exc}). Using default: {_BUNDLED_TESSERACT_VERSION}")
+                        from packaging.version import parse
+                        v = parse(_BUNDLED_TESSERACT_VERSION)
+                        _cached_version_obj[0] = v
+                        return v
+
+                _silent_get_tesseract_version._silent_patched = True
+                pytesseract.pytesseract.get_tesseract_version = _silent_get_tesseract_version
+
+            # 3. Language list subprocess (get_languages)
+            orig_get_languages = getattr(pytesseract.pytesseract, "get_languages", None)
+            if orig_get_languages and not getattr(orig_get_languages, "_silent_patched", False):
+                def _silent_get_languages(config=""):
+                    cmd_args = [pytesseract.pytesseract.tesseract_cmd, "--list-langs"]
+                    if config:
+                        import shlex
+                        cmd_args += shlex.split(config)
+                    try:
+                        result = subprocess.run(
+                            cmd_args,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            startupinfo=_get_silent_startupinfo(subprocess),
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                        )
+                        languages = []
+                        if result.stdout:
+                            linesep = getattr(pytesseract.pytesseract, "linesep", "\n")
+                            lang_pattern = getattr(pytesseract.pytesseract, "LANG_PATTERN", None)
+                            encoding = getattr(pytesseract.pytesseract, "DEFAULT_ENCODING", "utf-8")
+                            for line in result.stdout.decode(encoding).split(linesep):
+                                lang = line.strip()
+                                if lang_pattern and lang_pattern.match(lang):
+                                    languages.append(lang)
+                        return languages
+                    except Exception as exc:
+                        logger.warning(f"[OCR] Could not query tesseract languages ({exc}). Falling back to defaults.")
+                        return ["eng", "vie", "osd"]
+
+                _silent_get_languages._silent_patched = True
+                pytesseract.pytesseract.get_languages = _silent_get_languages
 
     @classmethod
     def ocr_image_to_data(

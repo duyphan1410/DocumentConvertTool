@@ -7,8 +7,11 @@ import json
 import os
 import time
 import asyncio
+import logging
 from typing import Optional, List, Callable, Dict, Any
 import flet as ft
+
+logger = logging.getLogger(__name__)
 
 from src.i18n import t
 from src.core.errors import DocumentError
@@ -155,6 +158,10 @@ class FileController:
 
         self.state.active_tab_id = target_tab.tab_id
 
+        # Atomic generation token: increment on Main UI thread and capture into closure
+        target_tab.load_generation += 1
+        cur_gen = target_tab.load_generation
+
         if tab_bar and hasattr(tab_bar, "render_tabs"):
             tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
 
@@ -187,37 +194,57 @@ class FileController:
                 )
             ) else None
 
+            main_loop = asyncio.get_running_loop()
             last_ui_update = [0.0]
 
             def on_load_progress(cur: int, total: int, msg: str, partial_text: Optional[str] = None):
-                pct = int(cur / total * 100) if total > 0 else 0
-                label = "OCR Scan" if req_module == "PDF Scan" else "Đang đọc"
-                if self.footer_bar:
-                    self.footer_bar.set_status(f"{label} ({pct}%): {msg}", color=ft.Colors.AMBER_400)
+                # Generation guard: discard stale progress events from superseded tasks
+                if target_tab.load_generation != cur_gen:
+                    return
 
-                # Progressive streaming with UI throttling to avoid choking the event loop during dragging/resizing
-                now = time.time()
-                is_final = (cur >= total)
-                is_resizing = getattr(self.state, "is_ui_resizing", False)
-                should_update_heavy_ui = is_final or (not is_resizing and (now - last_ui_update[0] >= 1.5))
+                def _apply_ui_update():
+                    if target_tab.load_generation != cur_gen:
+                        return
 
-                if partial_text:
-                    target_tab.full_content = partial_text
-                    if self.state.active_tab_id == target_tab.tab_id and should_update_heavy_ui:
-                        last_ui_update[0] = now
-                        if self.editor_view:
-                            self.editor_view.set_text(partial_text)
-                        if self.preview:
-                            preview_text = partial_text
-                            if cur < total:
-                                preview_text += (
-                                    f"\n\n---\n\n"
-                                    f"> ⏳ *Đang nạp tiếp trang {cur + 1}/{total}... ({pct}%)*"
+                    pct = int(cur / total * 100) if total > 0 else 0
+                    label = "OCR Scan" if req_module == "PDF Scan" else "Đang đọc"
+                    if self.footer_bar and self.state.active_tab_id == target_tab.tab_id:
+                        self.footer_bar.set_status(f"{label} ({pct}%): {msg}", color=ft.Colors.AMBER_400)
+
+                    # Progressive streaming with UI throttling to avoid choking the event loop during dragging/resizing
+                    now = time.time()
+                    is_final = (cur >= total)
+                    is_resizing = getattr(self.state, "is_ui_resizing", False)
+                    should_update_heavy_ui = is_final or (not is_resizing and (now - last_ui_update[0] >= 1.0))
+
+                    if partial_text:
+                        target_tab.full_content = partial_text
+                        if self.state.active_tab_id == target_tab.tab_id and should_update_heavy_ui:
+                            last_ui_update[0] = now
+                            if self.editor_view:
+                                self.editor_view.set_text(partial_text)
+                            if self.preview:
+                                preview_text = partial_text
+                                if cur < total:
+                                    preview_text += (
+                                        f"\n\n---\n\n"
+                                        f"> ⏳ *Đang nạp tiếp trang {cur + 1}/{total}... ({pct}%)*"
+                                    )
+                                self.preview.set_content(
+                                    preview_text,
+                                    session_id=target_tab.media_session_id,
                                 )
-                            self.preview.set_content(
-                                preview_text,
-                                session_id=target_tab.media_session_id,
-                            )
+
+                    try:
+                        if self.page and self.state.active_tab_id == target_tab.tab_id:
+                            self.page.update()
+                    except Exception as ex_ui:
+                        logger.debug(f"[FileController] Threadsafe UI update failed: {ex_ui}")
+
+                try:
+                    main_loop.call_soon_threadsafe(_apply_ui_update)
+                except Exception as ex_dispatch:
+                    logger.debug(f"[FileController] call_soon_threadsafe dispatch error: {ex_dispatch}")
 
             res = await asyncio.to_thread(
                 load_document,
@@ -226,6 +253,10 @@ class FileController:
                 module_name=req_module,
                 progress_callback=on_load_progress,
             )
+
+            # Stale guard: if user switched mode or opened another file while this was loading, discard results
+            if target_tab.load_generation != cur_gen:
+                return
 
             if not res.success:
                 doc_err = res.error or ErrorMapper.map_exception(
@@ -373,14 +404,19 @@ class FileController:
                     backlink_view.set_active_document(actual_path, active_title)
 
         finally:
-            target_tab.is_loading = False
-            if tab_bar and hasattr(tab_bar, "render_tabs"):
-                tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
-            self.footer_bar.set_processing(False)
-            if target_tab.full_content and target_tab.full_content.strip():
-                self.perform_autosave(target_tab.tab_id)
-                self.save_tab_session()
-            self.page.update()
+            if target_tab.load_generation == cur_gen:
+                target_tab.is_loading = False
+                try:
+                    if tab_bar and hasattr(tab_bar, "render_tabs"):
+                        tab_bar.render_tabs(self.state.tabs, self.state.active_tab_id)
+                    if self.footer_bar and self.state.active_tab_id == target_tab.tab_id:
+                        self.footer_bar.set_processing(False)
+                    if target_tab.full_content and target_tab.full_content.strip():
+                        self.perform_autosave(target_tab.tab_id)
+                        self.save_tab_session()
+                    self.page.update()
+                except Exception as exc:
+                    logger.warning(f"[FileController] Post-load UI update failed: {exc}")
 
     def trigger_browse_output(self, e=None):
         asyncio.create_task(self.async_browse_output())

@@ -1259,7 +1259,8 @@ class FileController:
                     try:
                         with open(tab.in_path, "r", encoding="utf-8", errors="replace") as f:
                             disk_txt = f.read()
-                        tab.raw_editor_text = disk_txt
+                        tab.full_content = disk_txt
+                        tab.saved_content = disk_txt
                         if is_active and self.editor_view:
                             self.editor_view.set_text(disk_txt)
                             if self.preview:
@@ -1269,14 +1270,14 @@ class FileController:
                         print(f"[FileController] Sync disk error for tab {tab.in_path}: {sync_ex}")
 
                 # Otherwise refactor in-memory text directly
-                current_tab_text = self.editor_view.get_text() if (is_active and self.editor_view) else (tab.raw_editor_text or "")
+                current_tab_text = self.editor_view.get_text() if (is_active and self.editor_view) else (tab.full_content or "")
                 if current_tab_text:
                     upd_txt, c1 = refactor_markdown_links(current_tab_text, old_stem, new_stem, old_path=old_path, new_path=new_path)
                     if old_basename != old_stem:
                         upd_txt, c2 = refactor_markdown_links(upd_txt, old_basename, new_basename)
                         c1 += c2
                     if c1 > 0:
-                        tab.raw_editor_text = upd_txt
+                        tab.full_content = upd_txt
                         if is_active and self.editor_view:
                             self.editor_view.set_text(upd_txt)
                             if self.preview:

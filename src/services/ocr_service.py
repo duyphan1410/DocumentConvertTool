@@ -6,6 +6,7 @@ and image-to-data / layout-preserving text extraction.
 import os
 import sys
 import shutil
+import string
 import logging
 from typing import Optional, List, Dict, Tuple, Any
 from PIL import Image
@@ -229,7 +230,7 @@ class OCRService:
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
                         )
                         raw_version = output.decode(getattr(pytesseract.pytesseract, "DEFAULT_ENCODING", "utf-8"))
-                        str_version, *_ = raw_version.lstrip(" \t\n\r").partition(" ")
+                        str_version, *_ = raw_version.lstrip(string.printable[10:]).partition(" ")
                         str_version, *_ = str_version.partition("-")
                         from packaging.version import parse
                         v = parse(str_version)

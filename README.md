@@ -1,9 +1,9 @@
-# Document Converter Workspace (v1.9.2)
+# Document Converter Workspace (v1.9.3)
 
 ![Python](https://img.shields.io/badge/Python-3.12%20--%203.13-blue)
 ![UI Framework](https://img.shields.io/badge/UI-Flet%20Desktop%20%7C%20Studio%20MVC-purple)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)
-![Version](https://img.shields.io/badge/Version-1.9.2-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.9.3-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
 A modern, studio-grade desktop workspace for editing, transcribing, and converting documents between **Markdown**, **PowerPoint**, **Excel**, **Word**, **PDF**, **Scanned PDF (OCR)**, **CSV**, **HTML**, **JSON**, **YAML**, and **Audio/Video Media** formats built with **Flet (Flutter for Python)**.
@@ -14,7 +14,7 @@ A modern, studio-grade desktop workspace for editing, transcribing, and converti
 
 Download the latest standalone installer (no Python installation required):
 
-➡️ [**Download Document Converter (v1.9.2) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
+➡️ [**Download Document Converter (v1.9.3) for Windows**](https://github.com/duyphan1410/DocumentConvertTool/releases/latest)
 
 <small>⚠️ *Windows SmartScreen may warn because the application is unsigned. Click **More info → Run anyway** if prompted.*</small>
 
@@ -106,13 +106,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 # Or manual PyInstaller --onedir build
 python -m PyInstaller "Document Converter.spec"
 ```
-The standalone desktop bundle will be generated at `dist/Document Converter/` and the Windows installer at `dist/installer/Document_Converter_Setup_v1.9.2.exe`.
+The standalone desktop bundle will be generated at `dist/Document Converter/` and the Windows installer at `dist/installer/Document_Converter_Setup_v1.9.3.exe`.
 
 ---
 
 ## 🗺️ Version History
 
-- **v1.9.2 — Recent History, Welcome Studio Dashboard & Multi-Window Focus (Current)**: Persistent Recent Files & Folders history at `%APPDATA%\DocConvert\recent_history.json` with Pinning (`📌 Pin`), Search & Filter tabs, 2-column Welcome Studio Dashboard, Home button navigation from Activity Bar, Multi-Window (`Ctrl+Shift+N`) with Win32 foreground elevation, and Close Workspace button.
+- **v1.9.3 — Tesseract OCR Portable Engine & Supply Chain Security (Current)**: Out-of-the-box Tesseract OCR 5.4.0 portable bundling with Vietnamese and English language packs (35MB stripped engine, ~15.3MB compressed), SHA-256 two-layer integrity verification, domain lockdown, and bilingual OCR error localization.
+- **v1.9.2 — Recent History, Welcome Studio Dashboard & Multi-Window Focus**: Persistent Recent Files & Folders history at `%APPDATA%\DocConvert\recent_history.json` with Pinning (`📌 Pin`), Search & Filter tabs, 2-column Welcome Studio Dashboard, Home button navigation from Activity Bar, Multi-Window (`Ctrl+Shift+N`) with Win32 foreground elevation, and Close Workspace button.
 - **v1.9.1 — OCR Scanned PDF Engine & Preview Scroll Synchronization**: OCR scanned PDF text extraction engine (`pdf_scan_to_md`) and 2-Pass Frame Layout scroll locking for preview formatting.
 - **v1.9.0 — AI Model Hub, Offline Whisper Transcriber & Background Transcription**: 100% Offline Whisper speech transcriber with CTranslate2 int8, Model Hub marketplace with SHA256 integrity checks, hardware detector (CPU/RAM/GPU VRAM), Silero VAD segmentation `[mm:ss]`, and background transcription with smart tab routing.
 - **v1.8.3 — Bounded LRU Base64 Cache & Session Memory Optimization**: `OrderedDict` LRU cache (128 max) with session-based observer purge hooks freeing 100% image memory on tab closure.

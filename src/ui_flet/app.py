@@ -316,6 +316,10 @@ class DocumentConvertApp:
             on_reset=lambda: self._on_image_size_preset("100%"),
             on_open_menu=lambda x, y: self._show_image_context_menu_at(x, y),
         )
+        self.editor_view.set_path_providers(
+            get_active_file_path=lambda: self.state.in_path or "",
+            get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
+        )
 
         self.preview = MarkdownPreview(
             on_open_file=lambda path: asyncio.create_task(
@@ -323,6 +327,7 @@ class DocumentConvertApp:
             ),
             on_open_file_by_id=lambda did: self.file_controller.open_document_by_id(did),
             on_create_document_from_link=lambda raw_t: self.file_controller.create_document_from_wikilink(raw_t),
+            on_tag_clicked=lambda tag: self._handle_preview_tag_clicked(tag),
             get_workspace_path=lambda: getattr(self.state, "workspace_folder", "") or (os.path.dirname(self.state.in_path) if self.state.in_path else ""),
             on_image_link_clicked=lambda url: self._handle_preview_image_clicked(url),
             on_insert_sample_table=lambda: self.editor_view.insert_sample_table(),
@@ -965,6 +970,15 @@ class DocumentConvertApp:
                 self._show_image_context_menu_at(menu_x, menu_y, target_tok)
             except Exception as ex:
                 print(f"[DEBUG] _handle_preview_image_clicked error: {ex}")
+
+    def _handle_preview_tag_clicked(self, tag: str):
+        """Switches ActivityBar to Explorer tab and triggers tag filtering."""
+        if hasattr(self, "activity_bar"):
+            self._on_activity_bar_item_clicked("explorer")
+        if hasattr(self, "explorer_view") and self.explorer_view:
+            self.explorer_view.filter_by_tag(tag)
+        if hasattr(self, "footer_bar") and self.footer_bar:
+            self.footer_bar.set_status(f"🏷️ #{tag}", ft.Colors.AMBER_400)
 
     def _open_model_hub_dialog(self):
         """Displays the AI Model Hub & Marketplace Modal."""

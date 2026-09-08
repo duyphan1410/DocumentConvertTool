@@ -292,15 +292,18 @@ class MetadataIndex:
             if source_path:
                 source_dir = os.path.dirname(os.path.normpath(os.path.abspath(source_path)))
                 cand = os.path.normpath(os.path.abspath(os.path.join(source_dir, clean_target)))
-                cursor.execute("SELECT * FROM documents WHERE path = ?", (cand,))
-                row = cursor.fetchone()
-                if row:
-                    return dict(row)
-                if not cand.endswith(".md"):
-                    cursor.execute("SELECT * FROM documents WHERE path = ?", (cand + ".md",))
+                if os.path.exists(cand) and os.path.isfile(cand):
+                    cursor.execute("SELECT * FROM documents WHERE path = ?", (cand,))
                     row = cursor.fetchone()
                     if row:
                         return dict(row)
+                if not cand.endswith(".md"):
+                    cand_md = cand + ".md"
+                    if os.path.exists(cand_md) and os.path.isfile(cand_md):
+                        cursor.execute("SELECT * FROM documents WHERE path = ?", (cand_md,))
+                        row = cursor.fetchone()
+                        if row:
+                            return dict(row)
 
             # Extract stem if raw_target ends with extension
             target_stem = clean_target
@@ -315,15 +318,19 @@ class MetadataIndex:
                 SELECT * FROM documents 
                 WHERE title = ? OR title = ? OR path LIKE ? OR path LIKE ?
             """, (target_stem, clean_target, f"%{os.sep}{target_stem}.md", f"%/{target_stem}.md"))
-            rows = cursor.fetchall()
+            raw_rows = cursor.fetchall()
 
-            if not rows:
+            if not raw_rows:
                 # 2. Case-insensitive exact match
                 cursor.execute("""
                     SELECT * FROM documents 
                     WHERE LOWER(title) = LOWER(?) OR LOWER(title) = LOWER(?)
                 """, (target_stem, clean_target))
-                rows = cursor.fetchall()
+                raw_rows = cursor.fetchall()
+
+            # Prioritize candidates that currently exist on disk
+            existing_rows = [r for r in raw_rows if os.path.exists(r["path"])]
+            rows = existing_rows if existing_rows else raw_rows
 
             if not rows:
                 return None
@@ -365,20 +372,36 @@ class MetadataIndex:
     def re_resolve_broken_wikilinks(self, new_doc_id: str, new_doc_title: str) -> int:
         """
         Re-resolves broken wikilinks across all notes when a new file is created.
-        Matches exact target_title_raw (TODO: Huy will add Vietnamese fuzzy match normalization).
+        Matches exact target_title_raw as well as Vietnamese normalized fuzzy match.
         """
+        from src.services.fuzzy_matcher import normalize_vietnamese
+
         clean_title = new_doc_title.strip()
+        norm_title = normalize_vietnamese(clean_title)
+        affected = 0
+
         with self._write_lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                # Exact title match
+                # 1. Exact title match (fast SQL)
                 cursor.execute("""
                     UPDATE wikilinks 
                     SET target_id = ?, resolved = 1 
                     WHERE (LOWER(target_title_raw) = LOWER(?) OR target_title_raw = ?) 
                       AND resolved = 0
                 """, (new_doc_id, clean_title, clean_title))
-                affected = cursor.rowcount
+                affected += cursor.rowcount
+
+                # 2. Vietnamese Normalized Fuzzy Match for remaining unresolved links
+                cursor.execute("SELECT id, target_title_raw FROM wikilinks WHERE resolved = 0")
+                unresolved = cursor.fetchall()
+                for row in unresolved:
+                    wl_id = row["id"]
+                    raw_target = row["target_title_raw"]
+                    if normalize_vietnamese(raw_target) == norm_title:
+                        cursor.execute("UPDATE wikilinks SET target_id = ?, resolved = 1 WHERE id = ?", (new_doc_id, wl_id))
+                        affected += 1
+
                 conn.commit()
                 return affected
 
@@ -493,12 +516,20 @@ class MetadataIndex:
                 with conn:  # SQLite context manager manages BEGIN/COMMIT/ROLLBACK atomically
                     cursor = conn.cursor()
 
-                    # Find all existing DB records in this workspace
-                    cursor.execute("SELECT id, path, content_hash FROM documents WHERE path LIKE ?", (f"{norm_ws}%",))
-                    db_records = {r["path"]: {"id": r["id"], "content_hash": r["content_hash"]} for r in cursor.fetchall()}
+                    # Find all existing DB records in this workspace reliably across all OS path formats
+                    cursor.execute("SELECT id, path, content_hash FROM documents")
+                    all_rows = cursor.fetchall()
+                    db_records = {}
+                    for r in all_rows:
+                        p = r["path"]
+                        try:
+                            if os.path.commonpath([p, norm_ws]) == norm_ws:
+                                db_records[p] = {"id": r["id"], "content_hash": r["content_hash"]}
+                        except Exception:
+                            pass
 
                     # 2a. Orphan Purge (files in DB but not on disk)
-                    orphan_paths = [p for p in db_records.keys() if p not in disk_files_set]
+                    orphan_paths = [p for p in db_records.keys() if p not in disk_files_set or not os.path.exists(p)]
                     if orphan_paths:
                         cursor.executemany("DELETE FROM documents WHERE path = ?", [(p,) for p in orphan_paths])
                         stats["deleted"] = len(orphan_paths)
@@ -597,13 +628,18 @@ class MetadataIndex:
                                 """, (doc_id, target_id, wl.raw_target, wl.display_text, wl.snippet, resolved))
 
                             # Re-resolve broken links pointing to this note
-                            # TODO: Huy will integrate fuzzy_matcher.normalize_vietnamese and calculate_similarity here
+                            norm_doc_title = normalize_vietnamese(title)
                             cursor.execute("""
                                 UPDATE wikilinks 
                                 SET target_id = ?, resolved = 1 
                                 WHERE (LOWER(target_title_raw) = LOWER(?) OR target_title_raw = ?) 
                                   AND resolved = 0
                             """, (doc_id, title.strip(), title.strip()))
+
+                            cursor.execute("SELECT id, target_title_raw FROM wikilinks WHERE resolved = 0")
+                            for u_row in cursor.fetchall():
+                                if normalize_vietnamese(u_row["target_title_raw"]) == norm_doc_title:
+                                    cursor.execute("UPDATE wikilinks SET target_id = ?, resolved = 1 WHERE id = ?", (doc_id, u_row["id"]))
 
                         except Exception as ex:
                             print(f"[MetadataIndex] Error syncing file {file_path}: {ex}")
@@ -612,4 +648,159 @@ class MetadataIndex:
                 cursor.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM document_tags)")
 
         return stats
+
+    def get_wikilink_suggestions(
+        self,
+        query: str = "",
+        workspace_folder: Optional[str] = None,
+        limit: int = 15,
+    ) -> list[dict]:
+        """
+        Returns ranked document suggestions for wikilink autocomplete matching `query`.
+        Uses normalized Vietnamese fuzzy matching and multi-tier relevance ranking:
+        1. Exact match on title (score 100)
+        2. Exact normalized match on title (score 95)
+        3. Prefix match on title (score 85)
+        4. Word token prefix match on title (score 70)
+        5. Substring containment (score 50)
+        6. Fuzzy Token/Sequence similarity (score 35-65)
+        """
+        from src.services.fuzzy_matcher import normalize_vietnamese, calculate_similarity
+
+        clean_q = query.strip()
+        norm_q = normalize_vietnamese(clean_q)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if workspace_folder:
+                norm_ws = os.path.normpath(os.path.abspath(workspace_folder))
+                cursor.execute("SELECT id, path, title FROM documents WHERE path LIKE ? ORDER BY updated_at DESC", (f"{norm_ws}%",))
+            else:
+                cursor.execute("SELECT id, path, title FROM documents ORDER BY updated_at DESC")
+            rows = cursor.fetchall()
+
+        # Fallback: if database has 0 documents for this folder, scan folder on disk immediately
+        if not rows and workspace_folder and os.path.isdir(workspace_folder):
+            norm_ws = os.path.normpath(os.path.abspath(workspace_folder))
+            disk_rows = []
+            for root, dirs, files in os.walk(norm_ws):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "build", "__pycache__", "venv", ".venv")]
+                for f in files:
+                    if f.lower().endswith(".md"):
+                        full_p = os.path.normpath(os.path.abspath(os.path.join(root, f)))
+                        title = os.path.splitext(f)[0]
+                        disk_rows.append({"id": full_p, "path": full_p, "title": title})
+                if len(disk_rows) >= 30:
+                    break
+            rows = disk_rows
+
+        candidates = []
+        for r in rows:
+            doc_id = r["id"]
+            doc_path = r["path"]
+            title = r["title"]
+            rel_path = os.path.basename(doc_path)
+            if workspace_folder:
+                try:
+                    rel_path = os.path.relpath(doc_path, workspace_folder)
+                except ValueError:
+                    pass
+
+            if not clean_q:
+                # Return most recently updated docs if query is empty
+                candidates.append({
+                    "id": doc_id,
+                    "title": title,
+                    "path": doc_path,
+                    "relative_path": rel_path,
+                    "score": 50,
+                })
+                continue
+
+            norm_title = normalize_vietnamese(title)
+            score = 0
+
+            if title == clean_q:
+                score = 100
+            elif norm_title == norm_q:
+                score = 95
+            elif norm_title.startswith(norm_q):
+                score = 85
+            elif any(w.startswith(norm_q) for w in norm_title.split()):
+                score = 70
+            elif norm_q in norm_title or norm_q in normalize_vietnamese(rel_path):
+                score = 50
+            else:
+                sim = calculate_similarity(clean_q, title)
+                if sim >= 0.45:
+                    score = int(sim * 65)
+
+            if score > 0:
+                candidates.append({
+                    "id": doc_id,
+                    "title": title,
+                    "path": doc_path,
+                    "relative_path": rel_path,
+                    "score": score,
+                })
+
+        candidates.sort(key=lambda x: (-x["score"], len(x["title"]), x["title"].lower()))
+        return candidates[:limit]
+
+    def get_tag_suggestions(
+        self,
+        query: str = "",
+        limit: int = 15,
+    ) -> list[dict]:
+        """
+        Returns ranked tag suggestions for tag autocomplete matching `query`.
+        """
+        from src.services.fuzzy_matcher import normalize_vietnamese
+
+        clean_q = query.strip().lstrip("#")
+        norm_q = normalize_vietnamese(clean_q)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT t.id, t.name, t.normalized_name, COUNT(dt.document_id) as doc_count
+                FROM tags t
+                LEFT JOIN document_tags dt ON t.id = dt.tag_id
+                GROUP BY t.id, t.name, t.normalized_name
+                ORDER BY doc_count DESC, t.name ASC
+            """)
+            rows = cursor.fetchall()
+
+        candidates = []
+        for r in rows:
+            name = r["name"]
+            norm_name = r["normalized_name"] or normalize_vietnamese(name)
+            doc_count = r["doc_count"]
+
+            if not clean_q:
+                candidates.append({
+                    "name": name,
+                    "doc_count": doc_count,
+                    "score": 50,
+                })
+                continue
+
+            score = 0
+            if norm_name == norm_q:
+                score = 100
+            elif norm_name.startswith(norm_q):
+                score = 80
+            elif norm_q in norm_name:
+                score = 40
+
+            if score > 0:
+                candidates.append({
+                    "name": name,
+                    "doc_count": doc_count,
+                    "score": score,
+                })
+
+        candidates.sort(key=lambda x: (-x["score"], -x["doc_count"], x["name"].lower()))
+        return candidates[:limit]
+
 

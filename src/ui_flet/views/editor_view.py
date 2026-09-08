@@ -7,6 +7,7 @@ from src.i18n import t
 from src.ui_flet.theme import STYLE, resolve_color, make_border
 from src.ui_flet.components.search_replace_bar import SearchReplaceBar
 from src.ui_flet.components.floating_image_toolbar import FloatingImageToolbar
+from src.ui_flet.components.autocomplete_popup import AutocompletePopup
 from src.ui_flet.helpers.image_token_helper import (
     ImageTokenInfo,
     find_all_image_tokens,
@@ -47,6 +48,17 @@ class EditorView:
         self._on_toolbar_custom: Optional[Callable[[], None]] = None
         self._on_toolbar_replace: Optional[Callable[[], None]] = None
         self._on_toolbar_reset: Optional[Callable[[], None]] = None
+
+        # Autocomplete / Suggestion Popup (PKB Phase 1.5)
+        self.autocomplete_popup = AutocompletePopup(
+            on_select_suggestion=self._on_autocomplete_selected,
+            on_close=lambda: None,
+            right=16,
+            bottom=16,
+        )
+        self._autocomplete_start_idx: Optional[int] = None
+        self._autocomplete_end_idx: Optional[int] = None
+        self._suppress_autocomplete: bool = False
 
         self.btn_open_file = ft.IconButton(
             ft.Icons.FOLDER_OPEN_ROUNDED,
@@ -124,7 +136,7 @@ class EditorView:
             border_radius=6,
             text_style=ft.TextStyle(font_family=STYLE["font_family_mono"]),
             text_size=13,
-            on_change=self.on_editor_changed,
+            on_change=self._handle_editor_text_changed,
             on_selection_change=self._on_selection_change,
             hint_text=t("editor.hint"),
         )
@@ -135,11 +147,19 @@ class EditorView:
             scroll=None,
         )
 
+        self.editor_stack = ft.Stack(
+            controls=[
+                self.editor_row,
+                self.autocomplete_popup,
+            ],
+            expand=True,
+        )
+
         self.editor_column = ft.Column(
             controls=[
                 self.toolbar,
                 self.search_replace_bar.results_container,
-                self.editor_row,
+                self.editor_stack,
             ],
             expand=True,
             spacing=2,
@@ -343,6 +363,36 @@ class EditorView:
         except Exception:
             pass
 
+    def _estimate_cursor_position(self, old_val: str, new_val: str) -> int:
+        if not new_val:
+            return 0
+        if not old_val:
+            return len(new_val)
+        min_len = min(len(old_val), len(new_val))
+        prefix_len = 0
+        while prefix_len < min_len and old_val[prefix_len] == new_val[prefix_len]:
+            prefix_len += 1
+        inserted_len = len(new_val) - len(old_val)
+        if inserted_len > 0:
+            return prefix_len + inserted_len
+        elif inserted_len < 0:
+            return prefix_len
+        return prefix_len + 1
+
+    def _handle_editor_text_changed(self, e):
+        """Internal change handler dispatching external on_editor_changed and checking autocomplete."""
+        old_val = getattr(self, "_last_raw_value", "") or ""
+        raw_val = self.editor.value or ""
+        
+        pos = self._estimate_cursor_position(old_val, raw_val)
+        self.selection_start = pos
+        self.selection_end = pos
+        self._last_raw_value = raw_val
+
+        if self.on_editor_changed:
+            self.on_editor_changed(e)
+        self.check_autocomplete_trigger(pos_override=pos)
+
     def _on_selection_change(self, e: ft.TextSelectionChangeEvent):
         """Track current selection/cursor range from Flet TextField events and detect image context."""
         sel = e.selection
@@ -350,6 +400,161 @@ class EditorView:
             self.selection_start = min(sel.base_offset, sel.extent_offset)
             self.selection_end = max(sel.base_offset, sel.extent_offset)
             self.check_image_context()
+            self.check_autocomplete_trigger()
+
+    def check_autocomplete_trigger(self, pos_override: Optional[int] = None):
+        """Detects whether current cursor is on a wikilink [[... or tag #... trigger."""
+        if getattr(self, "_suppress_autocomplete", False) or getattr(self.editor, "read_only", False):
+            if hasattr(self, "autocomplete_popup"):
+                self.autocomplete_popup.hide()
+            return
+
+        raw_val = self.editor.value or ""
+        if not raw_val:
+            if hasattr(self, "autocomplete_popup"):
+                self.autocomplete_popup.hide()
+            return
+
+        pos = pos_override if pos_override is not None else (self.selection_start if self.selection_start is not None else len(raw_val))
+        pos = max(0, min(pos, len(raw_val)))
+
+        text_before = raw_val[:pos]
+        last_newline = text_before.rfind("\n")
+        current_line = text_before if last_newline == -1 else text_before[last_newline + 1:]
+
+        # 1. Wikilink Trigger: [[query
+        wikilink_idx = current_line.rfind("[[")
+        if wikilink_idx != -1:
+            after_brackets = current_line[wikilink_idx + 2:]
+            if "]]" not in after_brackets and "|" not in after_brackets:
+                query = after_brackets
+                start_idx = pos - len(query) - 2
+                self._trigger_wikilink_autocomplete(query, start_idx, pos)
+                return
+
+        # 2. Tag Trigger: #query (must be preceded by start of line or whitespace)
+        import re
+        tag_match = re.search(r'(?:^|[\s\(\[\{])#([a-zA-Z0-9_\-\/]*)$', current_line)
+        if tag_match:
+            query = tag_match.group(1)
+            # Ensure not a markdown heading like "# Heading"
+            if not current_line.strip().startswith(("# ", "## ", "### ", "#### ", "##### ", "###### ")):
+                start_idx = pos - len(query) - 1
+                self._trigger_tag_autocomplete(query, start_idx, pos)
+                return
+
+        # 3. Fallback scan on the active lines if cursor index was ambiguous
+        lines = raw_val.split("\n")
+        char_count = 0
+        target_line_idx = len(lines) - 1
+        for idx, line in enumerate(lines):
+            if char_count <= pos <= char_count + len(line) + 1:
+                target_line_idx = idx
+                break
+            char_count += len(line) + 1
+
+        candidate_lines = [target_line_idx] if target_line_idx < len(lines) else []
+        if len(lines) - 1 not in candidate_lines:
+            candidate_lines.append(len(lines) - 1)
+
+        for l_idx in candidate_lines:
+            line_str = lines[l_idx]
+            w_idx = line_str.rfind("[[")
+            if w_idx != -1:
+                after_b = line_str[w_idx + 2:]
+                if "]]" not in after_b and "|" not in after_b:
+                    query = after_b
+                    line_start_offset = sum(len(l) + 1 for l in lines[:l_idx])
+                    start_idx = line_start_offset + w_idx
+                    end_idx = line_start_offset + len(line_str)
+                    self._trigger_wikilink_autocomplete(query, start_idx, end_idx)
+                    return
+
+            t_match = re.search(r'(?:^|[\s\(\[\{])#([a-zA-Z0-9_\-\/]*)$', line_str)
+            if t_match and not line_str.strip().startswith(("# ", "## ", "### ", "#### ", "##### ", "###### ")):
+                query = t_match.group(1)
+                line_start_offset = sum(len(l) + 1 for l in lines[:l_idx])
+                start_idx = line_start_offset + t_match.start() + (1 if line_str[t_match.start()] != '#' else 0)
+                end_idx = line_start_offset + len(line_str)
+                self._trigger_tag_autocomplete(query, start_idx, end_idx)
+                return
+
+        if hasattr(self, "autocomplete_popup"):
+            self.autocomplete_popup.hide()
+
+    def _trigger_wikilink_autocomplete(self, query: str, start_idx: int, end_idx: int):
+        self._autocomplete_start_idx = start_idx
+        self._autocomplete_end_idx = end_idx
+        try:
+            from src.services.metadata_index import MetadataIndex
+            ws = self._get_workspace_path() if hasattr(self, "_get_workspace_path") and callable(self._get_workspace_path) else None
+            items = MetadataIndex.get_instance().get_wikilink_suggestions(query, workspace_folder=ws, limit=8)
+            self.autocomplete_popup.show_suggestions(mode="wikilink", items=items, query=query)
+            try:
+                if hasattr(self.autocomplete_popup, "page") and self.autocomplete_popup.page:
+                    self.autocomplete_popup.update()
+                if hasattr(self.editor_stack, "page") and self.editor_stack.page:
+                    self.editor_stack.update()
+            except Exception:
+                pass
+        except Exception as ex:
+            print(f"[EditorView] Wikilink autocomplete error: {ex}")
+            if hasattr(self, "autocomplete_popup"):
+                self.autocomplete_popup.hide()
+
+    def _trigger_tag_autocomplete(self, query: str, start_idx: int, end_idx: int):
+        self._autocomplete_start_idx = start_idx
+        self._autocomplete_end_idx = end_idx
+        try:
+            from src.services.metadata_index import MetadataIndex
+            items = MetadataIndex.get_instance().get_tag_suggestions(query, limit=8)
+            self.autocomplete_popup.show_suggestions(mode="tag", items=items, query=query)
+            try:
+                if hasattr(self.autocomplete_popup, "page") and self.autocomplete_popup.page:
+                    self.autocomplete_popup.update()
+                if hasattr(self.editor_stack, "page") and self.editor_stack.page:
+                    self.editor_stack.update()
+            except Exception:
+                pass
+        except Exception as ex:
+            print(f"[EditorView] Tag autocomplete error: {ex}")
+            if hasattr(self, "autocomplete_popup"):
+                self.autocomplete_popup.hide()
+
+    def _on_autocomplete_selected(self, mode: str, item: dict):
+        raw_val = self.editor.value or ""
+        start = getattr(self, "_autocomplete_start_idx", None)
+        end = getattr(self, "_autocomplete_end_idx", None)
+        if start is None or end is None or not (0 <= start <= end <= len(raw_val)):
+            start = self.selection_start if self.selection_start is not None else 0
+            end = self.selection_end if self.selection_end is not None else start
+
+        if mode == "wikilink":
+            title = item.get("title", "")
+            replacement = f"[[{title}]]"
+        else:
+            tag_name = item.get("name", "")
+            replacement = f"#{tag_name} "
+
+        new_val = raw_val[:start] + replacement + raw_val[end:]
+        new_pos = start + len(replacement)
+        self.editor.value = new_val
+        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
+        self.selection_start, self.selection_end = new_pos, new_pos
+
+        self._autocomplete_start_idx = None
+        self._autocomplete_end_idx = None
+
+        try:
+            if self.editor.page:
+                self.editor.update()
+        except Exception:
+            pass
+
+        if self.on_editor_changed:
+            self.on_editor_changed(None)
+
+        self.focus_editor()
 
     def check_image_context(self):
         """Checks if current cursor or selection range is inside/on an image token and updates toolbar."""
@@ -797,6 +1002,9 @@ class EditorView:
 
         if hasattr(self, "floating_image_toolbar"):
             self.floating_image_toolbar.apply_palette(palette, is_dark)
+
+        if hasattr(self, "autocomplete_popup"):
+            self.autocomplete_popup.apply_palette(palette, is_dark)
 
         try:
             if self.container.page:

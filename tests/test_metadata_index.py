@@ -242,6 +242,46 @@ And another real link [[Second Real Target]].
         self.assertEqual(targets, ["Real Target", "Second Real Target"])
         self.assertEqual(tokens[0].display_text, "Real Alias")
 
+    def test_wikilink_and_tag_suggestions(self):
+        """
+        Verifies autocomplete suggestions for wikilinks and tags with Vietnamese fuzzy matching.
+        """
+        # Populate documents
+        p1 = os.path.join(self.tmp_dir, "tri_tue_nhan_tao.md")
+        p2 = os.path.join(self.tmp_dir, "học_máy.md")
+        p3 = os.path.join(self.tmp_dir, "deep_learning.md")
+
+        id1 = self.index.upsert_document(p1, "Trí Tuệ Nhân Tạo", "h1")
+        id2 = self.index.upsert_document(p2, "Học Máy", "h2")
+        id3 = self.index.upsert_document(p3, "Deep Learning", "h3")
+
+        self.index.set_document_tags(id1, ["ai", "vietnam", "khoa_học"])
+        self.index.set_document_tags(id2, ["ai", "ml"])
+        self.index.set_document_tags(id3, ["ai", "deep-learning"])
+
+        # 1. Test Wikilink suggestions (Exact / Prefix / Normalized Vietnamese)
+        suggs_exact = self.index.get_wikilink_suggestions("Trí Tuệ")
+        self.assertTrue(len(suggs_exact) >= 1)
+        self.assertEqual(suggs_exact[0]["title"], "Trí Tuệ Nhân Tạo")
+
+        suggs_no_accent = self.index.get_wikilink_suggestions("tri tue")
+        self.assertTrue(len(suggs_no_accent) >= 1)
+        self.assertEqual(suggs_no_accent[0]["title"], "Trí Tuệ Nhân Tạo")
+
+        suggs_hoc = self.index.get_wikilink_suggestions("hoc may")
+        self.assertTrue(len(suggs_hoc) >= 1)
+        self.assertEqual(suggs_hoc[0]["title"], "Học Máy")
+
+        # 2. Test Tag suggestions
+        tag_suggs_ai = self.index.get_tag_suggestions("ai")
+        self.assertTrue(len(tag_suggs_ai) >= 1)
+        self.assertEqual(tag_suggs_ai[0]["name"], "ai")
+        self.assertEqual(tag_suggs_ai[0]["doc_count"], 3)
+
+        tag_suggs_khoa = self.index.get_tag_suggestions("khoa")
+        self.assertTrue(len(tag_suggs_khoa) >= 1)
+        self.assertEqual(tag_suggs_khoa[0]["name"], "khoa_học")
+
 
 if __name__ == "__main__":
     unittest.main()

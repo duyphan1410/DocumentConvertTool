@@ -10,38 +10,51 @@ import logging
 from typing import Optional, List, Dict, Tuple, Any
 from PIL import Image
 
+from src.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
 class OCRService:
     """
     Production-grade wrapper for Tesseract OCR with automatic binary & tessdata resolution.
+    Resolution priority:
+      1. Explicit environment override (TESSERACT_CMD / TESSDATA_PREFIX)
+      2. Bundled assets (<app>/assets/tesseract)
+      3. System PATH
+      4. Standard Windows installation directories
     """
 
     _cached_binary: Optional[str] = None
     _cached_tessdata: Optional[str] = None
 
     @classmethod
+    def get_bundled_tesseract_dir(cls) -> str:
+        """Returns the path to the bundled assets/tesseract folder."""
+        # 1. Check relative to executable directory (packaged onedir mode)
+        if getattr(sys, "frozen", False):
+            base_dir = os.path.dirname(sys.executable)
+            app_bundled = os.path.join(base_dir, "assets", "tesseract")
+            if os.path.isdir(app_bundled):
+                return app_bundled
+
+        # 2. Check relative to current project root (source dev mode)
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        dev_bundled = os.path.join(project_root, "assets", "tesseract")
+        return dev_bundled
+
+    @classmethod
     def get_standard_tesseract_locations(cls) -> List[str]:
         """Returns standard file paths where Tesseract-OCR is typically installed on Windows."""
-        locs = []
-        # Custom environment variable
-        custom_cmd = os.environ.get("TESSERACT_CMD")
-        if custom_cmd and os.path.isfile(custom_cmd):
-            locs.append(custom_cmd)
-
-        # Standard program files
-        locs.extend([
+        locs = [
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        ])
+        ]
 
-        # Local AppData
         local_app_data = os.environ.get("LOCALAPPDATA")
         if local_app_data:
             locs.append(os.path.join(local_app_data, "Programs", "Tesseract-OCR", "tesseract.exe"))
 
-        # User profile
         user_profile = os.environ.get("USERPROFILE")
         if user_profile:
             locs.append(os.path.join(user_profile, "AppData", "Local", "Programs", "Tesseract-OCR", "tesseract.exe"))
@@ -51,19 +64,35 @@ class OCRService:
     @classmethod
     def find_tesseract_binary(cls) -> Optional[str]:
         """
-        Locates the tesseract executable on the host machine.
-        Returns the absolute path or None if not installed.
+        Locates the tesseract executable following strict priority:
+          1. Explicit Environment Override (TESSERACT_CMD)
+          2. Bundled Asset (assets/tesseract/tesseract.exe)
+          3. System PATH (shutil.which)
+          4. Standard Windows Installations
         """
         if cls._cached_binary and os.path.isfile(cls._cached_binary):
             return cls._cached_binary
 
-        # 1. Check if 'tesseract' is available directly on PATH
+        # 1. Explicit Environment Override
+        custom_cmd = os.environ.get("TESSERACT_CMD")
+        if custom_cmd and os.path.isfile(custom_cmd):
+            cls._cached_binary = custom_cmd
+            return custom_cmd
+
+        # 2. Bundled Asset
+        bundled_dir = cls.get_bundled_tesseract_dir()
+        bundled_exe = os.path.join(bundled_dir, "tesseract.exe")
+        if os.path.isfile(bundled_exe):
+            cls._cached_binary = bundled_exe
+            return bundled_exe
+
+        # 3. System PATH
         which_path = shutil.which("tesseract")
         if which_path and os.path.isfile(which_path):
             cls._cached_binary = which_path
             return which_path
 
-        # 2. Check standard Windows installations
+        # 4. Standard Windows Installations
         for path in cls.get_standard_tesseract_locations():
             if os.path.isfile(path):
                 cls._cached_binary = path
@@ -74,29 +103,44 @@ class OCRService:
     @classmethod
     def get_tessdata_dir(cls) -> str:
         """
-        Resolves the active tessdata folder, prioritizing user AppData where
-        additional language packs (e.g. vie.traineddata) are installed without admin permissions.
+        Resolves active tessdata directory following strict priority:
+          1. Explicit Environment Override (TESSDATA_PREFIX)
+             Note: In Tesseract 5.x+, TESSDATA_PREFIX must point directly to the folder containing .traineddata files.
+          2. Bundled Tessdata (assets/tesseract/tessdata)
+          3. User AppData (%APPDATA%/DocConvert/tessdata)
+          4. Tesseract Binary Adjacent (tessdata beside tesseract.exe)
         """
         if cls._cached_tessdata and os.path.isdir(cls._cached_tessdata):
             return cls._cached_tessdata
 
-        # 1. Check User AppData (DocConvert data dir)
+        # 1. Explicit Environment Override
+        env_tessdata = os.environ.get("TESSDATA_PREFIX")
+        if env_tessdata and os.path.isdir(env_tessdata):
+            cls._cached_tessdata = env_tessdata
+            return env_tessdata
+
+        # 2. Bundled Tessdata
+        bundled_tessdata = os.path.join(cls.get_bundled_tesseract_dir(), "tessdata")
+        if os.path.isdir(bundled_tessdata) and os.path.isfile(os.path.join(bundled_tessdata, "vie.traineddata")):
+            cls._cached_tessdata = bundled_tessdata
+            return bundled_tessdata
+
+        # 3. User AppData
         appdata = os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
         appdata_tess = os.path.join(appdata, "DocConvert", "tessdata")
-        vie_in_appdata = os.path.join(appdata_tess, "vie.traineddata")
-        if os.path.isfile(vie_in_appdata):
+        if os.path.isfile(os.path.join(appdata_tess, "vie.traineddata")):
             cls._cached_tessdata = appdata_tess
             return appdata_tess
 
-        # 2. Check Tesseract installation dir tessdata
+        # 4. Tesseract Binary Adjacent
         tess_bin = cls.find_tesseract_binary()
         if tess_bin:
             install_tess = os.path.join(os.path.dirname(tess_bin), "tessdata")
-            if os.path.isfile(os.path.join(install_tess, "vie.traineddata")):
+            if os.path.isdir(install_tess):
                 cls._cached_tessdata = install_tess
                 return install_tess
 
-        # Fallback to appdata_tess (even if not yet populated)
+        # Fallback to appdata_tess
         os.makedirs(appdata_tess, exist_ok=True)
         cls._cached_tessdata = appdata_tess
         return appdata_tess
@@ -109,11 +153,7 @@ class OCRService:
         """
         bin_path = cls.find_tesseract_binary()
         if not bin_path:
-            return False, (
-                "Chưa tìm thấy Tesseract OCR trên hệ thống. "
-                "Vui lòng cài đặt Tesseract (ví dụ: 'winget install UB-Mannheim.TesseractOCR') "
-                "hoặc tải từ https://github.com/UB-Mannheim/tesseract/wiki."
-            )
+            return False, t("ocr.missing_tesseract_msg")
 
         tessdata = cls.get_tessdata_dir()
         traineddata_file = os.path.join(tessdata, f"{lang}.traineddata")
@@ -122,10 +162,7 @@ class OCRService:
         default_traineddata = os.path.join(os.path.dirname(bin_path), "tessdata", f"{lang}.traineddata")
 
         if not os.path.isfile(traineddata_file) and not os.path.isfile(default_traineddata):
-            return False, (
-                f"Chưa tìm thấy gói ngôn ngữ '{lang}.traineddata' trong thư mục tessdata: {tessdata}. "
-                f"Vui lòng tải gói ngôn ngữ vào thư mục này để bắt đầu nhận diện tiếng Việt."
-            )
+            return False, t("ocr.missing_langpack_msg", lang=lang, tessdata=tessdata)
 
         return True, "Ready"
 

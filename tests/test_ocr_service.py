@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 from src.services.ocr_service import OCRService
@@ -67,7 +68,52 @@ class TestOCRService(unittest.TestCase):
         self.assertIn("1. Tài nguyên", lines)
         self.assertIn("đ) Quy hoạch", lines)
         self.assertIn("Nội dung", lines)  # 'x' noise token was dropped
+    def setUp(self):
+        # Reset cached class variables before each test
+        OCRService._cached_binary = None
+        OCRService._cached_tessdata = None
 
+    def tearDown(self):
+        OCRService._cached_binary = None
+        OCRService._cached_tessdata = None
+
+    def test_find_tesseract_binary_override_priority(self):
+        """Verifies TESSERACT_CMD takes #1 precedence when valid."""
+        with patch.dict("os.environ", {"TESSERACT_CMD": r"C:\custom\tesseract.exe"}):
+            with patch("os.path.isfile", side_effect=lambda p: p == r"C:\custom\tesseract.exe"):
+                bin_path = OCRService.find_tesseract_binary()
+                self.assertEqual(bin_path, r"C:\custom\tesseract.exe")
+
+    def test_find_tesseract_binary_bundled_fallback(self):
+        """Verifies bundled asset takes precedence over PATH and system dirs when no env override."""
+        bundled_exe = os.path.join(OCRService.get_bundled_tesseract_dir(), "tesseract.exe")
+        with patch.dict("os.environ", {}, clear=False):
+            # Remove TESSERACT_CMD if present in real environment
+            os.environ.pop("TESSERACT_CMD", None)
+            with patch("os.path.isfile", side_effect=lambda p: p == bundled_exe):
+                with patch("shutil.which", return_value=r"C:\system\path\tesseract.exe"):
+                    bin_path = OCRService.find_tesseract_binary()
+                    self.assertEqual(bin_path, bundled_exe)
+
+    def test_get_tessdata_dir_override_priority(self):
+        """Verifies TESSDATA_PREFIX takes #1 precedence when valid."""
+        with patch.dict("os.environ", {"TESSDATA_PREFIX": r"C:\custom\tessdata"}):
+            with patch("os.path.isdir", side_effect=lambda p: p == r"C:\custom\tessdata"):
+                tessdata = OCRService.get_tessdata_dir()
+                self.assertEqual(tessdata, r"C:\custom\tessdata")
+
+    def test_tesseract_manifest_integrity(self):
+        """Verifies scripts/tesseract_manifest.json exists and defines required properties."""
+        manifest_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "tesseract_manifest.json")
+        self.assertTrue(os.path.isfile(manifest_path))
+        import json
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertIn("zip_sha256", data)
+        self.assertIn("files", data)
+        self.assertEqual(len(data["zip_sha256"]), 64)
+        self.assertIn("tesseract.exe", data["files"])
+        self.assertIn("libtesseract-5.dll", data["files"])
 
 
 if __name__ == "__main__":

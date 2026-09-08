@@ -411,8 +411,8 @@ def format_preview_image_token(alt_text: str, uri: str, align: str = "", tok_sta
 def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
     """
     Scans for [[Target]] or [[Target|Display]] wikilinks and resolves them into:
-    - [Display](doc://<target_id>) if target note exists in MetadataIndex
-    - [⚠️ Display](doc-create://<raw_target>) if target note is unresolved / broken
+    - [Display](doc://<target_id> "Tooltip") if target note exists in MetadataIndex
+    - [⚠️ Display](doc-create://<raw_target> "Tooltip") if target note is unresolved / broken
     """
     if not content or "[[" not in content:
         return content
@@ -438,7 +438,7 @@ def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
                 return True
         return False
 
-    pattern = re.compile(r'\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]')
+    pattern = re.compile(r'(?<!!)\[\[([^\]\|]+)(?:\|([^\]]+))?\]\]')
     matches = list(pattern.finditer(content))
     result = list(content)
 
@@ -454,10 +454,21 @@ def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
         except Exception:
             doc = None
         if doc and doc.get("id"):
-            replacement = f"[{display}](doc://{doc['id']})"
+            rel_p = doc.get("relative_path") or os.path.basename(doc.get("path", ""))
+            doc_title = doc.get("title", target)
+            from src.services.transclusion_service import get_document_excerpt
+            excerpt = get_document_excerpt(doc.get("path", ""), max_lines=5, max_chars=350)
+            if excerpt:
+                tooltip = f"📄 {doc_title} ({rel_p})\n────────────────────\n{excerpt}"
+            else:
+                tooltip = f"📄 {doc_title} • {rel_p}"
+            tooltip_escaped = tooltip.replace('"', "'")
+            replacement = f'[{display}](doc://{doc["id"]} "{tooltip_escaped}")'
         else:
             encoded = urllib.parse.quote(target)
-            replacement = f"[⚠️ {display}](doc-create://{encoded})"
+            tooltip_txt = t("wikilink.tooltip_missing")
+            tooltip = tooltip_txt if tooltip_txt != "wikilink.tooltip_missing" else "Chưa có ghi chú này. Nhấp để tạo mới"
+            replacement = f'[⚠️ {display}](doc-create://{encoded} "{tooltip}")'
         result[m.start():m.end()] = list(replacement)
 
     return "".join(result)
@@ -465,7 +476,7 @@ def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
 
 def process_markdown_tags(content: str) -> str:
     """
-    Transforms inline #tags into clickable links [🏷️ #tag](tag://<tag_name>)
+    Transforms inline #tags into clickable links [🏷️ #tag](tag://<tag_name> "Tooltip")
     while carefully excluding code blocks, inline code, markdown headings (# Heading),
     and URLs/anchors (#section in http://... or [title](url#section)).
     """
@@ -494,7 +505,7 @@ def process_markdown_tags(content: str) -> str:
         excluded_ranges.append((m.start(), m.end()))
 
     # Wikilinks [[Target]] or [Display](doc://...)
-    for m in re.finditer(r'\[\[[^\]]+\]\]', content):
+    for m in re.finditer(r'!*\[\[[^\]]+\]\]', content):
         excluded_ranges.append((m.start(), m.end()))
 
     # HTML tags / comments <a href="...">, <!-- ... -->
@@ -527,7 +538,9 @@ def process_markdown_tags(content: str) -> str:
         if not tag_name or tag_name.isdigit():  # Avoid #123 (e.g. issue numbers)
             continue
         encoded_tag = urllib.parse.quote(tag_name)
-        replacement = f"[🏷️ #{tag_name}](tag://{encoded_tag})"
+        tooltip_txt = t("tag.tooltip", tag=tag_name)
+        tooltip = tooltip_txt if tooltip_txt != "tag.tooltip" else f"Lọc tài liệu theo thẻ #{tag_name}"
+        replacement = f'[🏷️ #{tag_name}](tag://{encoded_tag} "{tooltip}")'
         result[start_pos:end_pos] = list(replacement)
 
     return "".join(result)
@@ -535,16 +548,10 @@ def process_markdown_tags(content: str) -> str:
 
 def process_markdown_alerts(content: str) -> str:
     """
-    Transforms GitHub-style Markdown callout alerts:
-    `> [!NOTE]` -> `> **ℹ️ Note**`
-    `> [!TIP]` -> `> **💡 Tip**`
-    `> [!IMPORTANT]` -> `> **📌 Important**`
-    `> [!WARNING]` -> `> **⚠️ Warning**`
-    `> [!CAUTION]` -> `> **🚨 Caution**`
-    into clean formatted blockquotes so Dart/flutter_markdown renders them natively
-    without unhandled bracket reference syntax errors that cause blank grey preview screens.
+    Transforms GitHub-style Markdown callouts (e.g., `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`)
+    into beautifully styled blockquotes with appropriate emojis for clean rendering in Flet.
     """
-    if not content or "[!" not in content:
+    if not content or "> [!" not in content:
         return content
 
     alert_map = {
@@ -552,7 +559,7 @@ def process_markdown_alerts(content: str) -> str:
         "TIP": "💡 Tip",
         "IMPORTANT": "📌 Important",
         "WARNING": "⚠️ Warning",
-        "CAUTION": "🚨 Caution",
+        "CAUTION": "🛑 Caution",
     }
 
     def _repl_alert(m):
@@ -567,7 +574,7 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     """
     Parses Markdown content, intercepts Mermaid diagram blocks, resolves virtual URIs (such as @media/image.png)
     and local paths to fast base64 data URIs for Flet Markdown rendering.
-    Also links interactive YouTube timestamps, converts [[wikilinks]], tags #tag, and converts custom-sized <img> tags.
+    Also links interactive YouTube timestamps, converts [[wikilinks]], tags #tag, transcludes ![[...]], and converts custom-sized <img> tags.
     """
     if not content:
         return ""
@@ -575,6 +582,8 @@ def process_markdown_media(content: str, base_dir: str = None, is_dark: bool = F
     content = clean_html_tags_for_preview(content)
     content = process_markdown_alerts(content)
     content = process_markdown_timestamps(content)
+    from src.services.transclusion_service import process_markdown_transclusions
+    content = process_markdown_transclusions(content, base_dir=base_dir)
     content = process_markdown_wikilinks(content, base_dir=base_dir)
     content = process_markdown_tags(content)
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
@@ -650,7 +659,10 @@ async def process_markdown_media_async(content: str, base_dir: str = None, is_da
     content = clean_html_tags_for_preview(content)
     content = process_markdown_alerts(content)
     content = process_markdown_timestamps(content)
+    from src.services.transclusion_service import process_markdown_transclusions
+    content = process_markdown_transclusions(content, base_dir=base_dir)
     content = process_markdown_wikilinks(content, base_dir=base_dir)
+    content = process_markdown_tags(content)
     content = process_markdown_mermaid(content, is_dark=is_dark, palette_name=palette_name, enable_cloud=enable_cloud_mermaid)
     import asyncio
     t0 = time.time()
@@ -821,11 +833,112 @@ class MarkdownPreview(ft.Container):
             key="markdown_preview_scroll_column",
         )
 
+        # Quick Note Preview Popover Card (PKB Phase 1.5 - Priority 2)
+        self.preview_card_title = ft.Text(
+            "",
+            size=12,
+            weight=ft.FontWeight.BOLD,
+            color=ft.Colors.PRIMARY,
+            expand=True,
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self.preview_card_path = ft.Text(
+            "",
+            size=10,
+            color=ft.Colors.OUTLINE,
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self.preview_card_excerpt = ft.Text(
+            "",
+            size=11,
+            max_lines=6,
+            overflow=ft.TextOverflow.ELLIPSIS,
+            selectable=True,
+        )
+        self.preview_card_icon = ft.Icon(ft.Icons.ARTICLE_ROUNDED, size=16)
+
+        self.btn_open_target_note_text = ft.Text("Mở tài liệu", size=11, weight=ft.FontWeight.W_600, color=ft.Colors.WHITE)
+        self.btn_open_target_note = ft.ElevatedButton(
+            content=ft.Row([
+                ft.Icon(ft.Icons.OPEN_IN_NEW_ROUNDED, size=12, color=ft.Colors.WHITE),
+                self.btn_open_target_note_text,
+            ], spacing=4, tight=True),
+            style=ft.ButtonStyle(
+                padding=ft.Padding(12, 6, 12, 6),
+                shape=ft.RoundedRectangleBorder(radius=6),
+            ),
+            on_click=self._handle_open_previewed_doc,
+        )
+
+        from src.ui_flet.theme import make_border
+        self.preview_card_divider = ft.Divider(height=1, thickness=1)
+
+        self.preview_card = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            self.preview_card_icon,
+                            ft.Column(
+                                controls=[
+                                    self.preview_card_title,
+                                    self.preview_card_path,
+                                ],
+                                spacing=0,
+                                expand=True,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE_ROUNDED,
+                                icon_size=14,
+                                style=ft.ButtonStyle(padding=ft.Padding(0, 0, 0, 0)),
+                                on_click=lambda _: self.hide_note_preview(),
+                            ),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    self.preview_card_divider,
+                    self.preview_card_excerpt,
+                    ft.Row(
+                        controls=[
+                            ft.Container(expand=True),
+                            self.btn_open_target_note,
+                        ],
+                        alignment=ft.MainAxisAlignment.END,
+                    ),
+                ],
+                spacing=6,
+                tight=True,
+            ),
+            visible=False,
+            width=360,
+            right=16,
+            bottom=16,
+            padding=ft.Padding(12, 10, 12, 10),
+            border_radius=8,
+            shadow=ft.BoxShadow(
+                spread_radius=1,
+                blur_radius=14,
+                color=ft.Colors.with_opacity(0.18, ft.Colors.BLACK),
+                offset=ft.Offset(0, 4),
+            ),
+        )
+
+        self.preview_stack = ft.Stack(
+            controls=[
+                self.scroll_column,
+                self.preview_card,
+            ],
+            expand=True,
+        )
+
         self.content = ft.Column(
             controls=[
                 self.header_row,
                 ft.Divider(height=1, thickness=1, color=ft.Colors.OUTLINE_VARIANT),
-                self.scroll_column,
+                self.preview_stack,
             ],
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -834,6 +947,61 @@ class MarkdownPreview(ft.Container):
 
         from src.ui_flet.theme import PALETTES
         self.apply_palette(PALETTES.get(self._palette_name, PALETTES["Violet Cyberpunk"]), self._is_dark, self._palette_name)
+
+    def show_note_preview(self, doc: dict):
+        """Displays rich floating preview card of target note without leaving current view."""
+        if not doc:
+            return
+        doc_path = doc.get("path", "")
+        doc_title = doc.get("title", os.path.basename(doc_path) if doc_path else "Note")
+        rel_p = doc.get("relative_path") or (os.path.basename(doc_path) if doc_path else "")
+        
+        file_exists = bool(doc_path and os.path.exists(doc_path) and os.path.isfile(doc_path))
+        self._preview_card_doc_path = doc_path
+        self._preview_card_target_title = doc_title
+        self.preview_card_title.value = doc_title
+
+        if file_exists:
+            from src.services.transclusion_service import get_document_excerpt
+            excerpt = get_document_excerpt(doc_path, max_lines=6, max_chars=400)
+            self.preview_card_path.value = rel_p
+            self.preview_card_excerpt.value = excerpt or "*(Ghi chú không có nội dung văn bản)*"
+            self.btn_open_target_note_text.value = "Mở tài liệu"
+        else:
+            self.preview_card_path.value = f"⚠️ Chưa có tệp trên ổ đĩa"
+            self.preview_card_excerpt.value = "⚠️ Ghi chú này đã được đổi tên hoặc chưa được tạo trên ổ đĩa. Bạn có muốn tạo mới ghi chú này không?"
+            self.btn_open_target_note_text.value = "Tạo mới ghi chú"
+
+        self.preview_card.visible = True
+        try:
+            if hasattr(self.preview_card, "page") and self.preview_card.page:
+                self.preview_card.update()
+            if hasattr(self.preview_stack, "page") and self.preview_stack.page:
+                self.preview_stack.update()
+        except Exception:
+            pass
+
+    def hide_note_preview(self):
+        """Hides the floating note preview card."""
+        if self.preview_card.visible:
+            self.preview_card.visible = False
+            try:
+                if hasattr(self.preview_card, "page") and self.preview_card.page:
+                    self.preview_card.update()
+                if hasattr(self.preview_stack, "page") and self.preview_stack.page:
+                    self.preview_stack.update()
+            except Exception:
+                pass
+
+    def _handle_open_previewed_doc(self, e):
+        path = getattr(self, "_preview_card_doc_path", "")
+        title = getattr(self, "_preview_card_target_title", "")
+        self.hide_note_preview()
+        if path and os.path.exists(path):
+            if hasattr(self, "on_open_file") and self.on_open_file:
+                self.on_open_file(path)
+        elif title and hasattr(self, "on_create_document_from_link") and self.on_create_document_from_link:
+            self.on_create_document_from_link(title)
 
     def _on_markdown_link_clicked(self, e):
         """Handles link clicks in MarkdownPreview. Interactive YouTube timestamps jump video position."""
@@ -849,33 +1017,33 @@ class MarkdownPreview(ft.Container):
                     print(f"[DEBUG] on_image_link_clicked error: {ex}")
             return
 
-        # PKB Internal Document Links: doc://<doc_id>
+        # PKB Internal Document Links: doc://<doc_id> -> Show Quick Preview Popover
         if url.startswith("doc://"):
             doc_id = url[6:].strip()
             if doc_id:
                 try:
                     from src.services.metadata_index import MetadataIndex
                     doc = MetadataIndex.get_instance().get_document_by_id(doc_id)
-                    if doc and doc.get("path") and os.path.exists(doc["path"]):
-                        if hasattr(self, "on_open_file") and self.on_open_file:
-                            self.on_open_file(doc["path"])
-                            return
+                    if doc:
+                        self.show_note_preview(doc)
+                        return
                     elif hasattr(self, "on_open_file_by_id") and self.on_open_file_by_id:
                         self.on_open_file_by_id(doc_id)
                         return
                 except Exception as ex:
-                    print(f"[PreviewView] Failed to open doc://{doc_id}: {ex}")
+                    print(f"[PreviewView] Failed to preview doc://{doc_id}: {ex}")
             return
 
         # PKB Broken Link Click-to-Create: doc-create://<raw_target>
         if url.startswith("doc-create://"):
             import urllib.parse
             raw_target = urllib.parse.unquote(url[13:]).strip()
-            if raw_target and hasattr(self, "on_create_document_from_link") and self.on_create_document_from_link:
-                try:
-                    self.on_create_document_from_link(raw_target)
-                except Exception as ex:
-                    print(f"[PreviewView] Failed to handle doc-create://{raw_target}: {ex}")
+            if raw_target:
+                self.show_note_preview({
+                    "title": raw_target,
+                    "path": "",
+                    "relative_path": "",
+                })
             return
 
         # PKB Tag Navigation Links: tag://<tag_name>
@@ -1753,6 +1921,38 @@ class MarkdownPreview(ft.Container):
             ),
             table_head_text_style=ft.TextStyle(weight=ft.FontWeight.BOLD, color=text_primary),
         )
+
+        if hasattr(self, "preview_card"):
+            from src.ui_flet.theme import make_border, get_style_color
+            bg_card = "#ffffff" if not is_dark else resolve_color(palette, "bg_component", is_dark)
+            card_border = resolve_color(palette, "border_color", is_dark)
+            text_mut = get_style_color("text_muted", is_dark)
+
+            self.preview_card.bgcolor = bg_card
+            self.preview_card.border = make_border(1, accent_primary if is_dark else card_border)
+            self.preview_card.shadow = ft.BoxShadow(
+                spread_radius=1,
+                blur_radius=14,
+                color=ft.Colors.with_opacity(0.12 if not is_dark else 0.45, ft.Colors.BLACK),
+                offset=ft.Offset(0, 4),
+            )
+            if hasattr(self, "preview_card_icon"):
+                self.preview_card_icon.color = accent_primary
+            if hasattr(self, "preview_card_title"):
+                self.preview_card_title.color = accent_primary
+            if hasattr(self, "preview_card_path"):
+                self.preview_card_path.color = text_mut
+            if hasattr(self, "preview_card_excerpt"):
+                self.preview_card_excerpt.color = text_primary
+            if hasattr(self, "preview_card_divider"):
+                self.preview_card_divider.color = card_border
+            if hasattr(self, "btn_open_target_note"):
+                self.btn_open_target_note.style = ft.ButtonStyle(
+                    bgcolor=accent_primary,
+                    color=ft.Colors.WHITE,
+                    shape=ft.RoundedRectangleBorder(radius=6),
+                    padding=ft.Padding(12, 6, 12, 6),
+                )
 
         if self._cached_processed_text:
             self._render_processed_content(self._cached_processed_text)

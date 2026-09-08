@@ -675,5 +675,9 @@
   "backlinks.btn_link": "Gắn link",
   "backlinks.btn_link_tooltip": "Tự động bao bọc cụm từ này trong [[...]] trong tài liệu gốc",
   "explorer.filter_by_tag": "Lọc theo Thẻ:",
-  "explorer.all_tags": "Tất cả các thẻ"
+  "explorer.all_tags": "Tất cả các thẻ",
+  "wikilink.tooltip_missing": "Chưa có ghi chú này. Nhấp để tạo mới",
+  "tag.tooltip": "Lọc tài liệu theo thẻ #{tag}",
+  "transclusion.circular_warning": "Vòng lặp nhúng (Circular Embed)",
+  "transclusion.not_found": "Không tìm thấy nội dung nhúng"
 }

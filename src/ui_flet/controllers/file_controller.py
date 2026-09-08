@@ -1229,26 +1229,73 @@ class FileController:
             self.perform_autosave()
             self.save_tab_session()
 
-            # PKB Atomic Rename in SQLite MetadataIndex
-            try:
-                from src.services.metadata_index import MetadataIndex
-                new_title = os.path.splitext(os.path.basename(new_path))[0]
-                MetadataIndex.get_instance().rename_document(old_path, new_path, new_title)
-                
-                # Refresh Backlink and Explorer views if active
-                backlink_view = self.app_controls.get("backlink_view")
-                if backlink_view and hasattr(backlink_view, "refresh_data"):
-                    backlink_view.refresh_data()
-                explorer_view = self.app_controls.get("explorer_view")
-                if explorer_view and hasattr(explorer_view, "refresh_tags"):
-                    explorer_view.refresh_tags()
-            except Exception as ex:
-                print(f"[FileController] MetadataIndex rename error: {ex}")
+        # PKB Atomic Rename in SQLite MetadataIndex & Workspace Link Refactoring
+        try:
+            from src.services.metadata_index import MetadataIndex
+            from src.services.refactor_service import refactor_document_rename_workspace, refactor_markdown_links
 
-            try:
-                self.page.update()
-            except Exception:
-                pass
+            old_stem = os.path.splitext(os.path.basename(old_path))[0]
+            new_stem = os.path.splitext(os.path.basename(new_path))[0]
+            old_basename = os.path.basename(old_path)
+            new_basename = os.path.basename(new_path)
+
+            new_title = new_stem
+            MetadataIndex.get_instance().rename_document(old_path, new_path, new_title)
+
+            # 1. First, cascade refactor across all markdown files on disk in workspace
+            ws_folder = getattr(self.state, "workspace_folder", None)
+            refactor_res = refactor_document_rename_workspace(old_path, new_path, workspace_folder=ws_folder)
+
+            mod_set = {os.path.normcase(os.path.normpath(p)) for p in refactor_res.get("modified_file_paths", [])}
+            new_path_norm = os.path.normcase(os.path.normpath(new_path))
+
+            # 2. Second, cascade refactor all in-memory tab buffers (including unsaved tabs / docx / drafts)
+            for tab in (self.state.tabs or []):
+                is_active = (tab.tab_id == self.state.active_tab_id)
+                tab_p_norm = os.path.normcase(os.path.normpath(tab.in_path)) if tab.in_path else ""
+
+                # If this tab corresponds to a file modified on disk (or the renamed file itself), read fresh disk content
+                if tab.in_path and os.path.exists(tab.in_path) and (tab_p_norm in mod_set or tab_p_norm == new_path_norm):
+                    try:
+                        with open(tab.in_path, "r", encoding="utf-8", errors="replace") as f:
+                            disk_txt = f.read()
+                        tab.raw_editor_text = disk_txt
+                        if is_active and self.editor_view:
+                            self.editor_view.set_text(disk_txt)
+                            if self.preview:
+                                self.preview.update_preview(disk_txt)
+                        continue
+                    except Exception as sync_ex:
+                        print(f"[FileController] Sync disk error for tab {tab.in_path}: {sync_ex}")
+
+                # Otherwise refactor in-memory text directly
+                current_tab_text = self.editor_view.get_text() if (is_active and self.editor_view) else (tab.raw_editor_text or "")
+                if current_tab_text:
+                    upd_txt, c1 = refactor_markdown_links(current_tab_text, old_stem, new_stem, old_path=old_path, new_path=new_path)
+                    if old_basename != old_stem:
+                        upd_txt, c2 = refactor_markdown_links(upd_txt, old_basename, new_basename)
+                        c1 += c2
+                    if c1 > 0:
+                        tab.raw_editor_text = upd_txt
+                        if is_active and self.editor_view:
+                            self.editor_view.set_text(upd_txt)
+                            if self.preview:
+                                self.preview.update_preview(upd_txt)
+
+            # Refresh Backlink and Explorer views if active
+            backlink_view = self.app_controls.get("backlink_view")
+            if backlink_view and hasattr(backlink_view, "refresh_data"):
+                backlink_view.refresh_data()
+            explorer_view = self.app_controls.get("explorer_view")
+            if explorer_view and hasattr(explorer_view, "refresh_tags"):
+                explorer_view.refresh_tags()
+        except Exception as ex:
+            print(f"[FileController] MetadataIndex rename / refactor error: {ex}")
+
+        try:
+            self.page.update()
+        except Exception:
+            pass
 
     def handle_file_deleted(self, deleted_path: str):
         """

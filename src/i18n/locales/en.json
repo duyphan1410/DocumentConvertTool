@@ -675,5 +675,9 @@
   "backlinks.btn_link": "Link",
   "backlinks.btn_link_tooltip": "Automatically wrap this mention in [[...]] in the source file",
   "explorer.filter_by_tag": "Filter by Tag:",
-  "explorer.all_tags": "All Tags"
+  "explorer.all_tags": "All Tags",
+  "wikilink.tooltip_missing": "Note does not exist yet. Click to create",
+  "tag.tooltip": "Filter documents by tag #{tag}",
+  "transclusion.circular_warning": "Circular Embed Detected",
+  "transclusion.not_found": "Embedded content not found"
 }

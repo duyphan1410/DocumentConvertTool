@@ -292,15 +292,18 @@ class MetadataIndex:
             if source_path:
                 source_dir = os.path.dirname(os.path.normpath(os.path.abspath(source_path)))
                 cand = os.path.normpath(os.path.abspath(os.path.join(source_dir, clean_target)))
-                cursor.execute("SELECT * FROM documents WHERE path = ?", (cand,))
-                row = cursor.fetchone()
-                if row:
-                    return dict(row)
-                if not cand.endswith(".md"):
-                    cursor.execute("SELECT * FROM documents WHERE path = ?", (cand + ".md",))
+                if os.path.exists(cand) and os.path.isfile(cand):
+                    cursor.execute("SELECT * FROM documents WHERE path = ?", (cand,))
                     row = cursor.fetchone()
                     if row:
                         return dict(row)
+                if not cand.endswith(".md"):
+                    cand_md = cand + ".md"
+                    if os.path.exists(cand_md) and os.path.isfile(cand_md):
+                        cursor.execute("SELECT * FROM documents WHERE path = ?", (cand_md,))
+                        row = cursor.fetchone()
+                        if row:
+                            return dict(row)
 
             # Extract stem if raw_target ends with extension
             target_stem = clean_target
@@ -315,15 +318,19 @@ class MetadataIndex:
                 SELECT * FROM documents 
                 WHERE title = ? OR title = ? OR path LIKE ? OR path LIKE ?
             """, (target_stem, clean_target, f"%{os.sep}{target_stem}.md", f"%/{target_stem}.md"))
-            rows = cursor.fetchall()
+            raw_rows = cursor.fetchall()
 
-            if not rows:
+            if not raw_rows:
                 # 2. Case-insensitive exact match
                 cursor.execute("""
                     SELECT * FROM documents 
                     WHERE LOWER(title) = LOWER(?) OR LOWER(title) = LOWER(?)
                 """, (target_stem, clean_target))
-                rows = cursor.fetchall()
+                raw_rows = cursor.fetchall()
+
+            # Prioritize candidates that currently exist on disk
+            existing_rows = [r for r in raw_rows if os.path.exists(r["path"])]
+            rows = existing_rows if existing_rows else raw_rows
 
             if not rows:
                 return None
@@ -493,12 +500,20 @@ class MetadataIndex:
                 with conn:  # SQLite context manager manages BEGIN/COMMIT/ROLLBACK atomically
                     cursor = conn.cursor()
 
-                    # Find all existing DB records in this workspace
-                    cursor.execute("SELECT id, path, content_hash FROM documents WHERE path LIKE ?", (f"{norm_ws}%",))
-                    db_records = {r["path"]: {"id": r["id"], "content_hash": r["content_hash"]} for r in cursor.fetchall()}
+                    # Find all existing DB records in this workspace reliably across all OS path formats
+                    cursor.execute("SELECT id, path, content_hash FROM documents")
+                    all_rows = cursor.fetchall()
+                    db_records = {}
+                    for r in all_rows:
+                        p = r["path"]
+                        try:
+                            if os.path.commonpath([p, norm_ws]) == norm_ws:
+                                db_records[p] = {"id": r["id"], "content_hash": r["content_hash"]}
+                        except Exception:
+                            pass
 
                     # 2a. Orphan Purge (files in DB but not on disk)
-                    orphan_paths = [p for p in db_records.keys() if p not in disk_files_set]
+                    orphan_paths = [p for p in db_records.keys() if p not in disk_files_set or not os.path.exists(p)]
                     if orphan_paths:
                         cursor.executemany("DELETE FROM documents WHERE path = ?", [(p,) for p in orphan_paths])
                         stats["deleted"] = len(orphan_paths)

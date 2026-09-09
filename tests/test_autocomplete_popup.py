@@ -83,6 +83,26 @@ class TestAutocompletePopup(unittest.TestCase):
         editor_view.check_autocomplete_trigger()
         self.assertFalse(editor_view.autocomplete_popup.visible)
 
+    def test_estimate_cursor_position_unikey_replacement(self):
+        search_bar = MagicMock(spec=SearchReplaceBar)
+        search_bar.results_container = ft.Container()
+        editor_view = EditorView(
+            search_replace_bar=search_bar,
+            on_editor_changed=MagicMock(),
+        )
+
+        # Unikey Telex: typing [ produces ơ, typing second [ replaces ơ with [[
+        old_val = "Hello ơ"
+        new_val = "Hello [["
+        pos = editor_view._estimate_cursor_position(old_val, new_val)
+        self.assertEqual(pos, len(new_val))  # Position should be at the end of [[
+
+        # Replacement in the middle of a line
+        old_mid = "Hello ơ world"
+        new_mid = "Hello [[ world"
+        pos_mid = editor_view._estimate_cursor_position(old_mid, new_mid)
+        self.assertEqual(pos_mid, len("Hello [["))
+
 
 if __name__ == "__main__":
     unittest.main()

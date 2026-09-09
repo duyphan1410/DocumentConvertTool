@@ -121,6 +121,10 @@ class EditorController:
         start_idx = prefix_len
         end_idx = len(new_text) - suffix_len
 
+        # Trim trailing newlines from range to prevent Flutter full-width line highlight
+        while end_idx > start_idx and new_text[end_idx - 1] in ("\n", "\r"):
+            end_idx -= 1
+
         if start_idx <= end_idx:
             return start_idx, end_idx
         return start_idx, start_idx

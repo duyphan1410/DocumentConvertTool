@@ -272,6 +272,11 @@ class AutocompletePopup(ft.Container):
     def _safe_update(self):
         try:
             if hasattr(self, "page") and self.page:
+                self.page.update()
+            else:
                 self.update()
         except Exception:
-            pass
+            try:
+                self.update()
+            except Exception:
+                pass

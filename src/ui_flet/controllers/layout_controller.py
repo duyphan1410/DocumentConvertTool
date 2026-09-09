@@ -480,7 +480,8 @@ class LayoutController:
             if current_text is not None and not current_text.startswith("⏳ Loading"):
                 outgoing_tab.full_content = current_text
             if outgoing_tab.is_dirty and file_controller:
-                file_controller.perform_autosave(outgoing_tab.tab_id)
+                import threading
+                threading.Thread(target=file_controller.perform_autosave, args=(outgoing_tab.tab_id,), daemon=True).start()
 
         t_flush = time.time() - t_switch_0
 
@@ -551,6 +552,7 @@ class LayoutController:
                                     is_dark=is_dark,
                                     palette_name=palette_name,
                                     session_id=incoming_tab.media_session_id,
+                                    enable_cloud_mermaid=getattr(self.state, "mermaid_render_engine", "local") != "local",
                                 )
                                 incoming_tab.cached_preview_md = processed_md
                                 print(f"[LOG][TAB_SWITCH] Async hydration computed in {time.time() - t_h0:.3f}s (cached_len={len(processed_md)})")
@@ -588,6 +590,7 @@ class LayoutController:
                         base_dir=base_dir,
                         session_id=incoming_tab.media_session_id,
                     )
+                    incoming_tab.cached_preview_md = getattr(preview, "_cached_processed_text", "")
                     print(f"[LOG][TAB_SWITCH] Standard preview applied for '{incoming_tab.title}' in {time.time() - t_switch_0:.3f}s")
 
         # 7. Update Window Title
@@ -604,7 +607,8 @@ class LayoutController:
 
         # 10. Persist Tab Session Manifest
         if file_controller:
-            file_controller.save_tab_session()
+            import threading
+            threading.Thread(target=file_controller.save_tab_session, daemon=True).start()
 
         # 11. Hydrate FooterBar (Per-Tab conversion result & status)
         footer_bar = self.app_controls.get("footer_bar")
@@ -626,13 +630,18 @@ class LayoutController:
             else:
                 footer_bar.set_status_key("footer.status_ready")
 
-        # 12. Sync Backlink View Active Document
+        # 12. Sync Backlink View Active Document (Lazy when Backlinks panel is closed/hidden)
         backlink_view = self.app_controls.get("backlink_view")
         if backlink_view and hasattr(backlink_view, "set_active_document"):
             active_title = ""
             if incoming_tab.in_path:
                 active_title = os.path.splitext(os.path.basename(incoming_tab.in_path))[0]
-            backlink_view.set_active_document(incoming_tab.in_path, active_title or incoming_tab.title)
+            is_backlink_vis = bool(getattr(backlink_view, "visible", False))
+            backlink_view.set_active_document(
+                incoming_tab.in_path,
+                active_title or incoming_tab.title,
+                lazy=(not is_backlink_vis),
+            )
 
         try:
             if self.page:
@@ -684,11 +693,16 @@ class LayoutController:
         preview = self.app_controls.get("preview")
         file_path_bar = self.app_controls.get("file_path_bar")
 
-        # 1. Trích xuất media_session_id TRƯỚC KHI close_tab
+        # 1. Trích xuất media_session_id và in_path TRƯỚC KHI close_tab
         tab_to_close = self.state.find_tab_by_id(tab_id)
+        closed_path = tab_to_close.in_path if tab_to_close else None
         sid = tab_to_close.media_session_id if tab_to_close else None
 
         self.state.close_tab(tab_id)
+
+        backlink_view = self.app_controls.get("backlink_view")
+        if backlink_view and hasattr(backlink_view, "invalidate_cache") and closed_path:
+            backlink_view.invalidate_cache(closed_path)
 
         if file_controller:
             file_controller.clear_tab_draft(tab_id, media_session_id=sid)
@@ -704,6 +718,8 @@ class LayoutController:
             if file_path_bar:
                 file_path_bar.set_in_path("")
                 file_path_bar.set_out_path("")
+            if backlink_view and hasattr(backlink_view, "set_active_document"):
+                backlink_view.set_active_document(None)
             if ribbon_bar and hasattr(ribbon_bar, "update_mode_options"):
                 def_mode = getattr(self.state, "default_mode", "MD -> Excel")
                 ribbon_bar.update_mode_options("", preferred_mode=def_mode)

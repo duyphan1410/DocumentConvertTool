@@ -368,22 +368,27 @@ class EditorView:
             return 0
         if not old_val:
             return len(new_val)
+        if old_val == new_val:
+            return self.selection_start if self.selection_start is not None else len(new_val)
         min_len = min(len(old_val), len(new_val))
-        prefix_len = 0
-        while prefix_len < min_len and old_val[prefix_len] == new_val[prefix_len]:
-            prefix_len += 1
-        inserted_len = len(new_val) - len(old_val)
-        if inserted_len > 0:
-            return prefix_len + inserted_len
-        elif inserted_len < 0:
-            return prefix_len
-        return prefix_len + 1
+        p_len = 0
+        while p_len < min_len and old_val[p_len] == new_val[p_len]:
+            p_len += 1
+        s_len = 0
+        while s_len < (min_len - p_len) and old_val[len(old_val) - 1 - s_len] == new_val[len(new_val) - 1 - s_len]:
+            s_len += 1
+        new_edit_end = len(new_val) - s_len
+        return max(0, min(new_edit_end, len(new_val)))
 
     def _handle_editor_text_changed(self, e):
         """Internal change handler dispatching external on_editor_changed and checking autocomplete."""
         old_val = getattr(self, "_last_raw_value", "") or ""
         raw_val = self.editor.value or ""
         
+        # Guard: Ignore synthetic/echo events where text did not change (prevents jumping cursor to EOF)
+        if old_val == raw_val and getattr(self, "_last_raw_value", None) is not None:
+            return
+
         pos = self._estimate_cursor_position(old_val, raw_val)
         self.selection_start = pos
         self.selection_end = pos
@@ -397,10 +402,34 @@ class EditorView:
         """Track current selection/cursor range from Flet TextField events and detect image context."""
         sel = e.selection
         if sel:
-            self.selection_start = min(sel.base_offset, sel.extent_offset)
-            self.selection_end = max(sel.base_offset, sel.extent_offset)
+            b = sel.base_offset
+            ext = sel.extent_offset
+            raw_len = len(self.editor.value or "")
+            # When typing via IME/Unikey, Flutter dispatches synthetic selection events with 0 or -1 offset.
+            # Only update selection range if offsets are valid and non-zero (or document is empty).
+            if (b is not None and ext is not None) and (b > 0 or ext > 0 or raw_len == 0):
+                # Invalidate any pending deferred selection tasks from previous undo/redo only on manual user clicks
+                if not getattr(self, "_is_setting_selection", False):
+                    self._selection_task_id = getattr(self, "_selection_task_id", 0) + 1
+                self.selection_start = min(b, ext)
+                self.selection_end = max(b, ext)
+
+                # Option A: Do not trigger autocomplete on click/selection.
+                # If popup is already open, hide it if user selects a range or clicks away from edit position.
+                if hasattr(self, "autocomplete_popup") and self.autocomplete_popup.visible:
+                    if b != ext:
+                        self.autocomplete_popup.hide()
+                    else:
+                        start_idx = getattr(self, "_autocomplete_start_idx", None)
+                        if start_idx is not None:
+                            if b < start_idx:
+                                self.autocomplete_popup.hide()
+                            else:
+                                raw_val = self.editor.value or ""
+                                text_between = raw_val[start_idx:b]
+                                if "\n" in text_between or len(text_between) > 100:
+                                    self.autocomplete_popup.hide()
             self.check_image_context()
-            self.check_autocomplete_trigger()
 
     def check_autocomplete_trigger(self, pos_override: Optional[int] = None):
         """Detects whether current cursor is on a wikilink [[... or tag #... trigger."""
@@ -488,6 +517,10 @@ class EditorView:
         try:
             from src.services.metadata_index import MetadataIndex
             ws = self._get_workspace_path() if hasattr(self, "_get_workspace_path") and callable(self._get_workspace_path) else None
+            if not ws:
+                active_p = self._get_active_file_path() if (hasattr(self, "_get_active_file_path") and self._get_active_file_path) else None
+                if active_p and os.path.exists(active_p):
+                    ws = os.path.dirname(active_p)
             items = MetadataIndex.get_instance().get_wikilink_suggestions(query, workspace_folder=ws, limit=8)
             self.autocomplete_popup.show_suggestions(mode="wikilink", items=items, query=query)
             try:
@@ -530,31 +563,20 @@ class EditorView:
             end = self.selection_end if self.selection_end is not None else start
 
         if mode == "wikilink":
-            title = item.get("title", "")
-            replacement = f"[[{title}]]"
+            replacement = f"[[{item.get('title', '')}]]"
         else:
-            tag_name = item.get("name", "")
-            replacement = f"#{tag_name} "
+            replacement = f"#{item.get('name', '')} "
 
         new_val = raw_val[:start] + replacement + raw_val[end:]
         new_pos = start + len(replacement)
-        self.editor.value = new_val
-        self.editor.selection = ft.TextSelection(base_offset=new_pos, extent_offset=new_pos)
-        self.selection_start, self.selection_end = new_pos, new_pos
 
         self._autocomplete_start_idx = None
         self._autocomplete_end_idx = None
 
-        try:
-            if self.editor.page:
-                self.editor.update()
-        except Exception:
-            pass
+        self.set_text_with_selection(new_val, new_pos, new_pos, focus=True)
 
         if self.on_editor_changed:
             self.on_editor_changed(None)
-
-        self.focus_editor()
 
     def check_image_context(self):
         """Checks if current cursor or selection range is inside/on an image token and updates toolbar."""
@@ -740,8 +762,10 @@ class EditorView:
             pass
 
     def set_text(self, text: str):
+        clean_text = (text or "").replace("\r\n", "\n")
         self._suppress_image_detection = True
-        self.editor.value = (text or "").replace("\r\n", "\n")
+        self._last_raw_value = clean_text
+        self.editor.value = clean_text
         self.editor.read_only = False
         self.selection_start = 0
         self.selection_end = 0
@@ -750,6 +774,8 @@ class EditorView:
         self._dismissed_token_raw = None
         if hasattr(self, "floating_image_toolbar"):
             self.floating_image_toolbar.set_image_context(None)
+        if hasattr(self, "autocomplete_popup"):
+            self.autocomplete_popup.hide()
         if not getattr(self, "word_wrap_enabled", True):
             self.update_dynamic_width()
         try:
@@ -764,6 +790,7 @@ class EditorView:
         import asyncio
 
         clean_text = (text or "").replace("\r\n", "\n")
+        self._last_raw_value = clean_text
         self.editor.value = clean_text
         self.editor.read_only = False
         self.selection_start = start
@@ -778,47 +805,57 @@ class EditorView:
         except Exception:
             pass
 
-        delay = 0.05 + min(0.1, len(clean_text) / 500_000)
+        self._is_setting_selection = True
+        self._selection_task_id = getattr(self, "_selection_task_id", 0) + 1
+        my_task_id = self._selection_task_id
+
+        # 20ms base delay (~1 frame @ 60fps) minimizes visual cursor flash to EOF before snapping
+        delay = 0.02 + min(0.08, len(clean_text) / 500_000)
 
         async def _apply_selection():
-            await asyncio.sleep(delay)
-            raw_val = self.editor.value or ""
-            lf_val = raw_val.replace("\r\n", "\n")
-            text_len = len(lf_val)
-            s = max(0, min(start, text_len))
-            e = max(s, min(end, text_len))
-
-            def lf_to_utf16(lf_offset: int) -> int:
-                raw_idx = len(raw_val)
-                lf_count = 0
-                for i, char in enumerate(raw_val):
-                    if lf_count == lf_offset:
-                        raw_idx = i
-                        break
-                    if char != "\r":
-                        lf_count += 1
-                return len(raw_val[:raw_idx].encode("utf-16-le")) // 2
-
-            utf16_start = lf_to_utf16(s)
-            utf16_end = lf_to_utf16(e)
-
-            self.editor.selection = ft.TextSelection(base_offset=utf16_start, extent_offset=utf16_end)
-            self.selection_start, self.selection_end = s, e
             try:
-                if self.editor.page:
-                    if focus:
-                        res = self.editor.focus()
-                        if asyncio.iscoroutine(res):
-                            await res
-                    self.editor.update()
-            except Exception:
-                pass
+                await asyncio.sleep(delay)
+                if getattr(self, "_selection_task_id", None) != my_task_id:
+                    return
+                raw_val = self.editor.value or ""
+                lf_val = raw_val.replace("\r\n", "\n")
+                text_len = len(lf_val)
+                s = max(0, min(start, text_len))
+                e = max(s, min(end, text_len))
+
+                def lf_to_utf16(lf_offset: int) -> int:
+                    raw_idx = len(raw_val)
+                    lf_count = 0
+                    for i, char in enumerate(raw_val):
+                        if lf_count == lf_offset:
+                            raw_idx = i
+                            break
+                        if char != "\r":
+                            lf_count += 1
+                    return len(raw_val[:raw_idx].encode("utf-16-le")) // 2
+
+                utf16_start = lf_to_utf16(s)
+                utf16_end = lf_to_utf16(e)
+
+                self.editor.selection = ft.TextSelection(base_offset=utf16_start, extent_offset=utf16_end)
+                self.selection_start, self.selection_end = s, e
+                try:
+                    if self.editor.page:
+                        self.editor.update()
+                        if focus:
+                            res = self.editor.focus()
+                            if asyncio.iscoroutine(res):
+                                await res
+                except Exception:
+                    pass
+            finally:
+                self._is_setting_selection = False
 
         try:
             if self.editor.page:
                 self.editor.page.run_task(_apply_selection)
         except Exception:
-            pass
+            self._is_setting_selection = False
 
     def focus_editor(self):
         """Focus the editor text field."""

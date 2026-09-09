@@ -23,7 +23,7 @@ Nguyên tắc xuyên suốt cả 4 phase:
 
 | Phase | Version | Nội dung chính | Tài liệu chi tiết | Người thực hiện |
 | :---: | :---: | :--- | :--- | :---: |
-| **1** | v1.10.0 | SQLite index (`documents`, `tags`, `wikilinks`), Wikilinks `[[...]]` fuzzy match VN, UI gắn nhãn | 📄 [phase1_tagging_wikilinks.md](pkb/phase1_tagging_wikilinks.md) | 🟡 In Progress — 👤 Duy (SQLite WAL Schema + UI + Controllers) / 👤 Huy (Fuzzy match engine + Wikilink Parser) |
+| **1** | v1.10.0 | SQLite index (`documents`, `tags`, `wikilinks`), Wikilinks `[[...]]` fuzzy match VN, UI gắn nhãn | 📄 [phase1_tagging_wikilinks.md](pkb/phase1_tagging_wikilinks.md) | ✅ Completed (v1.10.0) — 👤 Duy (SQLite WAL Schema + UI + Controllers) / 👤 Huy (Fuzzy match engine + Wikilink Parser) |
 | **2** | v1.11.0 | MCP Server stdio (Python, wrap module hiện có) cho Claude Desktop/Code | 📄 [phase2_mcp_server.md](pkb/phase2_mcp_server.md) | 👤 Huy (tool interface + security validation) — Duy review |
 | **3** | v1.12.0 | Graph View (`networkx` layout → SVG render qua Flet, có filter) | 📄 [phase3_graph_view.md](pkb/phase3_graph_view.md) | 👤 Duy (UI/render) — không cần Huy, phụ thuộc thuần vào index Phase 1 |
 | **4** | v1.13.0 | Export Module: Obsidian sync (frontmatter `.md`) + Export `.zip` cho claude.ai Projects | 📄 [phase4_export_sync.md](pkb/phase4_export_sync.md) | 👤 Duy (format writer) — song song với Phase 2/3 nếu rảnh sớm |

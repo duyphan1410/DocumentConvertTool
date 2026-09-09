@@ -145,7 +145,7 @@ def show_youtube_dialog(
     )
 
     btn_cancel_job = ft.TextButton(
-        "Cancel Task",
+        t("transcribe.btn_cancel_task"),
         icon=ft.Icons.CANCEL_ROUNDED,
         style=ft.ButtonStyle(color=ft.Colors.RED_400),
         visible=False,
@@ -166,13 +166,13 @@ def show_youtube_dialog(
             progress_bar.visible = True
             progress_ring.visible = True
             progress_bar.value = job.progress if job.progress > 0 else None
-            status_text.value = job.stage_message or "Processing..."
+            status_text.value = job.stage_message or t("transcribe.status_processing")
             status_text.color = accent_primary
             status_text.visible = True
             btn_fetch.disabled = True
             btn_cancel_job.visible = True
         elif job.status == JobStatus.QUEUED:
-            queue_banner.content.controls[1].value = f"Queued: Waiting for worker ({job.display_name})"
+            queue_banner.content.controls[1].value = t("transcribe.status_queued", name=job.display_name)
             queue_banner.visible = True
             btn_fetch.disabled = True
             btn_cancel_job.visible = True
@@ -183,11 +183,11 @@ def show_youtube_dialog(
             btn_fetch.disabled = False
             url_input.disabled = False
             if job.status == JobStatus.FAILED:
-                status_text.value = job.error_message or "Failed"
+                status_text.value = job.error_message or t("transcribe.err_transcription_failed")
                 status_text.color = ft.Colors.RED_400
                 status_text.visible = True
             elif job.status == JobStatus.CANCELLED:
-                status_text.value = "Task cancelled"
+                status_text.value = t("transcribe.status_cancelled")
                 status_text.color = text_secondary
                 status_text.visible = True
             elif job.status == JobStatus.COMPLETED:
@@ -212,7 +212,7 @@ def show_youtube_dialog(
         if tracked_job:
             manager.cancel_job(tracked_job.job_id)
             btn_cancel_job.visible = False
-            status_text.value = "Cancelled"
+            status_text.value = t("transcribe.status_cancelled")
             status_text.color = text_secondary
             progress_bar.visible = False
             progress_ring.visible = False
@@ -392,7 +392,7 @@ def show_youtube_dialog(
         btn_cancel_job.visible = True
         progress_bar.visible = True
         progress_ring.visible = True
-        status_text.value = "Starting..."
+        status_text.value = t("transcribe.status_starting")
         status_text.visible = True
         page.update()
 

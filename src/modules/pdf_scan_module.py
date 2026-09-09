@@ -351,11 +351,13 @@ class PDFScanModule(BaseDocumentModule):
             current_page_num = page_idx + 1
 
             if progress_callback:
-                progress_callback(
+                res = progress_callback(
                     current_page_num,
                     total_pages,
                     f"Đang xử lý OCR trang {current_page_num}/{total_pages}...",
                 )
+                if res is False:
+                    break
 
             # Step 1: Rasterize to 300 DPI
             page = doc[page_idx]
@@ -374,12 +376,14 @@ class PDFScanModule(BaseDocumentModule):
                     import inspect
                     sig = inspect.signature(progress_callback)
                     if len(sig.parameters) >= 4:
-                        progress_callback(
+                        res = progress_callback(
                             current_page_num,
                             total_pages,
                             f"Đã nạp trang {current_page_num}/{total_pages}...",
                             partial_md,
                         )
+                        if res is False:
+                            break
                 except Exception as ex_stream:
                     logger.debug(f"Progressive stream callback error: {ex_stream}")
 

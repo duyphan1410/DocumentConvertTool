@@ -150,6 +150,16 @@ for flet_pkg in ['flet', 'flet_desktop']:
     except Exception:
         pass
 
+# Collect binaries & data assets for faster_whisper, ctranslate2, onnxruntime, and PyAV
+for ai_pkg in ['faster_whisper', 'ctranslate2', 'onnxruntime', 'av', 'tokenizers']:
+    try:
+        tmp_ai = collect_all(ai_pkg)
+        datas += tmp_ai[0]
+        binaries += tmp_ai[1]
+        hiddenimports += tmp_ai[2]
+    except Exception:
+        pass
+
 # Collect essential data files for PDF & document processing libraries (fast & lightweight)
 for pkg in ['pdfminer', 'pdfplumber', 'pypdfium2', 'fitz']:
     try:
@@ -174,7 +184,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 1. Thư viện Học máy / Data Science nặng (Dự án không dùng: Excel dùng openpyxl, Speech dùng Google HTTP API)
+        # 1. Thư viện Học máy / Data Science nặng (Dự án không dùng: Excel dùng openpyxl)
         # Loại trừ để tránh PyInstaller bị kích hoạt quét hook tự động từ speech_recognition / Pillow
         'tensorflow',
         'tensorboard',
@@ -183,7 +193,6 @@ a = Analysis(
         'pandas',
         'matplotlib',
         'scipy',
-        'onnxruntime',
 
         # 2. Engine GUI của Linux / macOS / Android (Bản build Windows chỉ dùng WinForms / Edge WebView2)
         'webview.platforms.gtk',     # Linux (WebKitGTK / GNOME)

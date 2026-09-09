@@ -121,16 +121,18 @@
 
 ---
 
-### 🚀 v1.10.0 (Tagging & Wikilinks — nền tảng PKB):
+### ✅ v1.10.0 / v1.10.1 (Tagging & Wikilinks — Nền tảng PKB & Backlog Stabilization):
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **SQLite Metadata Index** | `%APPDATA%\DocConvert\index.db` | Bảng `documents`, `tags`, `document_tags`, `wikilinks` — nền tảng dữ liệu chung cho MCP, Graph View, Export. | ⏳ Planned |
-| **Manual Wikilinks `[[...]]`** | `src/services/link_parser.py` | Liên kết hai chiều kiểu Obsidian; Fuzzy Match tiếng Việt (bỏ dấu NFD, case-insensitive, trim space). | ⏳ Planned |
-| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py` | Hiển thị link chưa tồn tại bằng cảnh báo màu; Click tạo file `.md` mới tự động. | ⏳ Planned |
-| **Backlink Panel** | `src/ui_flet/views/backlink_view.py` | Panel *Linked References* & *Unlinked Mentions*. | ⏳ Planned |
+| **SQLite Metadata Index** | `%APPDATA%\DocConvert\index.db` | Bảng `documents`, `tags`, `document_tags`, `wikilinks` — WAL mode, thread-safe, nền tảng dữ liệu chung cho MCP, Graph View, Export. | ✅ Completed (v1.10.0) |
+| **Manual Wikilinks `[[...]]` & Fuzzy Match VN** | `src/services/link_parser.py`, `src/services/fuzzy_matcher.py` | Liên kết hai chiều kiểu Obsidian; Chuẩn hóa tiếng Việt NFD, Exact & Normalized matching, Autocomplete gợi ý `[[...]]` và `#tag`. | ✅ Completed (v1.10.0) |
+| **Broken Link Handling & Click-to-Create** | `src/ui_flet/views/preview_view.py`, `src/ui_flet/controllers/file_controller.py` | Hiển thị link chưa tồn tại bằng cảnh báo trực quan trên Live Preview; Nhấp vào tự động tạo note `.md` mới. | ✅ Completed (v1.10.0) |
+| **Backlink Panel & Unlinked Mentions** | `src/ui_flet/views/backlink_view.py`, `src/ui_flet/layout/activity_bar.py` | Panel *Linked References* (kèm snippet ngữ cảnh) & *Unlinked Mentions* (1-click Link tạo `[[...]]` tức thì). | ✅ Completed (v1.10.0) |
+| **PDF Extraction & Worker Optimization (Backlog)** | `src/modules/pdf_module.py`, `src/ui_flet/controllers/layout_controller.py` | Xử lý an toàn Non-zero BBox Crop PDF, trích xuất ảnh CMYK DeviceCMYK và hủy tiến trình ngầm tức thời. | ✅ Completed (v1.10.1) |
+| **Whisper Packaging & i18n Stabilization (Backlog)** | `Document Converter.spec`, `src/services/whisper_service.py`, `src/services/model_manager.py` | Đóng gói đầy đủ `onnxruntime` + `ctranslate2`, chuyển đổi Windows 8.3 Short Path, VAD filter fallback và i18n transparent error reporting. | ✅ Completed (v1.10.1) |
 
-*(Xem `docs/roadmaps/pkb_feature_plan.md`)*
+*(Xem `docs/roadmaps/pkb_feature_plan.md` & `docs/roadmaps/pkb/phase1_tagging_wikilinks.md`)*
 
 ---
 

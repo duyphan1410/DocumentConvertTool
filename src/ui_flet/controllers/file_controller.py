@@ -1322,7 +1322,7 @@ class FileController:
             # Refresh Backlink and Explorer views if active
             backlink_view = self.app_controls.get("backlink_view")
             if backlink_view and hasattr(backlink_view, "refresh_data"):
-                backlink_view.refresh_data()
+                backlink_view.refresh_data(force=True)
             explorer_view = self.app_controls.get("explorer_view")
             if explorer_view and hasattr(explorer_view, "refresh_tags"):
                 explorer_view.refresh_tags()
@@ -1449,7 +1449,7 @@ class FileController:
             # Refresh Backlink and Explorer views if present
             backlink_view = self.app_controls.get("backlink_view")
             if backlink_view and hasattr(backlink_view, "refresh_data"):
-                backlink_view.refresh_data()
+                backlink_view.refresh_data(force=True)
             explorer_view = self.app_controls.get("explorer_view")
             if explorer_view and hasattr(explorer_view, "refresh_tags"):
                 explorer_view.refresh_tags()

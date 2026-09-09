@@ -456,19 +456,16 @@ def process_markdown_wikilinks(content: str, base_dir: str = None) -> str:
         if doc and doc.get("id"):
             rel_p = doc.get("relative_path") or os.path.basename(doc.get("path", ""))
             doc_title = doc.get("title", target)
-            from src.services.transclusion_service import get_document_excerpt
-            excerpt = get_document_excerpt(doc.get("path", ""), max_lines=5, max_chars=350)
-            if excerpt:
-                tooltip = f"📄 {doc_title} ({rel_p})\n────────────────────\n{excerpt}"
-            else:
-                tooltip = f"📄 {doc_title} • {rel_p}"
+            title_escaped = doc_title.replace('"', "'")
+            tooltip = f"📄 {title_escaped} ({rel_p})"
             tooltip_escaped = tooltip.replace('"', "'")
-            replacement = f'[{display}](doc://{doc["id"]} "{tooltip_escaped}")'
+            replacement = f'[{display}](doc://{doc["id"]} "{tooltip_escaped}") [🔗](doc-preview://{doc["id"]} "Xem nhanh: {title_escaped}")'
         else:
             encoded = urllib.parse.quote(target)
             tooltip_txt = t("wikilink.tooltip_missing")
             tooltip = tooltip_txt if tooltip_txt != "wikilink.tooltip_missing" else "Chưa có ghi chú này. Nhấp để tạo mới"
-            replacement = f'[⚠️ {display}](doc-create://{encoded} "{tooltip}")'
+            tooltip_escaped = tooltip.replace('"', "'")
+            replacement = f'[⚠️ {display}](doc-create://{encoded} "{tooltip_escaped}")'
         result[m.start():m.end()] = list(replacement)
 
     return "".join(result)
@@ -1017,9 +1014,27 @@ class MarkdownPreview(ft.Container):
                     print(f"[DEBUG] on_image_link_clicked error: {ex}")
             return
 
-        # PKB Internal Document Links: doc://<doc_id> -> Show Quick Preview Popover
+        # PKB Internal Document Direct Open: doc://<doc_id> -> Directly open in editor tab
         if url.startswith("doc://"):
             doc_id = url[6:].strip()
+            if doc_id:
+                try:
+                    from src.services.metadata_index import MetadataIndex
+                    doc = MetadataIndex.get_instance().get_document_by_id(doc_id)
+                    if doc and doc.get("path") and os.path.exists(doc["path"]):
+                        if hasattr(self, "on_open_file") and self.on_open_file:
+                            self.on_open_file(doc["path"])
+                            return
+                    elif hasattr(self, "on_open_file_by_id") and self.on_open_file_by_id:
+                        self.on_open_file_by_id(doc_id)
+                        return
+                except Exception as ex:
+                    print(f"[PreviewView] Failed to open doc://{doc_id}: {ex}")
+            return
+
+        # PKB Internal Document Quick Preview Popover: doc-preview://<doc_id> -> Show Quick Preview Popover
+        if url.startswith("doc-preview://"):
+            doc_id = url[14:].strip()
             if doc_id:
                 try:
                     from src.services.metadata_index import MetadataIndex
@@ -1027,23 +1042,19 @@ class MarkdownPreview(ft.Container):
                     if doc:
                         self.show_note_preview(doc)
                         return
-                    elif hasattr(self, "on_open_file_by_id") and self.on_open_file_by_id:
-                        self.on_open_file_by_id(doc_id)
-                        return
                 except Exception as ex:
-                    print(f"[PreviewView] Failed to preview doc://{doc_id}: {ex}")
+                    print(f"[PreviewView] Failed to preview doc-preview://{doc_id}: {ex}")
             return
 
         # PKB Broken Link Click-to-Create: doc-create://<raw_target>
         if url.startswith("doc-create://"):
             import urllib.parse
             raw_target = urllib.parse.unquote(url[13:]).strip()
-            if raw_target:
-                self.show_note_preview({
-                    "title": raw_target,
-                    "path": "",
-                    "relative_path": "",
-                })
+            if raw_target and hasattr(self, "on_create_document_from_link") and self.on_create_document_from_link:
+                try:
+                    self.on_create_document_from_link(raw_target)
+                except Exception as ex:
+                    print(f"[PreviewView] Failed to handle doc-create://{raw_target}: {ex}")
             return
 
         # PKB Tag Navigation Links: tag://<tag_name>

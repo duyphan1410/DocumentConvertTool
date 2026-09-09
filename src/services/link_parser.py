@@ -171,7 +171,12 @@ def find_unlinked_mentions(markdown_text: str, target_title: str) -> list[Unlink
     if not markdown_text or not target_title or len(target_title) < 2:
         return []
 
-    from src.services.fuzzy_matcher import find_fuzzy_substring_occurrences
+    from src.services.fuzzy_matcher import normalize_vietnamese, find_fuzzy_substring_occurrences
+
+    # Fast pre-filter: if normalized target title does not exist in normalized text, skip immediately
+    norm_target = normalize_vietnamese(target_title)
+    if norm_target not in normalize_vietnamese(markdown_text):
+        return []
 
     # Identify ranges to exclude (code blocks, existing wikilinks, existing markdown links, HTML tags)
     excluded_ranges: list[tuple[int, int]] = []

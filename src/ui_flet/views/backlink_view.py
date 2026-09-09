@@ -7,11 +7,15 @@ Follows Flet 0.86.4 standards and Material Design 3 guidelines.
 from __future__ import annotations
 import os
 import re
+import threading
+from collections import OrderedDict
 from typing import Optional, Callable
 import flet as ft
 from src.i18n import t
 from src.services.metadata_index import MetadataIndex
 from src.ui_flet.theme import make_border, get_style_color, resolve_color
+
+MAX_BACKLINK_CACHE_ENTRIES = 100
 
 
 def _sanitize_snippet(text: str) -> str:
@@ -63,6 +67,8 @@ class BacklinkView(ft.Container):
 
         self._linked_refs_data: list[dict] = []
         self._unlinked_mentions_data: list[dict] = []
+        self._doc_cache: OrderedDict[str, dict] = OrderedDict()
+        self._is_loading: bool = False
         self._filter_query: str = ""
         self._is_dark: bool = False
         self._palette: dict = {}
@@ -192,12 +198,21 @@ class BacklinkView(ft.Container):
         except Exception:
             pass
 
-    def set_active_document(self, file_path: Optional[str], title: Optional[str] = None):
+    def invalidate_cache(self, file_path: Optional[str] = None):
+        """Invalidates in-memory backlinks & mentions cache for a specific file or all files."""
+        if file_path:
+            norm = os.path.normpath(os.path.abspath(file_path))
+            self._doc_cache.pop(norm, None)
+        else:
+            self._doc_cache.clear()
+
+    def set_active_document(self, file_path: Optional[str], title: Optional[str] = None, lazy: bool = False):
         """Sets the active document to inspect and loads its backlinks and unlinked mentions."""
         if not file_path:
             self._active_doc_path = None
             self._active_doc_title = None
             self._active_doc_id = None
+            self._is_loading = False
             self.active_doc_title_text.value = t("backlinks.no_active_doc")
             self.active_doc_sub_text.value = ""
             self._linked_refs_data.clear()
@@ -205,62 +220,131 @@ class BacklinkView(ft.Container):
             self._rebuild_sections()
             return
 
-        self._active_doc_path = os.path.normpath(os.path.abspath(file_path))
+        norm_path = os.path.normpath(os.path.abspath(file_path))
         if not title:
             base = os.path.basename(file_path)
-            self._active_doc_title = os.path.splitext(base)[0]
+            doc_title = os.path.splitext(base)[0]
         else:
-            self._active_doc_title = title
+            doc_title = title
+
+        self._active_doc_path = norm_path
+        self._active_doc_title = doc_title
 
         self.active_doc_title_text.value = self._active_doc_title
         self.active_doc_sub_text.value = t("backlinks.active_note")
 
-        self.refresh_data()
+        # 1. Check RAM Cache for instant (0ms) display without showing loading spinner
+        cached = self._doc_cache.get(norm_path)
+        if cached is not None:
+            self._doc_cache.move_to_end(norm_path)
+            self._linked_refs_data = list(cached.get("linked", []))
+            self._unlinked_mentions_data = list(cached.get("unlinked", []))
+            self._active_doc_id = cached.get("doc_id")
+            self._is_loading = False
+            self._rebuild_sections()
+        else:
+            # First time visiting this document: clear old data and show loading spinner
+            self._linked_refs_data.clear()
+            self._unlinked_mentions_data.clear()
+            self._is_loading = True
+            self._rebuild_sections()
 
-    def refresh_data(self):
-        """Fetches fresh backlinks and unlinked mentions from SQLite MetadataIndex."""
+        if lazy or not getattr(self, "visible", False):
+            self._needs_refresh = True
+            return
+
+        self._needs_refresh = False
+        self.refresh_data(is_background_sync=bool(cached))
+
+    def refresh_data(self, force: bool = False, is_background_sync: bool = False):
+        """Fetches fresh backlinks and unlinked mentions from SQLite MetadataIndex asynchronously."""
         if not self._active_doc_path or not self._active_doc_title:
+            self._is_loading = False
             self._rebuild_sections()
             return
 
-        try:
-            index = MetadataIndex.get_instance()
-            ws_folder = self._get_workspace_path() if self._get_workspace_path else None
+        self._refresh_token = getattr(self, "_refresh_token", 0) + 1
+        current_token = self._refresh_token
+        active_path = self._active_doc_path
+        active_title = self._active_doc_title
+        ws_folder = self._get_workspace_path() if self._get_workspace_path else None
 
-            # 1. Lookup active document id
-            doc_rec = index.get_document_by_path(self._active_doc_path)
-            if not doc_rec:
-                # Document not yet in index, upsert it
-                content = ""
-                if os.path.exists(self._active_doc_path):
-                    with open(self._active_doc_path, "r", encoding="utf-8", errors="replace") as f:
-                        content = f.read()
-                h = index.calculate_hash(content)
-                self._active_doc_id = index.upsert_document(self._active_doc_path, self._active_doc_title, h)
-            else:
-                self._active_doc_id = doc_rec["id"]
+        if force:
+            self._doc_cache.pop(active_path, None)
 
-            # 2. Get Linked References
-            self._linked_refs_data = index.get_linked_references(self._active_doc_id, workspace_folder=ws_folder)
+        # Show loading indicator only if there is no cached data currently rendered
+        if not is_background_sync and active_path not in self._doc_cache:
+            self._is_loading = True
+            self._rebuild_sections()
+        else:
+            self._is_loading = False
 
-            # 3. Get Unlinked Mentions
-            self._unlinked_mentions_data = index.get_unlinked_mentions(
-                self._active_doc_id, self._active_doc_title, workspace_folder=ws_folder
-            )
+        def _bg_worker():
+            try:
+                index = MetadataIndex.get_instance()
+                # 1. Lookup active document id
+                doc_rec = index.get_document_by_path(active_path)
+                if not doc_rec:
+                    content = ""
+                    if os.path.exists(active_path):
+                        with open(active_path, "r", encoding="utf-8", errors="replace") as f:
+                            content = f.read()
+                    h = index.calculate_hash(content)
+                    doc_id = index.upsert_document(active_path, active_title, h)
+                else:
+                    doc_id = doc_rec["id"]
 
-        except Exception as ex:
-            print(f"[BacklinkView] refresh_data error: {ex}")
-            if self.on_status_message:
-                self.on_status_message(f"Backlink query error: {ex}", ft.Colors.RED_400)
+                # 2. Get Linked References
+                linked_refs = index.get_linked_references(doc_id, workspace_folder=ws_folder)
 
-        self._rebuild_sections()
+                # 3. Get Unlinked Mentions
+                unlinked_mentions = index.get_unlinked_mentions(doc_id, active_title, workspace_folder=ws_folder)
+
+                # Save to RAM cache with LRU bounding
+                self._doc_cache[active_path] = {
+                    "doc_id": doc_id,
+                    "linked": linked_refs,
+                    "unlinked": unlinked_mentions,
+                }
+                self._doc_cache.move_to_end(active_path)
+                while len(self._doc_cache) > MAX_BACKLINK_CACHE_ENTRIES:
+                    self._doc_cache.popitem(last=False)
+
+                def _apply_success():
+                    if getattr(self, "_refresh_token", 0) == current_token and self._active_doc_path == active_path:
+                        self._active_doc_id = doc_id
+                        self._linked_refs_data = linked_refs
+                        self._unlinked_mentions_data = unlinked_mentions
+                        self._is_loading = False
+                        self._rebuild_sections()
+
+                if hasattr(self, "page") and self.page and hasattr(self.page, "loop") and self.page.loop:
+                    self.page.loop.call_soon_threadsafe(_apply_success)
+                else:
+                    _apply_success()
+
+            except Exception as ex:
+                print(f"[BacklinkView] refresh_data error: {ex}")
+                def _apply_error():
+                    if getattr(self, "_refresh_token", 0) == current_token:
+                        self._is_loading = False
+                        self._rebuild_sections()
+                    if self.on_status_message:
+                        self.on_status_message(f"Backlink query error: {ex}", ft.Colors.RED_400)
+
+                if hasattr(self, "page") and self.page and hasattr(self.page, "loop") and self.page.loop:
+                    self.page.loop.call_soon_threadsafe(_apply_error)
+                else:
+                    _apply_error()
+
+        threading.Thread(target=_bg_worker, daemon=True).start()
 
     def _handle_filter_changed(self, e):
         self._filter_query = (self.filter_input.value or "").lower().strip()
         self._rebuild_sections()
 
     def _handle_refresh_clicked(self, e):
-        self.refresh_data()
+        self.refresh_data(force=True)
         if self.on_status_message:
             self.on_status_message(t("backlinks.refresh"), ft.Colors.BLUE_400)
 
@@ -324,7 +408,9 @@ class BacklinkView(ft.Container):
         # ── Section 1: Linked References ───────────────────────────────────────
         count_linked = len(filtered_linked)
         pill_linked = ft.Container(
-            content=ft.Text(str(count_linked), size=9, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
+            content=ft.ProgressRing(width=8, height=8, stroke_width=1.5, color=ft.Colors.PRIMARY)
+            if self._is_loading
+            else ft.Text(str(count_linked), size=9, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
             bgcolor=ft.Colors.with_opacity(0.16, ft.Colors.PRIMARY),
             border_radius=8,
             padding=ft.Padding(6, 1, 6, 1),
@@ -342,7 +428,21 @@ class BacklinkView(ft.Container):
             )
         )
 
-        if not filtered_linked:
+        if self._is_loading:
+            controls.append(
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.ProgressRing(width=12, height=12, stroke_width=1.8, color=ft.Colors.PRIMARY),
+                            ft.Text(t("backlinks.loading_linked"), size=10, italic=True, color=ft.Colors.OUTLINE),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding(6, 4, 6, 6),
+                )
+            )
+        elif not filtered_linked:
             controls.append(
                 ft.Container(
                     content=ft.Text(t("backlinks.empty_linked"), size=10, italic=True, color=ft.Colors.OUTLINE),
@@ -358,7 +458,9 @@ class BacklinkView(ft.Container):
         # ── Section 2: Unlinked Mentions ───────────────────────────────────────
         count_unlinked = len(filtered_unlinked)
         pill_unlinked = ft.Container(
-            content=ft.Text(str(count_unlinked), size=9, weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER_400),
+            content=ft.ProgressRing(width=8, height=8, stroke_width=1.5, color=ft.Colors.AMBER_400)
+            if self._is_loading
+            else ft.Text(str(count_unlinked), size=9, weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER_400),
             bgcolor=ft.Colors.with_opacity(0.16, ft.Colors.AMBER_400),
             border_radius=8,
             padding=ft.Padding(6, 1, 6, 1),
@@ -376,7 +478,21 @@ class BacklinkView(ft.Container):
             )
         )
 
-        if not filtered_unlinked:
+        if self._is_loading:
+            controls.append(
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.ProgressRing(width=12, height=12, stroke_width=1.8, color=ft.Colors.AMBER_400),
+                            ft.Text(t("backlinks.loading_unlinked"), size=10, italic=True, color=ft.Colors.OUTLINE),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding(6, 4, 6, 6),
+                )
+            )
+        elif not filtered_unlinked:
             controls.append(
                 ft.Container(
                     content=ft.Text(t("backlinks.empty_unlinked"), size=10, italic=True, color=ft.Colors.OUTLINE),
@@ -603,8 +719,9 @@ class BacklinkView(ft.Container):
                 if self.on_status_message:
                     self.on_status_message(f"Linked [[{matched_text}]] in {os.path.basename(source_path)}", ft.Colors.GREEN_400)
 
-                # Refresh current view
-                self.refresh_data()
+                # Invalidate cache and refresh current view
+                self.invalidate_cache()
+                self.refresh_data(force=True)
 
                 if self.on_convert_mention:
                     self.on_convert_mention(source_path, matched_text)
@@ -637,7 +754,21 @@ class BacklinkView(ft.Container):
 
     def _safe_update(self):
         try:
+            if hasattr(self.sections_column, "page") and self.sections_column.page:
+                self.sections_column.update()
+        except Exception:
+            pass
+        try:
+            if hasattr(self.active_doc_banner, "page") and self.active_doc_banner.page:
+                self.active_doc_banner.update()
+        except Exception:
+            pass
+        try:
             if hasattr(self, "page") and self.page:
                 self.update()
         except Exception:
-            pass
+            try:
+                if hasattr(self, "page") and self.page:
+                    self.page.update()
+            except Exception:
+                pass

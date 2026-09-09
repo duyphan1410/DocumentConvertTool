@@ -688,6 +688,8 @@
   "backlinks.unlinked_mentions": "Unlinked Mentions",
   "backlinks.empty_linked": "No documents link to this note yet",
   "backlinks.empty_unlinked": "No unlinked text mentions found",
+  "backlinks.loading_linked": "Scanning linked references...",
+  "backlinks.loading_unlinked": "Searching for unlinked mentions...",
   "backlinks.btn_link": "Link",
   "backlinks.btn_link_tooltip": "Automatically wrap this mention in [[...]] in the source file",
   "explorer.filter_by_tag": "Filter by Tag:",

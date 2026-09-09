@@ -688,6 +688,8 @@
   "backlinks.unlinked_mentions": "Đề cập chưa gắn link (Unlinked)",
   "backlinks.empty_linked": "Chưa có tài liệu nào trích dẫn ghi chú này",
   "backlinks.empty_unlinked": "Không tìm thấy đề cập văn bản chưa gắn link",
+  "backlinks.loading_linked": "Đang quét tài liệu trích dẫn...",
+  "backlinks.loading_unlinked": "Đang tìm đề xuất chưa gắn link...",
   "backlinks.btn_link": "Gắn link",
   "backlinks.btn_link_tooltip": "Tự động bao bọc cụm từ này trong [[...]] trong tài liệu gốc",
   "explorer.filter_by_tag": "Lọc theo Thẻ:",

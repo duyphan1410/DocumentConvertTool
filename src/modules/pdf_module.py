@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import io
+import time
 import hashlib
 from typing import Optional, Callable
 from src.core.base_module import BaseDocumentModule
@@ -450,7 +451,9 @@ class PDFModule(BaseDocumentModule):
                 else:
                     for s in segs:
                         s_mid = (min(c['x0'] for c in s) + max(c['x1'] for c in s)) / 2.0
-                        col_idx = min(max_segs - 1, max(0, int((s_mid / cropped_page.width) * max_segs)))
+                        c_x0 = getattr(cropped_page, "bbox", (0, 0, 0, 0))[0] if hasattr(cropped_page, "bbox") else 0.0
+                        c_w = max(1.0, getattr(cropped_page, "width", 600.0))
+                        col_idx = min(max_segs - 1, max(0, int(((s_mid - c_x0) / c_w) * max_segs)))
                         col_streams[col_idx].append(s)
 
             # Check if right columns are vector graphic diagram text noise (e.g. rotated labels on Sinking Ship)
@@ -729,9 +732,15 @@ class PDFModule(BaseDocumentModule):
                         print(f"[DEBUG] PDFModule: SMask compositing failed for xref {xref}: {smask_err}", file=sys.stderr)
 
                 if img_bytes is None:
-                    if pix.n >= 5:
-                        pix = fitz.Pixmap(fitz.csRGB, pix)
-                    img_bytes = pix.tobytes(ext)
+                    if (pix.colorspace and pix.colorspace.name not in ("DeviceRGB", "DeviceGray")) or pix.n >= 5:
+                        try:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+                        except Exception:
+                            pass
+                    try:
+                        img_bytes = pix.tobytes(ext)
+                    except Exception:
+                        img_bytes = None
 
                 if not img_bytes or len(img_bytes) < 300:
                     continue
@@ -926,6 +935,7 @@ class PDFModule(BaseDocumentModule):
         try:
             # pyrefly: ignore [missing-import]
             import pdfplumber
+            import fitz
             
             settings = {
                 "vertical_strategy": "lines",
@@ -948,12 +958,19 @@ class PDFModule(BaseDocumentModule):
 
             doc_elements = []
             global_img_counter = 1
+            last_progress_time = 0.0
 
             with pdfplumber.open(file_path) as pdf:
                 for page_idx, raw_page in enumerate(pdf.pages):
-                    # Filter out off-page / negative-coordinate ghost characters on raw page before any cropping
+                    # Determine true page bbox bounds and filter ghost characters
+                    p_x0, p_top, p_x1, p_bottom = raw_page.bbox
                     page = raw_page.filter(
-                        lambda obj: obj.get("object_type") != "char" or (obj.get("top", 0) >= 0 and obj.get("x0", 0) >= 0)
+                        lambda obj: obj.get("object_type") != "char" or (
+                            obj.get("top", p_top) >= p_top - 1.0 and
+                            obj.get("x0", p_x0) >= p_x0 - 1.0 and
+                            obj.get("bottom", p_bottom) <= p_bottom + 1.0 and
+                            obj.get("x1", p_x1) <= p_x1 + 1.0
+                        )
                     )
                     page_fitz = fitz_doc[page_idx] if fitz_doc and page_idx < len(fitz_doc) else None
                     page_images = []
@@ -977,15 +994,30 @@ class PDFModule(BaseDocumentModule):
                         if not t_data or not any(r and any(c and str(c).strip() for c in r) for r in t_data):
                             continue
 
+                        # Header Promotion Guard: Detect if row 0 is actually a section title / header
+                        final_t_data = list(t_data)
+                        extracted_title = None
+                        if len(final_t_data) >= 2:
+                            first_row = final_t_data[0]
+                            non_empty_cells = [str(c).strip() for c in first_row if c and str(c).strip()]
+                            if len(non_empty_cells) == 1:
+                                candidate_title = non_empty_cells[0]
+                                if len(candidate_title.split()) <= 12 and not candidate_title.endswith(('.', ':', ';')):
+                                    extracted_title = candidate_title
+                                    final_t_data = final_t_data[1:]
+
+                        if not final_t_data or not any(r and any(c and str(c).strip() for c in r) for r in final_t_data):
+                            continue
+
                         # Guard: Reject 1-column pseudo-tables (e.g. Slide 27 page frame with standalone page number)
-                        num_cols = max(len(r) for r in t_data if r)
+                        num_cols = max(len(r) for r in final_t_data if r)
                         if num_cols < 2:
                             print(f"[DEBUG] PDFModule: Skipped 1-column frame box on page {page_idx + 1} — fallback to rich text")
                             continue
 
                         # Check if table has broken/missing cells (e.g. Slide 32 with unextracted shaded cell)
                         has_broken_cell = False
-                        for row in t_data:
+                        for row in final_t_data:
                             if row and any(c and len(str(c).strip()) > 20 for c in row):
                                 if any(not c or not str(c).strip() for c in row):
                                     has_broken_cell = True
@@ -994,7 +1026,7 @@ class PDFModule(BaseDocumentModule):
                             print(f"[DEBUG] PDFModule: Skipped table with missing/unextracted cell on page {page_idx + 1} — fallback to rich text")
                             continue
 
-                        extracted_title, final_t_data = self._restructure_card_table_if_needed(t_data)
+                        extracted_title, final_t_data = self._restructure_card_table_if_needed(final_t_data)
                         if final_t_data is None:
                             print(f"[DEBUG] PDFModule: Skipped broken/diagram pseudo-table on page {page_idx + 1} — fallback to rich text")
                             continue
@@ -1077,16 +1109,23 @@ class PDFModule(BaseDocumentModule):
 
                     block_regions.sort(key=lambda b: b["top"])
 
-                    current_y = 0.0
+                    # Safe crop boundaries using actual page.bbox
+                    page_x0, page_top, page_x1, page_bottom = page.bbox
+                    current_y = page_top
+
                     for region in block_regions:
-                        rtop = region["top"]
-                        rbottom = region["bottom"]
+                        # Clamp region top and bottom strictly within page bounds
+                        rtop = max(page_top, min(page_bottom, region["top"]))
+                        rbottom = max(page_top, min(page_bottom, region["bottom"]))
 
                         if rtop > current_y + 2.0:
-                            cropped = page.crop((0, max(0.0, current_y), page.width, min(page.height, rtop)))
-                            text_slice = self._extract_rich_text(cropped)
-                            if text_slice:
-                                doc_elements.append({"type": "text", "content": text_slice})
+                            try:
+                                cropped = page.crop((page_x0, current_y, page_x1, rtop))
+                                text_slice = self._extract_rich_text(cropped)
+                                if text_slice:
+                                    doc_elements.append({"type": "text", "content": text_slice})
+                            except Exception as crop_err:
+                                print(f"[DEBUG] PDFModule page {page_idx + 1} crop slice failed: {crop_err}", file=sys.stderr)
 
                         t = region["data"]
                         if region.get("extracted_title"):
@@ -1102,11 +1141,21 @@ class PDFModule(BaseDocumentModule):
                         })
                         current_y = max(current_y, rbottom)
 
-                    if current_y < page.height - 2.0:
-                        cropped = page.crop((0, max(0.0, current_y), page.width, page.height))
-                        text_slice = self._extract_rich_text(cropped)
-                        if text_slice:
-                            doc_elements.append({"type": "text", "content": text_slice})
+                    if current_y < page_bottom - 2.0:
+                        try:
+                            if not block_regions:
+                                # Directly extract from page when there are no tables
+                                text_slice = self._extract_rich_text(page)
+                            else:
+                                cropped = page.crop((page_x0, current_y, page_x1, page_bottom))
+                                text_slice = self._extract_rich_text(cropped)
+                            if text_slice:
+                                doc_elements.append({"type": "text", "content": text_slice})
+                        except Exception as crop_err:
+                            print(f"[DEBUG] PDFModule page {page_idx + 1} bottom crop failed: {crop_err}", file=sys.stderr)
+                            text_slice = self._extract_rich_text(page)
+                            if text_slice:
+                                doc_elements.append({"type": "text", "content": text_slice})
 
                     for img_obj in page_images:
                         doc_elements.append({
@@ -1118,28 +1167,35 @@ class PDFModule(BaseDocumentModule):
                         doc_elements.append({"type": "page_break", "content": "\n\n---\n\n"})
 
                     if progress_callback:
-                        try:
-                            partial_parts = []
-                            for el in doc_elements:
-                                if el["type"] == "text":
-                                    partial_parts.append(el["content"].strip())
-                                elif el["type"] == "table":
-                                    md_t = self._format_markdown_table(el["content"])
-                                    if md_t:
-                                        partial_parts.append(md_t)
-                                elif el["type"] == "image":
-                                    partial_parts.append(el["content"].strip())
-                                elif el["type"] == "page_break":
-                                    partial_parts.append(el["content"])
-                            partial_md = "\n\n".join(partial_parts)
-                            progress_callback(
-                                page_idx + 1,
-                                len(pdf.pages),
-                                f"Trang {page_idx + 1}/{len(pdf.pages)}",
-                                partial_md,
-                            )
-                        except Exception:
-                            pass
+                        now = time.time()
+                        is_last_page = (page_idx >= len(pdf.pages) - 1)
+                        if is_last_page or (now - last_progress_time >= 1.0):
+                            last_progress_time = now
+                            try:
+                                partial_parts = []
+                                for el in doc_elements:
+                                    if el["type"] == "text":
+                                        partial_parts.append(el["content"].strip())
+                                    elif el["type"] == "table":
+                                        md_t = self._format_markdown_table(el["content"])
+                                        if md_t:
+                                            partial_parts.append(md_t)
+                                    elif el["type"] == "image":
+                                        partial_parts.append(el["content"].strip())
+                                    elif el["type"] == "page_break":
+                                        partial_parts.append(el["content"])
+                                partial_md = "\n\n".join(partial_parts)
+                                res = progress_callback(
+                                    page_idx + 1,
+                                    len(pdf.pages),
+                                    f"Trang {page_idx + 1}/{len(pdf.pages)}",
+                                    partial_md,
+                                )
+                                if res is False:
+                                    print(f"[DEBUG] PDFModule: Ingestion cancelled by caller on page {page_idx + 1}")
+                                    break
+                            except Exception:
+                                pass
 
             if fitz_doc:
                 try:
@@ -1167,17 +1223,50 @@ class PDFModule(BaseDocumentModule):
             return "\n\n".join(output_parts)
             
         except Exception as e:
-            print(f"[DEBUG] pdfplumber table extraction failed: {e}. Falling back to markitdown.", file=sys.stderr)
+            print(f"[DEBUG] pdfplumber table extraction failed: {e}. Falling back to PyMuPDF / MarkItDown.", file=sys.stderr)
+            # Fallback 1: Try MarkItDown if available
             try:
                 # pyrefly: ignore [missing-import]
                 from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(file_path)
-                if not result or not result.text_content:
-                    return "*(Empty PDF)*"
-                return result.text_content
+                if result and result.text_content and result.text_content.strip():
+                    return result.text_content
             except Exception:
-                raise RuntimeError(f"PDF Ingestion Error: Failed to extract text layer from PDF file. Detail: {str(e)}")
+                pass
+
+            # Fallback 2: PyMuPDF (fitz) built-in text extraction
+            try:
+                import fitz
+                fallback_doc = fitz.open(file_path)
+                pages_text = []
+                for p in fallback_doc:
+                    t = p.get_text("text").strip()
+                    if t:
+                        pages_text.append(t)
+                fallback_doc.close()
+                if pages_text:
+                    return "\n\n---\n\n".join(pages_text)
+                return "*(Empty PDF)*"
+            except Exception as fitz_err:
+                print(f"[DEBUG] fitz text extraction fallback failed: {fitz_err}", file=sys.stderr)
+
+            # Fallback 3: pypdf if available
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(file_path)
+                pages_text = []
+                for p in reader.pages:
+                    t = p.extract_text() or ""
+                    if t.strip():
+                        pages_text.append(t.strip())
+                if pages_text:
+                    return "\n\n---\n\n".join(pages_text)
+                return "*(Empty PDF)*"
+            except Exception:
+                pass
+
+            raise RuntimeError(f"PDF Ingestion Error: Failed to extract text layer from PDF file. Detail: {str(e)}")
 
     # =========================================================================
     # EXPORT (Markdown -> PDF)

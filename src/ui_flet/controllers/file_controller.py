@@ -195,12 +195,13 @@ class FileController:
             ) else None
 
             main_loop = asyncio.get_running_loop()
-            last_ui_update = [0.0]
+            last_editor_update = [0.0]
+            last_preview_update = [0.0]
 
-            def on_load_progress(cur: int, total: int, msg: str, partial_text: Optional[str] = None):
-                # Generation guard: discard stale progress events from superseded tasks
+            def on_load_progress(cur: int, total: int, msg: str, partial_text: Optional[str] = None) -> bool:
+                # Generation guard: discard stale progress events and signal immediate abort to worker thread
                 if target_tab.load_generation != cur_gen:
-                    return
+                    return False
 
                 def _apply_ui_update():
                     if target_tab.load_generation != cur_gen:
@@ -211,19 +212,24 @@ class FileController:
                     if self.footer_bar and self.state.active_tab_id == target_tab.tab_id:
                         self.footer_bar.set_status(f"{label} ({pct}%): {msg}", color=ft.Colors.AMBER_400)
 
-                    # Progressive streaming with UI throttling to avoid choking the event loop during dragging/resizing
+                    # Progressive streaming with UI throttling to avoid choking the event loop
                     now = time.time()
                     is_final = (cur >= total)
                     is_resizing = getattr(self.state, "is_ui_resizing", False)
-                    should_update_heavy_ui = is_final or (not is_resizing and (now - last_ui_update[0] >= 1.0))
+
+                    should_update_editor = is_final or (not is_resizing and (now - last_editor_update[0] >= 1.5))
+                    preview_interval = 6.0 if total > 30 else 3.0
+                    should_update_preview = is_final or (not is_resizing and (now - last_preview_update[0] >= preview_interval))
 
                     if partial_text:
                         target_tab.full_content = partial_text
-                        if self.state.active_tab_id == target_tab.tab_id and should_update_heavy_ui:
-                            last_ui_update[0] = now
-                            if self.editor_view:
+                        if self.state.active_tab_id == target_tab.tab_id:
+                            if should_update_editor and self.editor_view:
+                                last_editor_update[0] = now
                                 self.editor_view.set_text(partial_text)
-                            if self.preview:
+
+                            if should_update_preview and self.preview:
+                                last_preview_update[0] = now
                                 preview_text = partial_text
                                 if cur < total:
                                     preview_text += (
@@ -245,6 +251,8 @@ class FileController:
                     main_loop.call_soon_threadsafe(_apply_ui_update)
                 except Exception as ex_dispatch:
                     logger.debug(f"[FileController] call_soon_threadsafe dispatch error: {ex_dispatch}")
+
+                return True
 
             res = await asyncio.to_thread(
                 load_document,

@@ -155,8 +155,23 @@ def get_target_drive() -> str:
 
 
 def get_model_path(model_id: str) -> str:
-    """Returns the local folder path for a specific model."""
-    return os.path.join(get_models_dir(), model_id)
+    """
+    Returns the local folder path for a specific model.
+    On Windows, converts to 8.3 short path when possible to ensure C++ CTranslate2
+    safely handles non-ASCII / Vietnamese diacritic user directory paths.
+    """
+    path = os.path.join(get_models_dir(), model_id)
+    if sys.platform == "win32" and os.path.exists(path):
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.kernel32.GetShortPathNameW(path, buf, 1024):
+                short_p = buf.value
+                if short_p and os.path.exists(short_p):
+                    return short_p
+        except Exception:
+            pass
+    return path
 
 
 def is_model_installed(model_id: str) -> bool:

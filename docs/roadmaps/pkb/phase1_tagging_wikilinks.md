@@ -4,7 +4,7 @@
 **Phiên bản mục tiêu**: `v1.10.0`  
 **Tài liệu mẹ**: [pkb_feature_plan.md](../pkb_feature_plan.md)  
 **Phụ trách chính**: 👤 Duy (SQLite WAL Schema, UI Tagging & Backlink View, Controllers) / 👤 Huy (Wikilink Parser & Tiếng Việt Fuzzy Match Engine)  
-**Trạng thái**: 🟡 In Progress (Bắt đầu triển khai)
+**Trạng thái**: ✅ Completed (Đã hoàn thành trong v1.10.0)
 
 ---
 

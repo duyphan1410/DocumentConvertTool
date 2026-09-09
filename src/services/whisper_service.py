@@ -12,6 +12,7 @@ import shutil
 import tempfile
 from typing import Callable, List, Optional, Tuple
 
+from src.i18n import t
 from src.services.youtube_service import format_timestamp, _group_snippets_into_sentences
 
 
@@ -154,14 +155,14 @@ def transcribe_audio_whisper(
         from faster_whisper import WhisperModel
     except ImportError as e:
         print(f"[DEBUG] faster_whisper/ctranslate2 not available: {e}")
-        return ([], "", 0.0) if return_info else []
+        raise RuntimeError(t("audio.missing_runtime", error=str(e)))
 
     from src.services.model_manager import get_model_path
 
     model_dir = get_model_path(model_id)
     if not os.path.isdir(model_dir):
         print(f"[DEBUG] Model directory not found: {model_dir}")
-        return ([], "", 0.0) if return_info else []
+        raise FileNotFoundError(t("audio.model_dir_not_found", path=model_dir))
 
     # 1. Preprocess audio if input is a file path
     audio_data = audio_input
@@ -176,8 +177,13 @@ def transcribe_audio_whisper(
         if preprocessed is not None:
             audio_data = preprocessed
             total_duration = len(audio_data) / 16000.0
+        else:
+            raise ValueError(t("audio.decode_failed", filename=os.path.basename(audio_input)))
     elif hasattr(audio_data, "__len__"):
         total_duration = len(audio_data) / 16000.0
+
+    if audio_data is None or (hasattr(audio_data, "__len__") and len(audio_data) == 0):
+        raise ValueError(t("audio.empty_audio"))
 
     # 2. Map language parameters
     lang_code: Optional[str] = None
@@ -221,21 +227,29 @@ def transcribe_audio_whisper(
             else:
                 raise dev_err
 
-        # 4. Anti-hallucination transcription parameters
+        # 4. Anti-hallucination transcription parameters with safe ONNX VAD check
+        can_use_vad = True
+        try:
+            import onnxruntime  # noqa: F401
+        except Exception:
+            can_use_vad = False
+
         transcribe_kwargs = {
             "beam_size": 5,
-            # Silero VAD filter: removes silence and non-speech background noise
-            "vad_filter": True,
-            "vad_parameters": dict(
-                min_silence_duration_ms=500,
-                speech_pad_ms=300,
-                threshold=0.5,
-            ),
-            # Prevents looping hallucinations on silent or repetitive audio
             "condition_on_previous_text": False,
             "compression_ratio_threshold": 2.4,
             "no_speech_threshold": 0.6,
         }
+
+        if can_use_vad:
+            transcribe_kwargs["vad_filter"] = True
+            transcribe_kwargs["vad_parameters"] = dict(
+                min_silence_duration_ms=500,
+                speech_pad_ms=300,
+                threshold=0.5,
+            )
+        else:
+            print("[WARN] onnxruntime không khả dụng, tắt Silero VAD filter để chạy an toàn")
 
         if lang_code:
             transcribe_kwargs["language"] = lang_code
@@ -248,22 +262,42 @@ def transcribe_audio_whisper(
                     "This is a standard English transcript with proper capitalization and punctuation."
                 )
 
-        segments, info = model.transcribe(audio_data, **transcribe_kwargs)
-
         results: List[Tuple[float, str]] = []
         last_text = ""
 
-        for seg in segments:
-            text = seg.text.strip()
-            # Deduplicate repeated identical lines
-            if text and text != last_text:
-                results.append((seg.start, text))
-                last_text = text
-            if on_progress and total_duration > 0:
-                try:
-                    on_progress(min(seg.end, total_duration), total_duration)
-                except Exception:
-                    pass
+        try:
+            segments, info = model.transcribe(audio_data, **transcribe_kwargs)
+            for seg in segments:
+                text = seg.text.strip()
+                if text and text != last_text:
+                    results.append((seg.start, text))
+                    last_text = text
+                if on_progress and total_duration > 0:
+                    try:
+                        on_progress(min(seg.end, total_duration), total_duration)
+                    except Exception:
+                        pass
+        except Exception as trans_err:
+            # Fallback: if transcription failed with VAD filter, retry once without VAD filter
+            if transcribe_kwargs.get("vad_filter"):
+                print(f"[WARN] VAD filter thất bại ({trans_err}), tự động chuyển sang chế độ không dùng VAD...")
+                transcribe_kwargs["vad_filter"] = False
+                transcribe_kwargs.pop("vad_parameters", None)
+                segments, info = model.transcribe(audio_data, **transcribe_kwargs)
+                results = []
+                last_text = ""
+                for seg in segments:
+                    text = seg.text.strip()
+                    if text and text != last_text:
+                        results.append((seg.start, text))
+                        last_text = text
+                    if on_progress and total_duration > 0:
+                        try:
+                            on_progress(min(seg.end, total_duration), total_duration)
+                        except Exception:
+                            pass
+            else:
+                raise trans_err
 
         detected_lang = getattr(info, "language", lang_code or "vi")
         if total_duration <= 0 and hasattr(info, "duration"):
@@ -279,7 +313,7 @@ def transcribe_audio_whisper(
 
     except Exception as e:
         print(f"[DEBUG] transcribe_audio_whisper failed: {e}")
-        return ([], "") if return_info else []
+        raise e
 
 
 def transcribe_file(
@@ -343,7 +377,6 @@ def transcribe_file(
         base_name = os.path.basename(file_path)
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
         duration_str = format_timestamp(total_duration) if total_duration > 0 else "N/A"
-        from src.i18n import t
 
         md_lines = [
             f"# {os.path.splitext(base_name)[0]}",
@@ -375,6 +408,6 @@ def transcribe_file(
         markdown_output = "\n".join(md_lines)
         return True, markdown_output, None
 
-    except Exception as e:
-        print(f"[DEBUG] transcribe_file error: {e}")
-        return False, "", f"ERR_SPEECH_TRANSCRIPTION: {str(e)}"
+    except Exception as exc:
+        print(f"[SPEECH] Transcription failed with error: {exc}")
+        return False, "", t("audio.technical_error", error=str(exc))

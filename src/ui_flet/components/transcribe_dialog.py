@@ -165,7 +165,7 @@ def show_transcribe_dialog(
     )
 
     btn_cancel_job = ft.TextButton(
-        "Cancel Task",
+        t("transcribe.btn_cancel_task"),
         icon=ft.Icons.CANCEL_ROUNDED,
         style=ft.ButtonStyle(color=ft.Colors.RED_400),
         visible=False,
@@ -179,7 +179,7 @@ def show_transcribe_dialog(
         if job.status == JobStatus.RUNNING:
             prg_bar.visible = True
             prg_bar.value = job.progress if job.progress > 0 else None
-            lbl_status.value = job.stage_message or "Processing..."
+            lbl_status.value = job.stage_message or t("transcribe.status_processing")
             lbl_status.color = accent_primary
             lbl_status.visible = True
             btn_start.disabled = True
@@ -190,11 +190,11 @@ def show_transcribe_dialog(
             btn_start.disabled = not bool(installed_models)
             txt_file.disabled = False
             if job.status == JobStatus.FAILED:
-                lbl_status.value = job.error_message or "Failed"
+                lbl_status.value = job.error_message or t("transcribe.err_transcription_failed")
                 lbl_status.color = ft.Colors.RED_400
                 lbl_status.visible = True
             elif job.status == JobStatus.CANCELLED:
-                lbl_status.value = "Task cancelled"
+                lbl_status.value = t("transcribe.status_cancelled")
                 lbl_status.color = text_secondary
                 lbl_status.visible = True
             elif job.status == JobStatus.COMPLETED:
@@ -221,7 +221,7 @@ def show_transcribe_dialog(
         if tracked_job:
             manager.cancel_job(tracked_job.job_id)
             btn_cancel_job.visible = False
-            lbl_status.value = "Cancelled"
+            lbl_status.value = t("transcribe.status_cancelled")
             lbl_status.color = text_secondary
             prg_bar.visible = False
             btn_start.disabled = not bool(installed_models)
@@ -251,7 +251,7 @@ def show_transcribe_dialog(
         btn_cancel_job.visible = True
         prg_bar.visible = True
         prg_bar.value = active_local_job.progress if active_local_job.progress > 0 else None
-        lbl_status.value = active_local_job.stage_message or "Processing..."
+        lbl_status.value = active_local_job.stage_message or t("transcribe.status_processing")
         lbl_status.visible = True
 
     def _execute_local_transcribe_task(job: TranscriptionJob, progress_cb: Callable[[str, float], None]):
@@ -273,7 +273,7 @@ def show_transcribe_dialog(
                 return
             pct = current_sec / total_sec if total_sec > 0 else 0.0
             val = min(0.25 + pct * 0.70, 0.95)
-            progress_cb(f"Transcribing {int(pct * 100)}% ({int(current_sec)}s / {int(total_sec)}s)...", val)
+            progress_cb(t("speech.transcribing_progress", pct=int(pct * 100), current=int(current_sec), total=int(total_sec)), val)
 
         return transcribe_file(
             file_path=file_path,
@@ -309,7 +309,7 @@ def show_transcribe_dialog(
                 on_success(content, source_path)
 
         def _on_job_error(err_msg: str):
-            lbl_status.value = err_msg or "Failed"
+            lbl_status.value = err_msg or t("transcribe.err_transcription_failed")
             lbl_status.color = ft.Colors.RED_400
             prg_bar.visible = False
             btn_start.disabled = False

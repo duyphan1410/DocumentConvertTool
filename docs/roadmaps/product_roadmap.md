@@ -140,7 +140,7 @@
 
 | Hạng mục | Vị trí / Tầng ảnh hưởng | Mô tả chi tiết & Hướng phát triển | Trạng thái |
 | :--- | :--- | :--- | :---: |
-| **MCP Server (stdio)** | `src/mcp/server.py` (mới) | Expose `search_documents`, `read_document`, `convert_document`, `tag_document`, `list_backlinks` qua MCP stdio transport (local subprocess, không mở port/tunnel); mọi tool dùng `document_id` nội bộ. | ⏳ Planned |
+| **MCP Server (stdio)** | `src/mcp/server.py` (mới) | Expose `search_documents`, `read_document`, `convert_document`, `tag_document`, `list_backlinks` qua MCP stdio transport (local subprocess, không mở port/tunnel); mọi tool dùng `document_id` nội bộ. | ⏳ In Progress (In Review) |
 
 *(Phụ thuộc v1.10.0 — Xem `docs/roadmaps/pkb_feature_plan.md`)*
 

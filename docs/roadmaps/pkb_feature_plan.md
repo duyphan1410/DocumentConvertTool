@@ -100,8 +100,8 @@ docconvert_id: "uuid"
  
 | Version | Nhiệm vụ chính | Phụ thuộc | Đặc tả kỹ thuật | Trạng thái |
 | :---: | :--- | :---: | :--- | :---: |
-| **v1.10.0** | SQLite index + Wikilinks `[[...]]` + Manual tagging UI + Broken link handling | — | [phase1_tagging_wikilinks.md](pkb/phase1_tagging_wikilinks.md) | ⏳ Planned |
-| **v1.11.0** | MCP server stdio (`search/read/convert/tag/backlinks`) cho Claude Desktop/Code | v1.10.0 | [phase2_mcp_server.md](pkb/phase2_mcp_server.md) | ⏳ Planned |
+| **v1.10.0** | SQLite index + Wikilinks `[[...]]` + Manual tagging UI + Broken link handling | — | [phase1_tagging_wikilinks.md](pkb/phase1_tagging_wikilinks.md) | ✅ Completed |
+| **v1.11.0** | MCP server stdio (`search/read/convert/tag/backlinks`) cho Claude Desktop/Code | v1.10.0 | [phase2_mcp_server.md](pkb/phase2_mcp_server.md) | ⏳ In Progress (In Review) |
 | **v1.12.0** | Knowledge Graph View (`networkx` + SVG render, filter theo tag/tên/độ sâu, giới hạn 2-hop mặc định) | v1.10.0 | [phase3_graph_view.md](pkb/phase3_graph_view.md) | ⏳ Planned |
 | **v1.13.0** | Export Module: Obsidian sync (1 chiều) + Export `.zip` cho claude.ai Projects | v1.10.0 | [phase4_export_sync.md](pkb/phase4_export_sync.md) | ⏳ Planned |
 

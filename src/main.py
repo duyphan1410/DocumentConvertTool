@@ -8,6 +8,10 @@ def main():
         from src.services.youtube_player import _run_player_subprocess
         _run_player_subprocess()
         return
+    if "--mcp-server" in sys.argv:
+        from src.mcp.server import main as mcp_main
+        mcp_main()
+        return
     ft.app(target=flet_main)
 
 

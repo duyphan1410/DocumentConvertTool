@@ -156,13 +156,122 @@ class MetadataIndex:
                     conn.commit()
                     return new_id
 
-    def get_document_by_id(self, doc_id: str) -> Optional[dict]:
-        """Retrieves document record by UUID."""
+    def index_document(self, file_path: str) -> Optional[str]:
+        """Indexes or updates a single markdown file on disk, parsing tags and wikilinks."""
+        from src.services.fuzzy_matcher import normalize_vietnamese
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            return None
+
+        norm_path = os.path.normpath(os.path.abspath(file_path))
+        try:
+            with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except Exception:
+            return None
+
+        new_hash = self.calculate_hash(content)
+
+        # Extract Title
+        title = os.path.splitext(os.path.basename(norm_path))[0]
+        first_heading_m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+        if first_heading_m:
+            raw_h1 = first_heading_m.group(1).strip()
+            clean_h1 = re.sub(r'[*_`]', '', raw_h1)
+            clean_h1 = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_h1).strip()
+            if clean_h1:
+                title = clean_h1
+
+        with self._write_lock:
+            with self.get_connection() as conn:
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM documents WHERE path = ?", (norm_path,))
+                    row = cursor.fetchone()
+                    if row:
+                        doc_id = row["id"]
+                        cursor.execute("""
+                            UPDATE documents 
+                            SET title = ?, content_hash = ?, updated_at = CURRENT_TIMESTAMP 
+                            WHERE id = ?
+                        """, (title, new_hash, doc_id))
+                    else:
+                        doc_id = str(uuid.uuid4())
+                        cursor.execute("""
+                            INSERT INTO documents (id, path, title, content_hash)
+                            VALUES (?, ?, ?, ?)
+                        """, (doc_id, norm_path, title, new_hash))
+
+                    # Sync Tags
+                    tags = extract_tags(content)
+                    cursor.execute("DELETE FROM document_tags WHERE document_id = ?", (doc_id,))
+                    for tag in tags:
+                        clean_tag = tag.strip().lstrip("#")
+                        if not clean_tag:
+                            continue
+                        norm_tag = normalize_vietnamese(clean_tag).replace(" ", "-")
+                        cursor.execute("""
+                            INSERT INTO tags (name, normalized_name)
+                            VALUES (?, ?)
+                            ON CONFLICT(name) DO UPDATE SET normalized_name = excluded.normalized_name
+                        """, (clean_tag, norm_tag))
+                        cursor.execute("SELECT id FROM tags WHERE name = ?", (clean_tag,))
+                        tag_row = cursor.fetchone()
+                        if tag_row:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO document_tags (document_id, tag_id)
+                                VALUES (?, ?)
+                            """, (doc_id, tag_row["id"]))
+
+                    # Sync Wikilinks
+                    wikilinks = extract_wikilinks(content)
+                    cursor.execute("DELETE FROM wikilinks WHERE source_id = ?", (doc_id,))
+                    for wl in wikilinks:
+                        clean_target = wl.raw_target.strip()
+                        cursor.execute("""
+                            SELECT id FROM documents 
+                            WHERE title = ? OR path LIKE ? OR path LIKE ?
+                        """, (clean_target, f"%{os.sep}{clean_target}.md", f"%/{clean_target}.md"))
+                        t_row = cursor.fetchone()
+                        if not t_row:
+                            cursor.execute("SELECT id FROM documents WHERE LOWER(title) = LOWER(?)", (clean_target,))
+                            t_row = cursor.fetchone()
+
+                        target_id = t_row["id"] if t_row else None
+                        resolved = 1 if target_id else 0
+
+                        cursor.execute("""
+                            INSERT INTO wikilinks (
+                                source_id, target_id, target_title_raw, display_text, snippet, resolved
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                        """, (doc_id, target_id, wl.raw_target, wl.display_text, wl.snippet, resolved))
+
+                    return doc_id
+
+    def get_document_by_id(self, doc_id: str, include_tags: bool = True) -> Optional[dict]:
+        """Retrieves document record by UUID, optionally including its tags list."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM documents WHERE id = ?", (doc_id,))
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            doc_dict = dict(row)
+            if include_tags:
+                doc_dict["tags"] = self.get_document_tags(doc_id)
+            return doc_dict
+
+    def get_document_tags(self, doc_id: str) -> list[str]:
+        """Retrieves list of tag names associated with a document_id."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT t.name 
+                FROM tags t 
+                JOIN document_tags dt ON t.id = dt.tag_id 
+                WHERE dt.document_id = ?
+                ORDER BY t.name ASC
+            """, (doc_id,))
+            return [row[0] for row in cursor.fetchall()]
 
     def get_document_by_path(self, path: str) -> Optional[dict]:
         """Retrieves document record by absolute path."""
@@ -500,8 +609,8 @@ class MetadataIndex:
         # 1. Discover all disk files
         disk_files: list[str] = []
         for root, dirs, files in os.walk(norm_ws):
-            # Skip hidden folders (.git, .agents, node_modules, build caches)
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "build", "__pycache__")]
+            # Skip hidden folders and virtual environments (.git, .agents, venv, node_modules, build caches)
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "dist", "build", "__pycache__", "venv", ".venv", "env", ".env")]
             for f in files:
                 if f.lower().endswith(".md"):
                     disk_files.append(os.path.normpath(os.path.abspath(os.path.join(root, f))))

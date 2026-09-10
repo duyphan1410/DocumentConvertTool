@@ -11,6 +11,9 @@ Thư mục này quản lý các hạng mục nợ kỹ thuật (Technical Debt),
 | `PERF-001` | Bounded LRU Cache & Session Eviction cho `_BASE64_CACHE` | Performance / Memory | Medium | 🟢 Completed (v1.8.3) | [PERF_001_base64_cache_lru_eviction.md](PERF_001_base64_cache_lru_eviction.md) |
 | `BUG-001` | Preview Scroll Jump khi Click/Resize Ảnh trong Live Preview | Bug / UX Stabilization | High | 🟢 Completed (v1.8.4) | [BUG_001_preview_scroll_jump_image_click.md](BUG_001_preview_scroll_jump_image_click.md) |
 | `PERF-002` | Transient Orphaned Listener Closures during Active Model Downloads | Performance / Memory | Low | 🟡 Backlog / Known-Issue | [PERF_002_whisper_download_listener_weakref.md](PERF_002_whisper_download_listener_weakref.md) |
+| `SEC-001` | Khắc phục Lỗ hổng Workspace Boundary, Đệ quy Stream & Thắt chặt Bảo mật MCP Server | Security / Robustness | **Critical** | 🟡 Ready for Implementation | [SEC_001_mcp_security_boundary_and_stream_hardening.md](SEC_001_mcp_security_boundary_and_stream_hardening.md) |
+| `PERF-003` | Lazy Import Entry Points & Tối ưu Cold-Start cho Headless Subprocesses | Performance / Refactoring | High | 🟡 Ready for Implementation | [PERF_003_lazy_import_entrypoints_mcp_coldstart.md](PERF_003_lazy_import_entrypoints_mcp_coldstart.md) |
+| `ARCH-001` | Hỗ trợ Stdio JSON-RPC cho MCP Server trên Bản Đóng gói PyInstaller | Packaging / Architecture | High | 🟡 Under Consideration / RFC | [ARCH_001_pyinstaller_console_stdio_mcp_packaging.md](ARCH_001_pyinstaller_console_stdio_mcp_packaging.md) |
 
 ---
 

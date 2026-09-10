@@ -4,8 +4,8 @@
 **Phiên bản mục tiêu**: `v1.11.0`  
 **Tài liệu mẹ**: [pkb_feature_plan.md](../pkb_feature_plan.md)  
 **Phụ thuộc**: Hoàn thành [Phase 1: Tagging & Wikilinks](phase1_tagging_wikilinks.md)  
-**Phụ trách chính**: 👤 Huy (Tool Interface & Security Validation) — 👤 Duy (Review & Architecture Alignment)  
-**Trạng thái**: ⏳ Planned
+**Phụ trách chính**: 👤 Huy (Tool Interface & Security Validation — ✅ Done) — 👤 Duy (Review & Architecture Alignment — ⏳ In Progress)  
+**Trạng thái**: ⏳ In Progress (Pending Review)
 
 ---
 

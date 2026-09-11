@@ -213,6 +213,13 @@ class TestMCPServerProtocol(unittest.TestCase):
         self.assertEqual(resps[0]["error"]["code"], -32700)
         self.assertEqual(resps[1]["id"], 999)
 
+    def test_ensure_windows_stdio_safety(self):
+        """Test that ensure_windows_stdio runs safely without unhandled exceptions."""
+        from src.mcp.server import ensure_windows_stdio
+        # Should execute cleanly in standard test environment
+        ensure_windows_stdio()
+
 
 if __name__ == "__main__":
     unittest.main()
+

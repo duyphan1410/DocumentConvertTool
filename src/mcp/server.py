@@ -232,10 +232,33 @@ def _trigger_background_workspace_sync(index: MetadataIndex) -> None:
     sync_thread.start()
 
 
+def ensure_windows_stdio() -> None:
+    """
+    Recovers standard console handles on Windows when executed from a windowed binary (console=False).
+    Attaches to parent process (e.g. Claude Desktop or IDE) console if stdin/stdout are None.
+    """
+    if sys.platform == "win32":
+        if sys.stdin is None or sys.stdout is None or sys.stderr is None:
+            try:
+                import ctypes
+                ATTACH_PARENT_PROCESS = -1
+                if ctypes.windll.kernel32.AttachConsole(ATTACH_PARENT_PROCESS):
+                    if sys.stdin is None:
+                        sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+                    if sys.stdout is None:
+                        sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    if sys.stderr is None:
+                        sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main():
     """CLI Entrypoint for DocConvert MCP Server."""
+    ensure_windows_stdio()
+
     # 1. Protect stdout: redirect standard sys.stdout to sys.stderr
-    real_stdout = sys.__stdout__
+    real_stdout = sys.__stdout__ or sys.stdout
     sys.stdout = sys.stderr
 
     # 2. Initialize index and trigger background sync
@@ -249,3 +272,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -10,11 +10,13 @@ def main():
 
     # 2. Headless Subprocess: Local MCP Stdio Server for Claude Desktop & IDEs
     if "--mcp-server" in sys.argv:
+        from src.mcp.server import ensure_windows_stdio, MCPServer, _trigger_background_workspace_sync
+        ensure_windows_stdio()
+
         # Immediately isolate stdout to stderr before importing any modules
-        real_stdout = sys.__stdout__
+        real_stdout = sys.__stdout__ or sys.stdout
         sys.stdout = sys.stderr
 
-        from src.mcp.server import MCPServer, _trigger_background_workspace_sync
         from src.services.metadata_index import MetadataIndex
 
         index = MetadataIndex.get_instance()

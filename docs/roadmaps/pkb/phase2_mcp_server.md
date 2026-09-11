@@ -145,8 +145,24 @@ DocConvert v1.11.0 cung cấp một **Model Context Protocol (MCP) Server** ch�
 
 ## 4. Hướng dẫn Cấu hình cho Người Dùng
 
-Người dùng chỉ cần thêm cấu hình sau vào tệp cấu hình của Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
+Thêm cấu hình sau vào tệp cấu hình của Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
 
+### Cách 1: Sử dụng Bản Đóng gói Executable (Khuyên Dùng)
+```json
+{
+  "mcpServers": {
+    "docconvert": {
+      "command": "C:/Program Files/DocConvert/docconvert-mcp.exe",
+      "args": [],
+      "env": {
+        "DOCCONVERT_INDEX_PATH": "%APPDATA%\\DocConvert\\index.db"
+      }
+    }
+  }
+}
+```
+
+### Cách 2: Khởi chạy Trực tiếp từ Mã Nguồn Python
 ```json
 {
   "mcpServers": {
@@ -162,6 +178,7 @@ Người dùng chỉ cần thêm cấu hình sau vào tệp cấu hình của Cl
   }
 }
 ```
+*(Ghi chú: Mục `env.DOCCONVERT_INDEX_PATH` là tùy chọn. Nếu không khai báo, hệ thống sẽ tự động dùng `%APPDATA%\DocConvert\index.db`).*
 
 ---
 

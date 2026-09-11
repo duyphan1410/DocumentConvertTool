@@ -6,11 +6,15 @@ tag_document, list_backlinks, write_document_content.
 from __future__ import annotations
 import os
 import json
+import shutil
+import tempfile
 from typing import Any, Dict, List, Optional
 from src.mcp.security import (
     is_valid_uuid,
     resolve_safe_doc_path,
     sanitize_target_format,
+    get_active_workspace_dir,
+    is_path_in_workspace,
 )
 from src.services.metadata_index import MetadataIndex
 from src.services.fuzzy_matcher import calculate_similarity
@@ -118,7 +122,7 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
     },
     {
         "name": "write_document_content",
-        "description": "Safely overwrites document content on disk and triggers immediate index synchronization.",
+        "description": "Safely overwrites document content on disk with backup and triggers immediate index synchronization.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -129,6 +133,11 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
                 "content": {
                     "type": "string",
                     "description": "New Markdown content to write to the file."
+                },
+                "create_backup": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to create a .bak backup file before overwriting (defaults to true)."
                 }
             },
             "required": ["document_id", "content"]
@@ -143,13 +152,15 @@ def handle_search_documents(
     query: Optional[str] = None,
     tags: Optional[List[str]] = None,
     limit: int = 10,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Handles document search by title fuzzy matching and tag filtering."""
+    """Handles document search by title fuzzy matching and tag filtering, scoped to active workspace."""
     idx = index or MetadataIndex.get_instance()
     clean_query = (query or "").strip()
     tag_filters = [t.strip().lstrip("#") for t in (tags or []) if t.strip()]
     limit = max(1, min(limit or 10, 50))
+    ws = workspace_dir or get_active_workspace_dir()
 
     with idx.get_connection() as conn:
         cursor = conn.cursor()
@@ -162,7 +173,11 @@ def handle_search_documents(
         doc_path = row["path"]
         
         # Only return files that physically exist on disk
-        if not os.path.exists(doc_path) or not os.path.isfile(doc_path):
+        if not doc_path or not os.path.exists(doc_path) or not os.path.isfile(doc_path):
+            continue
+
+        # Enforce active workspace boundary containment
+        if ws and not is_path_in_workspace(doc_path, ws):
             continue
 
         title = row["title"] or os.path.basename(doc_path)
@@ -216,16 +231,17 @@ def handle_search_documents(
 
 def handle_read_document(
     document_id: str,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Reads document content from disk safely using its document_id."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
 
     if not is_valid or not safe_path:
         return {
             "error": "DOCUMENT_NOT_FOUND",
-            "message": f"Document ID '{document_id}' not found in index or file does not exist on disk.",
+            "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
             "document_id": document_id
         }
 
@@ -237,10 +253,10 @@ def handle_read_document(
 
         return {
             "document_id": document_id,
-            "title": doc.get("title", os.path.basename(safe_path)),
+            "title": doc.get("title", os.path.basename(safe_path)) if doc else os.path.basename(safe_path),
             "path": safe_path,
             "tags": tags,
-            "updated_at": doc.get("updated_at"),
+            "updated_at": doc.get("updated_at") if doc else None,
             "content": content
         }
     except Exception as e:
@@ -254,16 +270,17 @@ def handle_read_document(
 def handle_convert_document(
     document_id: str,
     target_format: str,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Converts indexed Markdown document to target format and saves alongside source file."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
 
     if not is_valid or not safe_path:
         return {
             "error": "DOCUMENT_NOT_FOUND",
-            "message": f"Document ID '{document_id}' not found in index or file does not exist on disk.",
+            "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
             "document_id": document_id
         }
 
@@ -316,16 +333,17 @@ def handle_tag_document(
     document_id: str,
     add_tags: Optional[List[str]] = None,
     remove_tags: Optional[List[str]] = None,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Updates document tags by calculating diff and updating SQLite index."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
 
     if not is_valid:
         return {
             "error": "DOCUMENT_NOT_FOUND",
-            "message": f"Document ID '{document_id}' not found in index.",
+            "message": f"Document ID '{document_id}' not found in index or outside workspace boundary.",
             "document_id": document_id
         }
 
@@ -354,18 +372,21 @@ def handle_tag_document(
 
 def handle_list_backlinks(
     document_id: str,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Retrieves linked references and unlinked mentions for a document."""
+    """Retrieves linked references and unlinked mentions for a document within active workspace."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
 
     if not is_valid or not doc:
         return {
             "error": "DOCUMENT_NOT_FOUND",
-            "message": f"Document ID '{document_id}' not found in index.",
+            "message": f"Document ID '{document_id}' not found in index or outside workspace boundary.",
             "document_id": document_id
         }
+
+    ws = workspace_dir or get_active_workspace_dir()
 
     linked_refs = []
     with idx.get_connection() as conn:
@@ -379,10 +400,13 @@ def handle_list_backlinks(
             ORDER BY d.title ASC
         """, (document_id,))
         for r in cursor.fetchall():
+            source_path = r["source_path"]
+            if ws and not is_path_in_workspace(source_path, ws):
+                continue
             linked_refs.append({
                 "source_id": r["source_id"],
                 "source_title": r["source_title"],
-                "source_path": r["source_path"],
+                "source_path": source_path,
                 "snippet": r["snippet"],
                 "display_text": r["display_text"]
             })
@@ -390,19 +414,20 @@ def handle_list_backlinks(
     target_title = doc.get("title", "")
     unlinked_mentions = []
     if target_title and safe_path:
-        # Search unlinked mentions across documents in workspace
         try:
-            workspace_dir = os.path.dirname(safe_path)
-            raw_unlinked = idx.find_unlinked_mentions_in_workspace(target_title, safe_path, workspace_dir)
+            search_ws = ws or os.path.dirname(safe_path)
+            raw_unlinked = idx.find_unlinked_mentions_in_workspace(target_title, safe_path, search_ws)
             for item in raw_unlinked:
+                item_path = item.get("source_path")
+                if ws and item_path and not is_path_in_workspace(item_path, ws):
+                    continue
                 unlinked_mentions.append({
-                    "source_path": item.get("source_path"),
+                    "source_path": item_path,
                     "source_title": item.get("source_title"),
                     "snippet": item.get("snippet"),
                     "matched_text": item.get("matched_text")
                 })
         except Exception:
-            # Non-blocking fallback if workspace search is not ready
             pass
 
     return {
@@ -418,33 +443,48 @@ def handle_list_backlinks(
 def handle_write_document_content(
     document_id: str,
     content: str,
-    index: Optional[MetadataIndex] = None
+    index: Optional[MetadataIndex] = None,
+    workspace_dir: Optional[str] = None,
+    create_backup: bool = True
 ) -> Dict[str, Any]:
-    """Safely overwrites document content on disk and triggers immediate SQLite re-indexing."""
+    """
+    Safely overwrites document content with single .bak backup and atomic file write,
+    then triggers immediate SQLite re-indexing.
+    """
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
 
     if not is_valid or not safe_path:
         return {
             "error": "DOCUMENT_NOT_FOUND",
-            "message": f"Document ID '{document_id}' not found in index or file does not exist on disk.",
+            "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
             "document_id": document_id
         }
 
     try:
-        content_bytes = content.encode("utf-8")
-        with open(safe_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # 1. Create a single backup .bak before overwrite
+        if create_backup and os.path.exists(safe_path):
+            backup_path = f"{safe_path}.bak"
+            shutil.copy2(safe_path, backup_path)
 
-        # Trigger immediate re-index to update hash, tags, and links in SQLite
+        # 2. Atomic Write via NamedTemporaryFile in the same directory
+        dir_name = os.path.dirname(safe_path)
+        with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8") as tf:
+            tf.write(content)
+            temp_name = tf.name
+
+        os.replace(temp_name, safe_path)
+
+        # 3. Trigger immediate re-index to update hash, tags, and links in SQLite
         idx.index_document(safe_path)
 
         return {
             "document_id": document_id,
             "path": safe_path,
-            "bytes_written": len(content_bytes),
+            "bytes_written": len(content.encode("utf-8")),
+            "backup_created": create_backup,
             "status": "success",
-            "message": "File updated and index synchronized successfully."
+            "message": "File written atomically and indexed successfully."
         }
     except Exception as e:
         return {

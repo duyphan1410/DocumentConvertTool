@@ -40,6 +40,8 @@ a_mcp = Analysis(
         'src.modules.pptx_module',
         'src.modules.json_module',
         'src.modules.yaml_module',
+        'src.modules.audio_module',
+        'src.modules.pdf_scan_module',
         'docx',
         'pptx',
         'openpyxl',

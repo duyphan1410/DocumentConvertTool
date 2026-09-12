@@ -14,7 +14,7 @@ Thư mục này quản lý các hạng mục nợ kỹ thuật (Technical Debt),
 | `SEC-001` | Khắc phục Lỗ hổng Workspace Boundary, Đệ quy Stream & Thắt chặt Bảo mật MCP Server | Security / Robustness | Critical | 🟢 Completed (PR #85) | [SEC_001_mcp_security_boundary_and_stream_hardening.md](SEC_001_mcp_security_boundary_and_stream_hardening.md) |
 | `PERF-003` | Lazy Import Entry Points & Tối ưu Cold-Start cho Headless Subprocesses | Performance / Refactoring | High | 🟢 Completed (PR #85) | [PERF_003_lazy_import_entrypoints_mcp_coldstart.md](PERF_003_lazy_import_entrypoints_mcp_coldstart.md) |
 | `ARCH-001` | Hỗ trợ Stdio JSON-RPC cho MCP Server trên Bản Đóng gói PyInstaller | Packaging / Architecture | High | 🟢 Completed (PR #85) | [ARCH_001_pyinstaller_console_stdio_mcp_packaging.md](ARCH_001_pyinstaller_console_stdio_mcp_packaging.md) |
-| `SEC-002` | Vá Lỗ hổng Argument Injection `workspace_dir` & Hợp nhất Entry Point MCP | Security / Architecture | **Critical** | 🟡 Ready for Review & Implementation | [SEC_002_mcp_client_argument_injection_and_startup_consolidation.md](SEC_002_mcp_client_argument_injection_and_startup_consolidation.md) |
+| `SEC-002` | Vá Lỗ hổng Argument Injection `workspace_dir` & Hợp nhất Entry Point MCP | Security / Architecture | **Critical** | 🟢 Completed | [SEC_002_mcp_client_argument_injection_and_startup_consolidation.md](SEC_002_mcp_client_argument_injection_and_startup_consolidation.md) |
 
 ---
 

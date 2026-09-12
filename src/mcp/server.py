@@ -101,8 +101,14 @@ class MCPServer:
 
         handler = TOOL_HANDLERS[tool_name]
         try:
-            logger.info("Executing tool '%s' with args: %s", tool_name, list(arguments.keys()))
-            tool_output = handler(**arguments, index=self.index)
+            logger.info("Executing tool '%s' with raw args: %s", tool_name, list(arguments.keys()))
+            
+            # Layer 1 Defense: Schema-based argument whitelisting
+            manifest_tool = next((t for t in MCP_TOOLS_MANIFEST if t.get("name") == tool_name), None)
+            allowed_props = set(manifest_tool.get("inputSchema", {}).get("properties", {}).keys()) if manifest_tool else set()
+            sanitized_args = {k: v for k, v in arguments.items() if k in allowed_props}
+
+            tool_output = handler(**sanitized_args, index=self.index)
             is_error = isinstance(tool_output, dict) and "error" in tool_output
 
             # Format in MCP standard tool result content

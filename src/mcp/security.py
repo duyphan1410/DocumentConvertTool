@@ -96,8 +96,7 @@ def is_valid_uuid(val: Any) -> bool:
 
 def resolve_safe_doc_path(
     doc_id: str,
-    index: Any,
-    workspace_dir: Optional[str] = None
+    index: Any
 ) -> Tuple[bool, Optional[str], Optional[dict]]:
     """
     Prevents path traversal by enforcing UUID v4, SQLite index existence,
@@ -123,7 +122,7 @@ def resolve_safe_doc_path(
         return False, None, doc
 
     # Enforce active workspace boundary containment if configured
-    ws = workspace_dir or get_active_workspace_dir()
+    ws = get_active_workspace_dir()
     if ws and not is_path_in_workspace(norm_path, ws):
         return False, None, doc
 

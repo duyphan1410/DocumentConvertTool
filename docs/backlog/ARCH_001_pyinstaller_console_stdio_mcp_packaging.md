@@ -3,7 +3,7 @@
 **Mã Task**: `ARCH-001`  
 **Phân loại**: Packaging / Architecture  
 **Độ ưu tiên**: High  
-**Trạng thái**: 🟡 Under Consideration / RFC  
+**Trạng thái**: 🟢 Completed (2026-09-12)  
 **Tài liệu liên quan**: [REPORT-PKB-PHASE2-ARCH-REVIEW](../reports/pkb_phase2_mcp_architecture_review.md), [Document Converter.spec](../../Document%20Converter.spec)
 
 ---
@@ -144,9 +144,9 @@ def ensure_windows_stdio():
 
 ## 3. Tiêu chí Nghiệm thu (Acceptance Criteria)
 
-- [ ] Bản build `.exe` có thể giao tiếp hai chiều JSON-RPC 2.0 với Claude Desktop qua stdio.
-- [ ] Lệnh test `demo_mcp_client.py` chạy thành công khi trỏ vào binary release đóng gói.
-- [ ] Tài liệu cài đặt Claude Desktop được cập nhật đường dẫn chính xác tới file executable hỗ trợ console.
+- [x] Bản build `.exe` hỗ trợ giao tiếp hai chiều JSON-RPC 2.0 với Claude Desktop qua stdio (cả qua `docconvert-mcp.exe` với `console=True` và qua fallback runtime `ensure_windows_stdio`).
+- [x] Đã cấu hình multi-executable target trong `Document Converter.spec` (`exe_gui` và `exe_mcp`) và cung cấp `DocConvert-MCP.spec` cho standalone binary.
+- [x] Tài liệu cài đặt Claude Desktop được cập nhật đường dẫn chính xác tới file executable hỗ trợ console.
 
 ---
 

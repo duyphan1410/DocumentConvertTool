@@ -3,7 +3,7 @@
 **Mã Task**: `SEC-001`  
 **Phân loại**: Security / Robustness  
 **Độ ưu tiên**: Critical  
-**Trạng thái**: 🟡 Ready for Implementation  
+**Trạng thái**: 🟢 Completed (2026-09-12)  
 **Tài liệu liên quan**: [REPORT-PKB-PHASE2-ARCH-REVIEW](../reports/pkb_phase2_mcp_architecture_review.md), [phase2_mcp_server.md](../roadmaps/pkb/phase2_mcp_server.md)
 
 ---
@@ -276,13 +276,13 @@ def handle_write_document_content(
 
 ## 3. Tiêu chí Nghiệm thu (Acceptance Criteria)
 
-- [ ] `is_valid_uuid()` trả về `False` với UUID v1, v3, v5 và Nil UUID (`00000000-0000-0000-0000-000000000000`).
-- [ ] `resolve_safe_doc_path()` chặn 100% tài liệu nằm ngoài `workspace_dir` (trả về `is_valid=False`).
-- [ ] `get_active_workspace_dir()` được cache qua `lru_cache` và dùng chung giữa `security.py` và `server.py`.
-- [ ] Toàn bộ 5 tool handlers trong `src/mcp/tools.py` đều chuyển tiếp `workspace_dir` hợp lệ vào `resolve_safe_doc_path()`.
-- [ ] `_read_next_message()` xử lý thành công 5,000 dòng trống liên tiếp mà không bị `RecursionError` và hoạt động độc lập cả khi chưa gọi `run_forever()`.
-- [ ] `write_document_content` tạo file `.bak` sao lưu và sử dụng cơ chế ghi nguyên tử (`os.replace`).
-- [ ] Khởi chạy `python run.py --mcp-server` không phát sinh ký tự rác trên stdout.
+- [x] `is_valid_uuid()` trả về `False` với UUID v1, v3, v5 và Nil UUID (`00000000-0000-0000-0000-000000000000`).
+- [x] `resolve_safe_doc_path()` chặn 100% tài liệu nằm ngoài `workspace_dir` (trả về `is_valid=False`).
+- [x] `get_active_workspace_dir()` được cache theo `mtime` của `settings.json` và dùng chung giữa `security.py` và `server.py`.
+- [x] Toàn bộ 5 tool handlers trong `src/mcp/tools.py` và `search_documents`/`list_backlinks` đều lọc theo `workspace_dir` hợp lệ.
+- [x] `_read_next_message()` xử lý thành công 5,000 dòng trống liên tiếp mà không bị `RecursionError` và hoạt động độc lập cả khi chưa gọi `run_forever()`.
+- [x] `write_document_content` tạo file `.bak` sao lưu và sử dụng cơ chế ghi nguyên tử (`os.replace`).
+- [x] Khởi chạy `python run.py --mcp-server` không phát sinh ký tự rác trên stdout.
 
 ---
 

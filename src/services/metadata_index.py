@@ -14,10 +14,14 @@ from typing import Optional, Callable, Any
 from contextlib import contextmanager
 from src.services.link_parser import WikilinkToken, extract_wikilinks, extract_tags, find_unlinked_mentions
 
-# SQLite DB Path in AppData
+# SQLite DB Path in AppData / Custom Env
 _appdata = os.getenv("APPDATA", os.path.expanduser("~"))
 DEFAULT_DB_DIR = os.path.join(_appdata, "DocConvert")
-DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "index.db")
+_env_db_path = os.getenv("DOCCONVERT_INDEX_PATH")
+if _env_db_path:
+    DEFAULT_DB_PATH = os.path.abspath(os.path.expandvars(os.path.expanduser(_env_db_path)))
+else:
+    DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "index.db")
 
 
 class MetadataIndex:
@@ -32,7 +36,7 @@ class MetadataIndex:
             return cls._instance
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
-        self.db_path = os.path.abspath(db_path)
+        self.db_path = os.path.abspath(os.path.expandvars(os.path.expanduser(db_path)))
         self._write_lock = threading.RLock()
         self._init_db()
 
@@ -136,7 +140,7 @@ class MetadataIndex:
         with self._write_lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM documents WHERE path = ?", (norm_path,))
+                cursor.execute("SELECT id FROM documents WHERE path = ? COLLATE NOCASE", (norm_path,))
                 row = cursor.fetchone()
                 if row:
                     existing_id = row["id"]
@@ -152,9 +156,15 @@ class MetadataIndex:
                     cursor.execute("""
                         INSERT INTO documents (id, path, title, content_hash)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(path) DO UPDATE SET
+                            title = excluded.title,
+                            content_hash = excluded.content_hash,
+                            updated_at = CURRENT_TIMESTAMP
                     """, (new_id, norm_path, title, content_hash))
                     conn.commit()
-                    return new_id
+                    cursor.execute("SELECT id FROM documents WHERE path = ? COLLATE NOCASE", (norm_path,))
+                    r = cursor.fetchone()
+                    return r["id"] if r else new_id
 
     def index_document(self, file_path: str) -> Optional[str]:
         """Indexes or updates a single markdown file on disk, parsing tags and wikilinks."""
@@ -625,6 +635,8 @@ class MetadataIndex:
                 with conn:  # SQLite context manager manages BEGIN/COMMIT/ROLLBACK atomically
                     cursor = conn.cursor()
 
+                    disk_files_norm_set = {os.path.normpath(os.path.abspath(f)).lower() for f in disk_files}
+
                     # Find all existing DB records in this workspace reliably across all OS path formats
                     cursor.execute("SELECT id, path, content_hash FROM documents")
                     all_rows = cursor.fetchall()
@@ -632,35 +644,37 @@ class MetadataIndex:
                     for r in all_rows:
                         p = r["path"]
                         try:
-                            if os.path.commonpath([p, norm_ws]) == norm_ws:
-                                db_records[p] = {"id": r["id"], "content_hash": r["content_hash"]}
+                            norm_p = os.path.normpath(os.path.abspath(p))
+                            if os.path.commonpath([norm_p, norm_ws]) == norm_ws:
+                                db_records[norm_p.lower()] = {"id": r["id"], "path": p, "content_hash": r["content_hash"]}
                         except Exception:
                             pass
 
                     # 2a. Orphan Purge (files in DB but not on disk)
-                    orphan_paths = [p for p in db_records.keys() if p not in disk_files_set or not os.path.exists(p)]
-                    if orphan_paths:
-                        cursor.executemany("DELETE FROM documents WHERE path = ?", [(p,) for p in orphan_paths])
-                        stats["deleted"] = len(orphan_paths)
+                    orphan_items = [item for k, item in db_records.items() if k not in disk_files_norm_set or not os.path.exists(item["path"])]
+                    if orphan_items:
+                        cursor.executemany("DELETE FROM documents WHERE id = ?", [(item["id"],) for item in orphan_items])
+                        stats["deleted"] = len(orphan_items)
 
                     # 2b. Incremental Scan & Upsert
                     for idx, file_path in enumerate(disk_files, start=1):
                         if progress_callback:
                             progress_callback(idx, total_files, os.path.basename(file_path))
 
+                        norm_file_path = os.path.normpath(os.path.abspath(file_path))
                         try:
-                            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                            with open(norm_file_path, "r", encoding="utf-8", errors="replace") as f:
                                 content = f.read()
 
                             new_hash = self.calculate_hash(content)
-                            db_entry = db_records.get(file_path)
+                            db_entry = db_records.get(norm_file_path.lower())
 
                             # Skip parsing if hash is unchanged
                             if db_entry and db_entry["content_hash"] == new_hash:
                                 continue
 
                             # Extract Title
-                            title = os.path.splitext(os.path.basename(file_path))[0]
+                            title = os.path.splitext(os.path.basename(norm_file_path))[0]
                             first_heading_m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
                             if first_heading_m:
                                 raw_h1 = first_heading_m.group(1).strip()
@@ -683,7 +697,15 @@ class MetadataIndex:
                                 cursor.execute("""
                                     INSERT INTO documents (id, path, title, content_hash)
                                     VALUES (?, ?, ?, ?)
-                                """, (doc_id, file_path, title, new_hash))
+                                    ON CONFLICT(path) DO UPDATE SET
+                                        title = excluded.title,
+                                        content_hash = excluded.content_hash,
+                                        updated_at = CURRENT_TIMESTAMP
+                                """, (doc_id, norm_file_path, title, new_hash))
+                                cursor.execute("SELECT id FROM documents WHERE path = ? COLLATE NOCASE", (norm_file_path,))
+                                r_id = cursor.fetchone()
+                                if r_id:
+                                    doc_id = r_id["id"]
                                 stats["added"] += 1
 
                             # Sync Tags

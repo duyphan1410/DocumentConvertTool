@@ -14,7 +14,11 @@ import threading
 from typing import Any, Dict, Optional
 
 from src.mcp.tools import MCP_TOOLS_MANIFEST, TOOL_HANDLERS
+from src.mcp.security import get_active_workspace_dir
 from src.services.metadata_index import MetadataIndex
+
+# Max allowable content length payload (50 MB) to prevent denial-of-service via huge headers
+MAX_CONTENT_LENGTH = 50 * 1024 * 1024
 
 # ── Logger Setup (Redirect all internal logs strictly to stderr) ──────────────
 logging.basicConfig(
@@ -150,40 +154,47 @@ class MCPServer:
 
     def _read_next_message(self) -> Optional[Dict[str, Any]]:
         """
-        Reads next message from stdin, supporting both Content-Length headers
-        and pure line-delimited JSON.
+        Reads next message from stdin iteratively without recursion.
+        Supports Content-Length framing and line-delimited JSON framing safely.
         """
-        line = self.stdin.readline()
-        if not line:
-            return None
+        while True:
+            line = self.stdin.readline()
+            if not line:
+                return None  # EOF or pipe closed
 
-        # Check for Content-Length header framing
-        if line.lower().startswith("content-length:"):
+            # 1. Content-Length header framing
+            if line.lower().startswith("content-length:"):
+                try:
+                    content_len = int(line.split(":", 1)[1].strip())
+                    if content_len < 0 or content_len > MAX_CONTENT_LENGTH:
+                        logger.error("Content-Length out of bounds: %d bytes", content_len)
+                        self.send_error(None, -32700, f"Parse error: Content-Length out of bounds ({content_len})")
+                        continue
+
+                    # Consume subsequent header lines until empty line
+                    while True:
+                        hdr = self.stdin.readline()
+                        if hdr in ("\r\n", "\n", ""):
+                            break
+                    # Read content payload
+                    payload = self.stdin.read(content_len)
+                    return json.loads(payload)
+                except Exception as e:
+                    logger.error("Failed to parse Content-Length frame: %s", str(e))
+                    self.send_error(None, -32700, f"Parse error in Content-Length frame: {str(e)}")
+                    continue
+
+            # 2. Pure line-delimited JSON framing
+            stripped = line.strip()
+            if not stripped:
+                continue
+
             try:
-                content_len = int(line.split(":", 1)[1].strip())
-                # Consume subsequent header lines until empty line
-                while True:
-                    hdr = self.stdin.readline()
-                    if hdr in ("\r\n", "\n", ""):
-                        break
-                # Read content payload
-                payload = self.stdin.read(content_len)
-                return json.loads(payload)
-            except Exception as e:
-                logger.error("Failed to parse Content-Length frame: %s", str(e))
-                return None
-
-        # Pure line-delimited JSON framing
-        stripped = line.strip()
-        if not stripped:
-            return self._read_next_message()
-
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError as jde:
-            logger.error("JSON decode error on line: %s | Error: %s", stripped[:100], str(jde))
-            self.send_error(None, -32700, f"Parse error: {str(jde)}")
-            return self._read_next_message()
+                return json.loads(stripped)
+            except json.JSONDecodeError as jde:
+                logger.error("JSON decode error on line: %s | Error: %s", stripped[:100], str(jde))
+                self.send_error(None, -32700, f"Parse error: {str(jde)}")
+                continue
 
     def run_forever(self) -> None:
         """Main event loop processing incoming JSON-RPC requests."""
@@ -206,26 +217,10 @@ class MCPServer:
 
 
 def _trigger_background_workspace_sync(index: MetadataIndex) -> None:
-    """Attempts to auto-sync the last opened workspace folder on background thread."""
+    """Attempts to auto-sync the active workspace folder on background thread."""
     def _sync_worker():
         try:
-            workspace_dir = None
-            # 1. Check environment variable
-            env_ws = os.getenv("DOCCONVERT_WORKSPACE")
-            if env_ws and os.path.isdir(env_ws):
-                workspace_dir = env_ws
-
-            # 2. Check settings.json in AppData
-            if not workspace_dir:
-                appdata = os.getenv("APPDATA", os.path.expanduser("~"))
-                settings_path = os.path.join(appdata, "DocConvert", "settings.json")
-                if os.path.exists(settings_path):
-                    with open(settings_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        cand = data.get("workspace_folder") or data.get("last_workspace")
-                        if cand and os.path.isdir(cand):
-                            workspace_dir = cand
-
+            workspace_dir = get_active_workspace_dir()
             if workspace_dir:
                 logger.info("Auto-syncing workspace in background: %s", workspace_dir)
                 index.sync_workspace_incremental(workspace_dir)
@@ -237,10 +232,33 @@ def _trigger_background_workspace_sync(index: MetadataIndex) -> None:
     sync_thread.start()
 
 
+def ensure_windows_stdio() -> None:
+    """
+    Recovers standard console handles on Windows when executed from a windowed binary (console=False).
+    Attaches to parent process (e.g. Claude Desktop or IDE) console if stdin/stdout are None.
+    """
+    if sys.platform == "win32":
+        if sys.stdin is None or sys.stdout is None or sys.stderr is None:
+            try:
+                import ctypes
+                ATTACH_PARENT_PROCESS = -1
+                if ctypes.windll.kernel32.AttachConsole(ATTACH_PARENT_PROCESS):
+                    if sys.stdin is None:
+                        sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+                    if sys.stdout is None:
+                        sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    if sys.stderr is None:
+                        sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main():
     """CLI Entrypoint for DocConvert MCP Server."""
+    ensure_windows_stdio()
+
     # 1. Protect stdout: redirect standard sys.stdout to sys.stderr
-    real_stdout = sys.__stdout__
+    real_stdout = sys.__stdout__ or sys.stdout
     sys.stdout = sys.stderr
 
     # 2. Initialize index and trigger background sync
@@ -254,3 +272,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

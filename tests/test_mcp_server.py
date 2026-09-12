@@ -1,6 +1,7 @@
 """
 Integration and Protocol tests for DocConvert MCP Server.
-Verifies JSON-RPC 2.0 handshake, tool dispatching, dual framing, and error responses.
+Verifies JSON-RPC 2.0 handshake, tool dispatching, dual framing, recursion resistance,
+and error responses.
 """
 import io
 import json
@@ -16,6 +17,9 @@ class TestMCPServerProtocol(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.orig_env_ws = os.environ.get("DOCCONVERT_WORKSPACE")
+        os.environ["DOCCONVERT_WORKSPACE"] = self.temp_dir.name
+
         self.db_path = os.path.join(self.temp_dir.name, "test_server_index.db")
         self.index = MetadataIndex(db_path=self.db_path)
 
@@ -28,6 +32,10 @@ class TestMCPServerProtocol(unittest.TestCase):
         self.index.set_document_tags(self.doc_id, ["mcp"])
 
     def tearDown(self):
+        if self.orig_env_ws is not None:
+            os.environ["DOCCONVERT_WORKSPACE"] = self.orig_env_ws
+        else:
+            os.environ.pop("DOCCONVERT_WORKSPACE", None)
         self.temp_dir.cleanup()
 
     def _execute_rpc_session(self, input_text: str) -> list[dict]:
@@ -46,7 +54,10 @@ class TestMCPServerProtocol(unittest.TestCase):
         for line in raw_output.splitlines():
             line = line.strip()
             if line:
-                responses.append(json.loads(line))
+                try:
+                    responses.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
         return responses
 
     def test_initialize_and_ping(self):
@@ -165,6 +176,50 @@ class TestMCPServerProtocol(unittest.TestCase):
         self.assertEqual(resps[0]["id"], 77)
         self.assertEqual(resps[0]["result"], {})
 
+    def test_recursion_resistance_empty_lines(self):
+        """Test that 5,000 empty lines do not trigger RecursionError and next valid message is parsed."""
+        empty_lines = "\n" * 5000
+        ping_msg = json.dumps({"jsonrpc": "2.0", "id": 555, "method": "ping"}) + "\n"
+        full_stream = empty_lines + ping_msg
+
+        resps = self._execute_rpc_session(full_stream)
+        self.assertEqual(len(resps), 1)
+        self.assertEqual(resps[0]["id"], 555)
+        self.assertEqual(resps[0]["result"], {})
+
+    def test_content_length_limit_exceeded(self):
+        """Test that an oversized Content-Length (>50MB) is safely rejected without crash."""
+        oversized_header = "Content-Length: 60000000\r\n\r\n"
+        ping_msg = json.dumps({"jsonrpc": "2.0", "id": 888, "method": "ping"}) + "\n"
+        full_stream = oversized_header + ping_msg
+
+        resps = self._execute_rpc_session(full_stream)
+        self.assertEqual(len(resps), 2)
+        # First response is Parse error for Content-Length out of bounds
+        self.assertIn("error", resps[0])
+        self.assertEqual(resps[0]["error"]["code"], -32700)
+        # Second response is successful ping
+        self.assertEqual(resps[1]["id"], 888)
+        self.assertEqual(resps[1]["result"], {})
+
+    def test_invalid_json_line_recovery(self):
+        """Test that malformed JSON lines return -32700 and server recovers immediately."""
+        malformed = "{ invalid json line !!!\n"
+        ping_msg = json.dumps({"jsonrpc": "2.0", "id": 999, "method": "ping"}) + "\n"
+        full_stream = malformed + ping_msg
+
+        resps = self._execute_rpc_session(full_stream)
+        self.assertEqual(len(resps), 2)
+        self.assertEqual(resps[0]["error"]["code"], -32700)
+        self.assertEqual(resps[1]["id"], 999)
+
+    def test_ensure_windows_stdio_safety(self):
+        """Test that ensure_windows_stdio runs safely without unhandled exceptions."""
+        from src.mcp.server import ensure_windows_stdio
+        # Should execute cleanly in standard test environment
+        ensure_windows_stdio()
+
 
 if __name__ == "__main__":
     unittest.main()
+

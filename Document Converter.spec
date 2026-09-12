@@ -62,6 +62,9 @@ hiddenimports = [
     'src.ui_flet.components.transcribe_dialog',
     'src.services.whisper_service',
     'src.services.transcription_manager',
+    'src.services.metadata_index',
+    'src.services.fuzzy_matcher',
+    'src.services.link_parser',
     'src.mcp.server',
     'src.mcp.tools',
     'src.mcp.security',
@@ -232,7 +235,7 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
+exe_gui = EXE(
     pyz,
     a.scripts,
     [],
@@ -251,8 +254,28 @@ exe = EXE(
     icon=['assets/icons/app_icon.ico'],
 )
 
+exe_mcp = EXE(
+    pyz,
+    [('src/mcp/server.py', 'src/mcp/server.py', 'PYSOURCE')],
+    [],
+    exclude_binaries=True,
+    name='docconvert-mcp',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,  # Console subsystem enabled for Native Stdio JSON-RPC with Claude Desktop
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=['assets/icons/app_icon.ico'],
+)
+
 coll = COLLECT(
-    exe,
+    exe_gui,
+    exe_mcp,
     a.binaries,
     a.datas,
     strip=False,

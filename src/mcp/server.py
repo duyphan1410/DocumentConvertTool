@@ -105,6 +105,11 @@ class MCPServer:
             
             # Layer 1 Defense: Schema-based argument whitelisting
             manifest_tool = next((t for t in MCP_TOOLS_MANIFEST if t.get("name") == tool_name), None)
+            if manifest_tool is None:
+                logger.warning(
+                    "Tool '%s' exists in TOOL_HANDLERS but missing from MCP_TOOLS_MANIFEST — "
+                    "all arguments will be stripped. Check manifest registration.", tool_name
+                )
             allowed_props = set(manifest_tool.get("inputSchema", {}).get("properties", {}).keys()) if manifest_tool else set()
             sanitized_args = {k: v for k, v in arguments.items() if k in allowed_props}
 

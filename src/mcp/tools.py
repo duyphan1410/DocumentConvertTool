@@ -21,6 +21,11 @@ from src.services.fuzzy_matcher import calculate_similarity
 from src.services.conversion_service import convert_content
 
 
+# Registry lookup key uses module.name (display label), which differs
+# from the uppercase format string for these 3 modules.
+_FORMAT_TO_MODULE_NAME = {"DOCX": "Word", "PPTX": "PowerPoint", "XLSX": "Excel"}
+
+
 # ── MCP Tool Schema Manifest (Anthropic MCP Protocol 2024-11-05) ─────────────
 
 MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
@@ -65,7 +70,7 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
     },
     {
         "name": "convert_document",
-        "description": "Converts an indexed Markdown document into a target format (docx, pdf, html, json, yaml, csv, txt) and saves it alongside the source file.",
+        "description": "Converts an indexed Markdown document into a target format (docx, pptx, xlsx, pdf, html, json, yaml, csv, txt) and saves it alongside the source file.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -75,8 +80,8 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
                 },
                 "target_format": {
                     "type": "string",
-                    "enum": ["docx", "pdf", "html", "json", "yaml", "csv", "txt"],
-                    "description": "Desired output format."
+                    "enum": ["docx", "pptx", "xlsx", "pdf", "html", "json", "yaml", "csv", "txt"],
+                    "description": "Desired output format (docx, pptx, xlsx, pdf, html, json, yaml, csv, txt)."
                 }
             },
             "required": ["document_id", "target_format"]
@@ -306,7 +311,8 @@ def handle_convert_document(
                 out_f.write(content)
             result_msg = f"Saved to Plain Text -> {os.path.basename(out_path)}"
         else:
-            mode = f"MD -> {dest_upper}"
+            registry_name = _FORMAT_TO_MODULE_NAME.get(dest_upper, dest_upper)
+            mode = f"MD -> {registry_name}"
             result_msg = convert_content(mode, content, out_path)
 
         return {

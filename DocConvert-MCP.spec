@@ -8,7 +8,10 @@ a_mcp = Analysis(
     ['src/mcp/server.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('src/i18n/locales', 'src/i18n/locales'),
+        ('assets', 'assets'),
+    ],
     hiddenimports=[
         'src.__version__',
         'src.mcp.server',

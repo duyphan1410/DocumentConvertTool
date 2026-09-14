@@ -199,6 +199,14 @@ class TestMCPTools(unittest.TestCase):
         self.assertTrue(os.path.exists(res_html["output_path"]))
         self.assertTrue(res_html["output_path"].endswith(".html"))
 
+    def test_convert_document_docx_pptx_xlsx(self):
+        """Test converting to docx, pptx, xlsx — regression test for registry name mismatch bug."""
+        for fmt in ["docx", "pptx", "xlsx"]:
+            res = handle_convert_document(self.doc1_id, target_format=fmt, index=self.index)
+            self.assertEqual(res.get("status"), "success", f"Failed for format: {fmt}")
+            self.assertTrue(os.path.exists(res["output_path"]), f"File not found for format: {fmt}")
+            self.assertTrue(res["output_path"].endswith(f".{fmt}"))
+
     def test_write_document_content_single_backup_and_atomic_reindex(self):
         """Test updating document content, creating single .bak file, and atomic DB sync."""
         new_content = "# Báo Cáo Mới Cập Nhật\n\nNội dung đã được AI chỉnh sửa.\n\n#ai #updated"

@@ -13,6 +13,11 @@ import logging
 import threading
 from typing import Any, Dict, Optional
 
+# CRITICAL FOR MCP: Protect stdout from any library/module import side-effects
+# (e.g. print statements during module initialization).
+_REAL_STDOUT = sys.__stdout__ or sys.stdout
+sys.stdout = sys.stderr
+
 from src.mcp.tools import MCP_TOOLS_MANIFEST, TOOL_HANDLERS
 from src.mcp.security import get_active_workspace_dir
 from src.services.metadata_index import MetadataIndex
@@ -34,7 +39,7 @@ class MCPServer:
 
     def __init__(self, stdin_stream=None, stdout_stream=None, index: Optional[MetadataIndex] = None):
         self.stdin = stdin_stream or sys.stdin
-        self.stdout = stdout_stream or sys.__stdout__
+        self.stdout = stdout_stream or _REAL_STDOUT or sys.__stdout__
         self.index = index or MetadataIndex.get_instance()
         self._running = False
         self._write_lock = threading.Lock()
@@ -269,7 +274,7 @@ def main():
     ensure_windows_stdio()
 
     # 1. Protect stdout: redirect standard sys.stdout to sys.stderr
-    real_stdout = sys.__stdout__ or sys.stdout
+    real_stdout = _REAL_STDOUT or sys.__stdout__ or sys.stdout
     sys.stdout = sys.stderr
 
     # 2. Initialize index and trigger background sync

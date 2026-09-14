@@ -101,7 +101,7 @@ class Translator:
         """Load a single JSON locale file. Returns empty dict on failure."""
         path = os.path.join(_LOCALES_DIR, f"{locale}.json")
         if not os.path.isfile(path):
-            print(f"[i18n] Locale file not found: {path}")
+            print(f"[i18n] Locale file not found: {path}", file=sys.stderr)
             return {}
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -109,5 +109,5 @@ class Translator:
             # Flatten: remove _meta from lookup, keep only string keys
             return {k: v for k, v in data.items() if isinstance(v, str)}
         except Exception as exc:
-            print(f"[i18n] Failed to load locale '{locale}': {exc}")
+            print(f"[i18n] Failed to load locale '{locale}': {exc}", file=sys.stderr)
             return {}

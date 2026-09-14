@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Any
 
 # Supported target formats for MD -> Target programmatic conversion
 SUPPORTED_CONVERT_FORMATS = frozenset([
-    "docx", "pdf", "html", "json", "yaml", "csv", "txt"
+    "docx", "pptx", "xlsx", "pdf", "html", "json", "yaml", "csv", "txt"
 ])
 
 # Internal cache state for settings.json to avoid stale workspace and minimize redundant file I/O

@@ -9,6 +9,7 @@ import os
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 from src.mcp.server import MCPServer
 from src.services.metadata_index import MetadataIndex
 
@@ -213,13 +214,339 @@ class TestMCPServerProtocol(unittest.TestCase):
         self.assertEqual(resps[0]["error"]["code"], -32700)
         self.assertEqual(resps[1]["id"], 999)
 
-    def test_ensure_windows_stdio_safety(self):
-        """Test that ensure_windows_stdio runs safely without unhandled exceptions."""
-        from src.mcp.server import ensure_windows_stdio
-        # Should execute cleanly in standard test environment
-        ensure_windows_stdio()
+    def test_tools_call_search_documents_injection_defense(self):
+        """
+        2-Step verification for search_documents:
+        Step 1 (Positive Control): Active in ws_outside -> finds outside document.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside does NOT leak outside doc.
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            outside_doc_path = os.path.join(ws_outside, "secret_search.md")
+            with open(outside_doc_path, "w", encoding="utf-8") as f:
+                f.write("# Secret Search Document\n\nConfidential notes.")
+            outside_id = str(uuid.uuid4())
+            self.index.upsert_document(outside_doc_path, "Secret Search Document", "hash_sec_search", doc_id=outside_id)
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 101,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_documents",
+                        "arguments": {"query": "Secret"}
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                self.assertEqual(len(resps_pos), 1)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_pos["total_matches"], 1)
+                self.assertEqual(data_pos["results"][0]["document_id"], outside_id)
+
+            # Step 2: Boundary Injection Defense
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 102,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_documents",
+                        "arguments": {
+                            "query": "Secret",
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                self.assertEqual(len(resps_inj), 1)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                # Must be 0 because secret_search.md is outside active workspace
+                self.assertEqual(data_inj["total_matches"], 0)
+
+    def test_tools_call_read_document_injection_defense(self):
+        """
+        2-Step verification for read_document:
+        Step 1 (Positive Control): Active in ws_outside -> successfully reads content.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside returns DOCUMENT_NOT_FOUND.
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            outside_doc_path = os.path.join(ws_outside, "secret_read.md")
+            with open(outside_doc_path, "w", encoding="utf-8") as f:
+                f.write("# Top Secret Content\n\nPassword=123456")
+            outside_id = str(uuid.uuid4())
+            self.index.upsert_document(outside_doc_path, "Top Secret Content", "hash_sec_read", doc_id=outside_id)
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 201,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "read_document",
+                        "arguments": {"document_id": outside_id}
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertNotIn("error", data_pos)
+                self.assertIn("Password=123456", data_pos["content"])
+
+            # Step 2: Boundary Injection Defense
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 202,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "read_document",
+                        "arguments": {
+                            "document_id": outside_id,
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_inj.get("error"), "DOCUMENT_NOT_FOUND")
+                self.assertTrue(resps_inj[0]["result"]["isError"])
+
+    def test_tools_call_convert_document_injection_defense(self):
+        """
+        2-Step verification for convert_document:
+        Step 1 (Positive Control): Active in ws_outside -> converts to TXT.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside blocked
+                                   and NO output file created on disk (asserted before cleanup).
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            outside_doc_path = os.path.join(ws_outside, "convert_note.md")
+            with open(outside_doc_path, "w", encoding="utf-8") as f:
+                f.write("# Convert Note\n\nContent to convert.")
+            outside_id = str(uuid.uuid4())
+            self.index.upsert_document(outside_doc_path, "Convert Note", "hash_conv", doc_id=outside_id)
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 301,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "convert_document",
+                        "arguments": {"document_id": outside_id, "target_format": "txt"}
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_pos.get("status"), "success")
+                expected_pos_out = os.path.join(ws_outside, "convert_note.txt")
+                self.assertTrue(os.path.exists(expected_pos_out))
+                os.remove(expected_pos_out)
+
+            # Step 2: Boundary Injection Defense
+            expected_inj_out = os.path.join(ws_outside, "convert_note.txt")
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 302,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "convert_document",
+                        "arguments": {
+                            "document_id": outside_id,
+                            "target_format": "txt",
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_inj.get("error"), "DOCUMENT_NOT_FOUND")
+                # CRITICAL: Assert file was NOT created before TemporaryDirectory context manager exits
+                self.assertFalse(os.path.exists(expected_inj_out))
+
+    def test_tools_call_tag_document_injection_defense(self):
+        """
+        2-Step verification for tag_document:
+        Step 1 (Positive Control): Active in ws_outside -> adds tag.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside blocked
+                                   and DB tags NOT changed.
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            outside_doc_path = os.path.join(ws_outside, "tag_note.md")
+            with open(outside_doc_path, "w", encoding="utf-8") as f:
+                f.write("# Tag Note")
+            outside_id = str(uuid.uuid4())
+            self.index.upsert_document(outside_doc_path, "Tag Note", "hash_tag", doc_id=outside_id)
+            self.index.set_document_tags(outside_id, ["initial"])
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 401,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "tag_document",
+                        "arguments": {"document_id": outside_id, "add_tags": ["pos_tag"]}
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_pos.get("status"), "success")
+                self.assertIn("pos_tag", data_pos["current_tags"])
+
+            # Step 2: Boundary Injection Defense
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 402,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "tag_document",
+                        "arguments": {
+                            "document_id": outside_id,
+                            "add_tags": ["injected_tag"],
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_inj.get("error"), "DOCUMENT_NOT_FOUND")
+                # Verify DB tags unchanged
+                db_tags = self.index.get_document_tags(outside_id)
+                self.assertNotIn("injected_tag", db_tags)
+
+    def test_tools_call_list_backlinks_injection_defense(self):
+        """
+        2-Step verification for list_backlinks:
+        Step 1 (Positive Control): Active in ws_outside -> returns linked references.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside blocked
+                                   and no links disclosed.
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            doc_a_path = os.path.join(ws_outside, "backlink_a.md")
+            doc_b_path = os.path.join(ws_outside, "backlink_b.md")
+            with open(doc_a_path, "w", encoding="utf-8") as f:
+                f.write("# Doc A Target")
+            with open(doc_b_path, "w", encoding="utf-8") as f:
+                f.write("# Doc B Source\n\nLink to [[Doc A Target]]")
+
+            id_a = str(uuid.uuid4())
+            id_b = str(uuid.uuid4())
+            self.index.upsert_document(doc_a_path, "Doc A Target", "hash_a", doc_id=id_a)
+            self.index.upsert_document(doc_b_path, "Doc B Source", "hash_b", doc_id=id_b)
+
+            with self.index.get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO wikilinks (source_id, target_id, target_title_raw, snippet, resolved)
+                    VALUES (?, ?, ?, ?, 1)
+                """, (id_b, id_a, "Doc A Target", "Link to [[Doc A Target]]"))
+                conn.commit()
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 501,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "list_backlinks",
+                        "arguments": {"document_id": id_a}
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertNotIn("error", data_pos)
+                self.assertEqual(data_pos["linked_references_count"], 1)
+
+            # Step 2: Boundary Injection Defense
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 502,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "list_backlinks",
+                        "arguments": {
+                            "document_id": id_a,
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_inj.get("error"), "DOCUMENT_NOT_FOUND")
+
+    def test_tools_call_write_document_content_injection_defense(self):
+        """
+        2-Step verification for write_document_content:
+        Step 1 (Positive Control): Active in ws_outside -> overwrites content and creates .bak.
+        Step 2 (Injection Defense): Active in ws_active -> injecting workspace_dir=ws_outside blocked,
+                                   file unchanged, and no new .bak created.
+        """
+        with tempfile.TemporaryDirectory() as ws_outside:
+            outside_doc_path = os.path.join(ws_outside, "write_test.md")
+            original_content = "# Original Content"
+            with open(outside_doc_path, "w", encoding="utf-8") as f:
+                f.write(original_content)
+            outside_id = str(uuid.uuid4())
+            self.index.upsert_document(outside_doc_path, "Original Title", "hash_orig", doc_id=outside_id)
+
+            # Step 1: Positive Control
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": ws_outside}):
+                req_pos = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 601,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "write_document_content",
+                        "arguments": {
+                            "document_id": outside_id,
+                            "content": "# Updated by Step 1"
+                        }
+                    }
+                }) + "\n"
+                resps_pos = self._execute_rpc_session(req_pos)
+                data_pos = json.loads(resps_pos[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_pos.get("status"), "success")
+                with open(outside_doc_path, "r", encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "# Updated by Step 1")
+
+            # Remove .bak from step 1 for clean step 2 test
+            bak_path = f"{outside_doc_path}.bak"
+            if os.path.exists(bak_path):
+                os.remove(bak_path)
+
+            # Step 2: Boundary Injection Defense
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                req_inj = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 602,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "write_document_content",
+                        "arguments": {
+                            "document_id": outside_id,
+                            "content": "# Malicious Overwrite Attempt",
+                            "workspace_dir": ws_outside  # Malicious injection attempt
+                        }
+                    }
+                }) + "\n"
+                resps_inj = self._execute_rpc_session(req_inj)
+                data_inj = json.loads(resps_inj[0]["result"]["content"][0]["text"])
+                self.assertEqual(data_inj.get("error"), "DOCUMENT_NOT_FOUND")
+
+                # Verify file content is UNTOUCHED (still from Step 1)
+                with open(outside_doc_path, "r", encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "# Updated by Step 1")
+                # Verify no backup file was created
+                self.assertFalse(os.path.exists(bak_path))
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

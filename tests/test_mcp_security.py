@@ -76,7 +76,7 @@ class TestMCPSecurity(unittest.TestCase):
 
     def test_resolve_safe_doc_path_valid(self):
         """Test resolving path for a valid indexed document within workspace."""
-        is_valid, path, doc = resolve_safe_doc_path(self.valid_doc_id, self.index, workspace_dir=self.temp_dir.name)
+        is_valid, path, doc = resolve_safe_doc_path(self.valid_doc_id, self.index)
         self.assertTrue(is_valid)
         self.assertEqual(os.path.normpath(path), os.path.normpath(self.doc_file))
         self.assertEqual(doc["title"], "Valid Note")
@@ -85,10 +85,11 @@ class TestMCPSecurity(unittest.TestCase):
         """Test that documents located outside active workspace boundary are strictly rejected."""
         with tempfile.TemporaryDirectory() as other_dir:
             # Document is inside self.temp_dir, but workspace is set to other_dir
-            is_valid, path, doc = resolve_safe_doc_path(self.valid_doc_id, self.index, workspace_dir=other_dir)
-            self.assertFalse(is_valid)
-            self.assertIsNone(path)
-            self.assertIsNotNone(doc)  # doc found in DB but blocked by boundary guard
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": other_dir}):
+                is_valid, path, doc = resolve_safe_doc_path(self.valid_doc_id, self.index)
+                self.assertFalse(is_valid)
+                self.assertIsNone(path)
+                self.assertIsNotNone(doc)  # doc found in DB but blocked by boundary guard
 
     def test_boundary_check_different_drive_returns_false(self):
         """Test cross-drive containment returns False safely on Windows without unhandled exceptions."""
@@ -124,7 +125,7 @@ class TestMCPSecurity(unittest.TestCase):
         self.index.upsert_document(path=ghost_path, title="Ghost", content_hash="ghost", doc_id=ghost_id)
 
         # File is not created on disk
-        is_valid, path, doc = resolve_safe_doc_path(ghost_id, self.index, workspace_dir=self.temp_dir.name)
+        is_valid, path, doc = resolve_safe_doc_path(ghost_id, self.index)
         self.assertFalse(is_valid)
         self.assertIsNone(path)
         self.assertIsNotNone(doc)

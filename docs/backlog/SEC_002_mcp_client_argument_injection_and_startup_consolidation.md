@@ -3,7 +3,7 @@
 **Mã Task**: `SEC-002`  
 **Phân loại**: Security / Architecture Refactoring  
 **Độ ưu tiên**: Critical  
-**Trạng thái**: 🟡 Ready for Implementation / Review  
+**Trạng thái**: 🟢 Completed  
 **Tài liệu liên quan**: [REPORT-PKB-PHASE2-AUDIT-20260912](../reports/pkb_phase2_mcp_audit_and_security_report.md), [SEC-001](SEC_001_mcp_security_boundary_and_stream_hardening.md)
 
 ---
@@ -101,15 +101,15 @@ Mỗi test case injection trong `tests/test_mcp_server.py` bắt buộc phải t
 > ⚠️ **Lưu ý triển khai cho Test Case `convert_document`**: Bắt buộc phải thực hiện assertion `self.assertFalse(os.path.exists(expected_out_file))` **TRƯỚC KHI** context manager `tempfile.TemporaryDirectory()` thoát và xóa thư mục tạm, để đảm bảo phát hiện chính xác mọi hành vi rò rỉ ghi file ra đĩa.
 
 ### B. Checklist Nghiệm thu Chi tiết:
-- [ ] **Table-Driven Injection Tests (Cả 6 Tools)**:
+- [x] **Table-Driven Injection Tests (Cả 6 Tools)**:
   1. `search_documents`: Đặt workspace A, inject workspace B $\rightarrow$ Chỉ trả về kết quả thuộc workspace A (loại trừ file workspace B).
   2. `read_document`: File hợp lệ tại workspace B, active tại workspace A, inject workspace B $\rightarrow$ Trả về `DOCUMENT_NOT_FOUND` / boundary check failure.
   3. `convert_document`: File hợp lệ tại workspace B, active tại workspace A, inject workspace B $\rightarrow$ Trả về `DOCUMENT_NOT_FOUND` và KHÔNG sinh file output trên đĩa (kiểm tra trước khi cleanup dir).
   4. `tag_document`: File hợp lệ tại workspace B, active tại workspace A, inject workspace B $\rightarrow$ Trả về `DOCUMENT_NOT_FOUND` và KHÔNG sửa đổi tag trong database.
   5. `list_backlinks`: File hợp lệ tại workspace B, active tại workspace A, inject workspace B $\rightarrow$ Trả về `DOCUMENT_NOT_FOUND` và KHÔNG tiết lộ liên kết tài liệu.
   6. `write_document_content`: File hợp lệ tại workspace B, active tại workspace A, inject workspace B $\rightarrow$ Trả về `DOCUMENT_NOT_FOUND` và KHÔNG sửa đổi/tạo file `.bak` trên đĩa.
-- [ ] **Clean Signature & Type Safety (Lớp 2)**: Toàn bộ 6 hàm handler trong `src/mcp/tools.py` không còn tham số `workspace_dir`. Gọi hàm trực tiếp với `workspace_dir` sẽ bị chặn ngay bởi `TypeError` ở cấp độ Python.
-- [ ] **Unit Tests Passing**: Toàn bộ test suite `python -m unittest tests.test_metadata_index tests.test_mcp_security tests.test_mcp_server tests.test_mcp_tools` vượt qua 100%.
-- [ ] **Clean Encapsulation**: `src/main.py` không còn import bất kỳ hàm nội bộ private nào (tiền tố `_`).
-- [ ] **Single Entry Point**: Toàn bộ logic khởi động MCP được gom về 1 điểm duy nhất tại `src/mcp/server.py:main()`.
-- [ ] **Measurable Packaging Integrity**: `DocConvert-MCP.spec` phân tích thành công không phát sinh `ModuleNotFoundError`, và `excludes` loại trừ triệt để `torch`, `faster_whisper` giữ kích thước nhị phân mục tiêu.
+- [x] **Clean Signature & Type Safety (Lớp 2)**: Toàn bộ 6 hàm handler trong `src/mcp/tools.py` không còn tham số `workspace_dir`. Gọi hàm trực tiếp với `workspace_dir` sẽ bị chặn ngay bởi `TypeError` ở cấp độ Python.
+- [x] **Unit Tests Passing**: Toàn bộ test suite `python -m unittest tests.test_metadata_index tests.test_mcp_security tests.test_mcp_server tests.test_mcp_tools` vượt qua 100%.
+- [x] **Clean Encapsulation**: `src/main.py` không còn import bất kỳ hàm nội bộ private nào (tiền tố `_`).
+- [x] **Single Entry Point**: Toàn bộ logic khởi động MCP được gom về 1 điểm duy nhất tại `src/mcp/server.py:main()`.
+- [x] **Measurable Packaging Integrity**: `DocConvert-MCP.spec` phân tích thành công không phát sinh `ModuleNotFoundError`, và `excludes` loại trừ triệt để `torch`, `faster_whisper` giữ kích thước nhị phân mục tiêu.

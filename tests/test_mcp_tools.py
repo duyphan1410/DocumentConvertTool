@@ -7,6 +7,7 @@ import os
 import unittest
 import tempfile
 import uuid
+from unittest.mock import patch
 from src.mcp.tools import (
     handle_search_documents,
     handle_read_document,
@@ -100,12 +101,14 @@ class TestMCPTools(unittest.TestCase):
         """Test search_documents strictly filters out documents outside active workspace."""
         with tempfile.TemporaryDirectory() as other_dir:
             # Active workspace set to other_dir -> results must be empty
-            res = handle_search_documents(query="tai chinh", index=self.index, workspace_dir=other_dir)
-            self.assertEqual(res["total_matches"], 0)
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": other_dir}):
+                res = handle_search_documents(query="tai chinh", index=self.index)
+                self.assertEqual(res["total_matches"], 0)
 
             # Active workspace set to self.temp_dir -> results found
-            res_valid = handle_search_documents(query="tai chinh", index=self.index, workspace_dir=self.temp_dir.name)
-            self.assertGreaterEqual(res_valid["total_matches"], 1)
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": self.temp_dir.name}):
+                res_valid = handle_search_documents(query="tai chinh", index=self.index)
+                self.assertGreaterEqual(res_valid["total_matches"], 1)
 
     def test_read_document_valid(self):
         """Test reading a valid document by UUID."""
@@ -124,9 +127,10 @@ class TestMCPTools(unittest.TestCase):
     def test_read_document_blocked_outside_workspace(self):
         """Test reading document is blocked if outside active workspace."""
         with tempfile.TemporaryDirectory() as other_dir:
-            res = handle_read_document(self.doc1_id, index=self.index, workspace_dir=other_dir)
-            self.assertIn("error", res)
-            self.assertEqual(res["error"], "DOCUMENT_NOT_FOUND")
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": other_dir}):
+                res = handle_read_document(self.doc1_id, index=self.index)
+                self.assertIn("error", res)
+                self.assertEqual(res["error"], "DOCUMENT_NOT_FOUND")
 
     def test_tag_document_add_and_remove(self):
         """Test adding and removing tags from document."""
@@ -159,8 +163,29 @@ class TestMCPTools(unittest.TestCase):
     def test_list_backlinks_outside_workspace(self):
         """Test list_backlinks filters out backlinks from documents outside active workspace."""
         with tempfile.TemporaryDirectory() as other_dir:
-            res = handle_list_backlinks(self.doc1_id, index=self.index, workspace_dir=other_dir)
-            self.assertIn("error", res)  # Target document itself is outside other_dir
+            with patch.dict(os.environ, {"DOCCONVERT_WORKSPACE": other_dir}):
+                res = handle_list_backlinks(self.doc1_id, index=self.index)
+                self.assertIn("error", res)  # Target document itself is outside other_dir
+
+    def test_clean_signatures_reject_workspace_dir_type_error(self):
+        """Test that calling any of the 6 handlers with workspace_dir raises TypeError directly."""
+        with self.assertRaises(TypeError):
+            handle_search_documents(query="test", index=self.index, workspace_dir="C:\\")  # type: ignore
+
+        with self.assertRaises(TypeError):
+            handle_read_document(self.doc1_id, index=self.index, workspace_dir="C:\\")  # type: ignore
+
+        with self.assertRaises(TypeError):
+            handle_convert_document(self.doc1_id, target_format="txt", index=self.index, workspace_dir="C:\\")  # type: ignore
+
+        with self.assertRaises(TypeError):
+            handle_tag_document(self.doc1_id, add_tags=["a"], index=self.index, workspace_dir="C:\\")  # type: ignore
+
+        with self.assertRaises(TypeError):
+            handle_list_backlinks(self.doc1_id, index=self.index, workspace_dir="C:\\")  # type: ignore
+
+        with self.assertRaises(TypeError):
+            handle_write_document_content(self.doc1_id, content="test", index=self.index, workspace_dir="C:\\")  # type: ignore
 
     def test_convert_document_txt_and_html(self):
         """Test converting Markdown document to TXT and HTML format."""

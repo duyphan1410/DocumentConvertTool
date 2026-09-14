@@ -152,15 +152,14 @@ def handle_search_documents(
     query: Optional[str] = None,
     tags: Optional[List[str]] = None,
     limit: int = 10,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """Handles document search by title fuzzy matching and tag filtering, scoped to active workspace."""
     idx = index or MetadataIndex.get_instance()
     clean_query = (query or "").strip()
     tag_filters = [t.strip().lstrip("#") for t in (tags or []) if t.strip()]
     limit = max(1, min(limit or 10, 50))
-    ws = workspace_dir or get_active_workspace_dir()
+    ws = get_active_workspace_dir()
 
     with idx.get_connection() as conn:
         cursor = conn.cursor()
@@ -231,12 +230,11 @@ def handle_search_documents(
 
 def handle_read_document(
     document_id: str,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """Reads document content from disk safely using its document_id."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
 
     if not is_valid or not safe_path:
         return {
@@ -270,12 +268,11 @@ def handle_read_document(
 def handle_convert_document(
     document_id: str,
     target_format: str,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """Converts indexed Markdown document to target format and saves alongside source file."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
 
     if not is_valid or not safe_path:
         return {
@@ -333,12 +330,11 @@ def handle_tag_document(
     document_id: str,
     add_tags: Optional[List[str]] = None,
     remove_tags: Optional[List[str]] = None,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """Updates document tags by calculating diff and updating SQLite index."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
 
     if not is_valid:
         return {
@@ -372,12 +368,11 @@ def handle_tag_document(
 
 def handle_list_backlinks(
     document_id: str,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """Retrieves linked references and unlinked mentions for a document within active workspace."""
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
 
     if not is_valid or not doc:
         return {
@@ -386,7 +381,7 @@ def handle_list_backlinks(
             "document_id": document_id
         }
 
-    ws = workspace_dir or get_active_workspace_dir()
+    ws = get_active_workspace_dir()
 
     linked_refs = []
     with idx.get_connection() as conn:
@@ -443,16 +438,15 @@ def handle_list_backlinks(
 def handle_write_document_content(
     document_id: str,
     content: str,
-    index: Optional[MetadataIndex] = None,
-    workspace_dir: Optional[str] = None,
-    create_backup: bool = True
+    create_backup: bool = True,
+    index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """
     Safely overwrites document content with single .bak backup and atomic file write,
     then triggers immediate SQLite re-indexing.
     """
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx, workspace_dir=workspace_dir)
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
 
     if not is_valid or not safe_path:
         return {

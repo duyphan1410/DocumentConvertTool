@@ -15,6 +15,8 @@ Thư mục này quản lý các hạng mục nợ kỹ thuật (Technical Debt),
 | `PERF-003` | Lazy Import Entry Points & Tối ưu Cold-Start cho Headless Subprocesses | Performance / Refactoring | High | 🟢 Completed (PR #85) | [PERF_003_lazy_import_entrypoints_mcp_coldstart.md](PERF_003_lazy_import_entrypoints_mcp_coldstart.md) |
 | `ARCH-001` | Hỗ trợ Stdio JSON-RPC cho MCP Server trên Bản Đóng gói PyInstaller | Packaging / Architecture | High | 🟢 Completed (PR #85) | [ARCH_001_pyinstaller_console_stdio_mcp_packaging.md](ARCH_001_pyinstaller_console_stdio_mcp_packaging.md) |
 | `SEC-002` | Vá Lỗ hổng Argument Injection `workspace_dir` & Hợp nhất Entry Point MCP | Security / Architecture | **Critical** | 🟢 Completed | [SEC_002_mcp_client_argument_injection_and_startup_consolidation.md](SEC_002_mcp_client_argument_injection_and_startup_consolidation.md) |
+| `FEAT-001` | MCP Document Version History, Safe Patch, Audit Trail & Rollback Engine | Feature / Reliability | **Critical** | 🟢 Completed | [FEAT_001_mcp_document_version_history_and_safe_patch.md](FEAT_001_mcp_document_version_history_and_safe_patch.md) |
+| `SEC-003` | MCP Multi-Client Workspace Session Isolation & Fail-Closed Boundary Enforcement | Security / Architecture | High | 🟡 Backlog / Planned | [SEC_003_mcp_workspace_session_isolation_and_fail_closed.md](SEC_003_mcp_workspace_session_isolation_and_fail_closed.md) |
 
 ---
 

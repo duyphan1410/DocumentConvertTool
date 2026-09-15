@@ -109,7 +109,7 @@ class TestMCPServerProtocol(unittest.TestCase):
         resp = resps[0]
         self.assertEqual(resp["id"], 10)
         tools = resp["result"]["tools"]
-        self.assertEqual(len(tools), 6)
+        self.assertEqual(len(tools), 10)
         tool_names = [t["name"] for t in tools]
         self.assertIn("search_documents", tool_names)
         self.assertIn("read_document", tool_names)
@@ -117,6 +117,10 @@ class TestMCPServerProtocol(unittest.TestCase):
         self.assertIn("tag_document", tool_names)
         self.assertIn("list_backlinks", tool_names)
         self.assertIn("write_document_content", tool_names)
+        self.assertIn("patch_document_content", tool_names)
+        self.assertIn("get_document_history", tool_names)
+        self.assertIn("rollback_document", tool_names)
+        self.assertIn("cleanup_legacy_backups", tool_names)
 
     def test_tools_call_read_document(self):
         """Test tools/call for read_document."""

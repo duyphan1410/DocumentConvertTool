@@ -129,6 +129,45 @@ def resolve_safe_doc_path(
     return True, norm_path, doc
 
 
+def resolve_doc_for_restore(
+    doc_id: str,
+    index: Any
+) -> Tuple[bool, Optional[str], Optional[dict]]:
+    """
+    Resolves document path for restore/rollback operations where physical file may be missing on disk.
+    
+    Security Guarantees:
+    1. Enforces strict UUID v4 validation.
+    2. Validates document record existence in SQLite index.
+    3. Validates that stored_path is strictly within the active workspace directory.
+    
+    Returns:
+        (is_valid_and_permitted, absolute_file_path, document_record_dict)
+        - If doc not found / invalid UUID: (False, None, None)
+        - If doc found but outside workspace: (False, norm_path, doc)
+        - If doc found and permitted inside workspace: (True, norm_path, doc)
+    """
+    if not is_valid_uuid(doc_id):
+        return False, None, None
+
+    doc = index.get_document_by_id(doc_id)
+    if not doc:
+        return False, None, None
+
+    stored_path = doc.get("path")
+    if not stored_path or not isinstance(stored_path, str):
+        return False, None, doc
+
+    norm_path = os.path.normpath(os.path.abspath(stored_path))
+
+    # Enforce workspace boundary check even if the physical file does not exist on disk
+    ws = get_active_workspace_dir()
+    if ws and not is_path_in_workspace(norm_path, ws):
+        return False, norm_path, doc
+
+    return True, norm_path, doc
+
+
 def sanitize_target_format(target_format: str) -> str:
     """
     Validates and normalizes target export format.

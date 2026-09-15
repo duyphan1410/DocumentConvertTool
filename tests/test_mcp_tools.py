@@ -63,8 +63,8 @@ class TestMCPTools(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_manifest_schema(self):
-        """Verifies tool manifest contains all 6 required tools and valid schemas."""
-        self.assertEqual(len(MCP_TOOLS_MANIFEST), 6)
+        """Verifies tool manifest contains all 10 tools and valid schemas."""
+        self.assertEqual(len(MCP_TOOLS_MANIFEST), 10)
         names = {t["name"] for t in MCP_TOOLS_MANIFEST}
         expected = {
             "search_documents",
@@ -72,7 +72,11 @@ class TestMCPTools(unittest.TestCase):
             "convert_document",
             "tag_document",
             "list_backlinks",
-            "write_document_content"
+            "write_document_content",
+            "patch_document_content",
+            "get_document_history",
+            "rollback_document",
+            "cleanup_legacy_backups"
         }
         self.assertEqual(names, expected)
         for t in MCP_TOOLS_MANIFEST:

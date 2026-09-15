@@ -95,6 +95,22 @@ class MetadataIndex:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_wikilinks_source ON wikilinks(source_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_wikilinks_target ON wikilinks(target_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_wikilinks_raw ON wikilinks(target_title_raw);")
+
+        # 5. Document History Table (FEAT_001)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS document_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                change_summary TEXT,
+                author TEXT NOT NULL DEFAULT 'AI' CHECK(author IN ('USER', 'AI', 'SYSTEM')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+            );
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_history_doc_ver_unique ON document_history(document_id, version);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_doc_created ON document_history(document_id, created_at DESC);")
         conn.commit()
 
     @contextmanager
@@ -933,5 +949,165 @@ class MetadataIndex:
 
         candidates.sort(key=lambda x: (-x["score"], -x["doc_count"], x["name"].lower()))
         return candidates[:limit]
+
+    # ── Document Version History & Safe Patch Methods (FEAT_001) ─────────────
+
+    def ensure_baseline_version(self, document_id: str) -> bool:
+        """
+        Tự động chụp snapshot v0 baseline của USER từ file đĩa hiện tại (trước khi mutate).
+        Sử dụng INSERT OR IGNORE để bảo đảm tính idempotent và an toàn tuyệt đối trước race condition.
+        
+        Returns:
+            bool: True nếu đã có baseline (vừa tạo hoặc đã tồn tại từ trước), False nếu không đọc được file.
+        """
+        with self._write_lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Kiểm tra nhanh xem đã có baseline v0 trong DB chưa
+                cursor.execute(
+                    "SELECT 1 FROM document_history WHERE document_id = ? AND version = 0",
+                    (document_id,)
+                )
+                if cursor.fetchone():
+                    return True
+                
+                # Đọc nội dung hiện tại trên đĩa làm baseline v0 của USER
+                cursor.execute("SELECT path FROM documents WHERE id = ?", (document_id,))
+                doc_row = cursor.fetchone()
+                if doc_row and doc_row["path"] and os.path.isfile(doc_row["path"]):
+                    try:
+                        with open(doc_row["path"], "r", encoding="utf-8", errors="replace") as f:
+                            current_disk_content = f.read()
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO document_history (document_id, version, content, change_summary, author)
+                            VALUES (?, 0, ?, 'Initial human baseline before AI edits', 'USER')
+                        """, (document_id, current_disk_content))
+                        conn.commit()
+                        return True
+                    except Exception:
+                        return False
+                return False
+
+    def append_document_version(
+        self,
+        document_id: str,
+        content: str,
+        change_summary: Optional[str] = None,
+        author: str = "AI",
+        max_versions: int = 30
+    ) -> int:
+        """
+        Ghi nhận version mới N vào SQLite (chỉ gọi sau khi ghi đĩa thành công để chống audit trail ma):
+        1. Insert snapshot với version = COALESCE(MAX, 0) + 1 (bảo đảm AI revisions luôn có version >= 1).
+        2. Query lại đúng cột `version` từ DB bằng `lastrowid`.
+        3. Tự động prune các version trung gian cũ nhất nếu vượt quá `max_versions` (luôn bảo vệ v0 baseline).
+        
+        Returns:
+            int: Số version thực tế vừa được tạo (vd: 1, 2, 3...)
+        """
+        with self._write_lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 1. Insert Revision mới với atomic subquery tính version kế tiếp (luôn >= 1)
+                cursor.execute("""
+                    INSERT INTO document_history (document_id, version, content, change_summary, author)
+                    VALUES (
+                        ?,
+                        COALESCE((SELECT MAX(version) FROM document_history WHERE document_id = ?), 0) + 1,
+                        ?,
+                        ?,
+                        ?
+                    )
+                """, (document_id, document_id, content, change_summary or "Updated document", author))
+                
+                inserted_id = cursor.lastrowid
+
+                # 2. Lấy đúng giá trị cột `version` thực tế vừa insert (tránh bug nhầm PK id)
+                cursor.execute("SELECT version FROM document_history WHERE id = ?", (inserted_id,))
+                ver_row = cursor.fetchone()
+                actual_version = ver_row["version"] if ver_row else 1
+
+                # 3. Retention Pruning: Xóa version cũ nhất khi vượt ngưỡng (LUÔN GIỮ version 0)
+                cursor.execute("""
+                    SELECT id FROM document_history 
+                    WHERE document_id = ? AND version > 0
+                    ORDER BY version ASC
+                """, (document_id,))
+                non_baseline_rows = cursor.fetchall()
+                
+                # Nếu số bản ghi non-baseline vượt quá max_versions
+                if len(non_baseline_rows) > max_versions:
+                    excess_count = len(non_baseline_rows) - max_versions
+                    ids_to_delete = [r["id"] for r in non_baseline_rows[:excess_count]]
+                    cursor.executemany(
+                        "DELETE FROM document_history WHERE id = ?",
+                        [(i,) for i in ids_to_delete]
+                    )
+                
+                conn.commit()
+                return actual_version
+
+    def count_document_versions(self, document_id: str) -> int:
+        """
+        Đếm tổng số phiên bản hiện có trong lịch sử của tài liệu (phục vụ pagination metadata).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS total FROM document_history WHERE document_id = ?", (document_id,))
+            row = cursor.fetchone()
+            return row["total"] if row else 0
+
+    def get_document_versions(
+        self,
+        document_id: str,
+        limit: int = 20
+    ) -> list[dict]:
+        """
+        Truy vấn danh sách metadata lịch sử phiên bản của một tài liệu.
+        Tính toán `bytes_count` trực tiếp trong SQLite bằng LENGTH(CAST(content AS BLOB)),
+        không load chuỗi `content` lớn và không leak PK nội bộ `id`.
+        
+        Returns:
+            list[dict]: [{version, author, change_summary, created_at, char_count, bytes_count}]
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    version,
+                    author,
+                    change_summary,
+                    created_at,
+                    LENGTH(content) AS char_count,
+                    LENGTH(CAST(content AS BLOB)) AS bytes_count
+                FROM document_history
+                WHERE document_id = ?
+                ORDER BY version DESC
+                LIMIT ?
+            """, (document_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_version_content(
+        self,
+        document_id: str,
+        version: int
+    ) -> Optional[str]:
+        """
+        Truy vấn nội dung snapshot Markdown đầy đủ của một version cụ thể (phục vụ rollback/restore).
+        
+        Returns:
+            Optional[str]: Nội dung văn bản Markdown hoặc None nếu không tồn tại version này.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT content FROM document_history
+                WHERE document_id = ? AND version = ?
+            """, (document_id, version))
+            row = cursor.fetchone()
+            return row["content"] if row else None
+
 
 

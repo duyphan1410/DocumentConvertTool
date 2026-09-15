@@ -7,18 +7,23 @@ from __future__ import annotations
 import os
 import json
 import shutil
+import logging
 import tempfile
 from typing import Any, Dict, List, Optional
 from src.mcp.security import (
     is_valid_uuid,
     resolve_safe_doc_path,
+    resolve_doc_for_restore,
     sanitize_target_format,
     get_active_workspace_dir,
     is_path_in_workspace,
 )
+from src.utils.file_ops import safe_delete_to_recycle_bin
 from src.services.metadata_index import MetadataIndex
 from src.services.fuzzy_matcher import calculate_similarity
 from src.services.conversion_service import convert_content
+
+logger = logging.getLogger("docconvert.mcp.tools")
 
 
 # Registry lookup key uses module.name (display label), which differs
@@ -127,7 +132,7 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
     },
     {
         "name": "write_document_content",
-        "description": "Safely overwrites document content on disk with backup and triggers immediate index synchronization.",
+        "description": "Safely overwrites document content on disk atomically, captures version history snapshot, and triggers index synchronization.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -139,13 +144,102 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
                     "type": "string",
                     "description": "New Markdown content to write to the file."
                 },
+                "change_summary": {
+                    "type": "string",
+                    "description": "Optional short description of changes made for the version history log."
+                },
                 "create_backup": {
                     "type": "boolean",
-                    "default": True,
-                    "description": "Whether to create a .bak backup file before overwriting (defaults to true)."
+                    "default": False,
+                    "description": "Whether to create a legacy .bak backup file before overwriting (defaults to false; SQLite version history is the primary store)."
                 }
             },
             "required": ["document_id", "content"]
+        }
+    },
+    {
+        "name": "patch_document_content",
+        "description": "Safely patches a specific unique text block in a Markdown document. Prevents accidental document truncation and enforces strict single-match verification.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string",
+                    "description": "Unique UUID v4 of the document to patch."
+                },
+                "target_content": {
+                    "type": "string",
+                    "description": "The exact existing text block to be replaced. Must match exactly one occurrence in the document."
+                },
+                "replacement_content": {
+                    "type": "string",
+                    "description": "The new replacement text content."
+                },
+                "change_summary": {
+                    "type": "string",
+                    "description": "Optional short explanation of what this patch changes for the history log."
+                }
+            },
+            "required": ["document_id", "target_content", "replacement_content"]
+        }
+    },
+    {
+        "name": "get_document_history",
+        "description": "Retrieves version timeline, authors, timestamps, and change summaries for a document. Does not return full body text to conserve token context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string",
+                    "description": "Unique UUID v4 of the document."
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "maximum": 50,
+                    "description": "Maximum number of history revisions to retrieve."
+                }
+            },
+            "required": ["document_id"]
+        }
+    },
+    {
+        "name": "rollback_document",
+        "description": "Restores a document to a previous historical version (default: version 0 baseline). Supports recreating deleted files if history exists.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string",
+                    "description": "Unique UUID v4 of the document."
+                },
+                "target_version": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Target version number to restore (defaults to 0 for initial human baseline)."
+                }
+            },
+            "required": ["document_id"]
+        }
+    },
+    {
+        "name": "cleanup_legacy_backups",
+        "description": "Scans and cleans up legacy *.bak backup files in the workspace. Requires dry_run=false AND confirm=true to execute deletion. Workspace is automatically resolved server-side.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "If true (default), only lists found .bak files without deleting them."
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Explicit safety confirmation flag. Must be set to true when dry_run=false."
+                }
+            },
+            "required": []
         }
     }
 ]
@@ -444,16 +538,23 @@ def handle_list_backlinks(
 def handle_write_document_content(
     document_id: str,
     content: str,
-    create_backup: bool = True,
+    change_summary: Optional[str] = None,
+    create_backup: bool = False,
     index: Optional[MetadataIndex] = None
 ) -> Dict[str, Any]:
     """
-    Safely overwrites document content with single .bak backup and atomic file write,
-    then triggers immediate SQLite re-indexing.
+    Safely overwrites document content with atomic file write, captures
+    version history snapshot, and triggers SQLite re-indexing.
     """
     idx = index or MetadataIndex.get_instance()
-    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    if not is_valid_uuid(document_id):
+        return {
+            "error": "INVALID_UUID",
+            "message": f"Document ID '{document_id}' is not a valid UUID v4.",
+            "document_id": document_id
+        }
 
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
     if not is_valid or not safe_path:
         return {
             "error": "DOCUMENT_NOT_FOUND",
@@ -462,12 +563,15 @@ def handle_write_document_content(
         }
 
     try:
-        # 1. Create a single backup .bak before overwrite
+        # 1. Capture v0 baseline before mutating file (safe & idempotent)
+        idx.ensure_baseline_version(document_id)
+
+        # 2. Optional legacy .bak backup
         if create_backup and os.path.exists(safe_path):
             backup_path = f"{safe_path}.bak"
             shutil.copy2(safe_path, backup_path)
 
-        # 2. Atomic Write via NamedTemporaryFile in the same directory
+        # 3. Atomic Write via NamedTemporaryFile in the same directory
         dir_name = os.path.dirname(safe_path)
         with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8") as tf:
             tf.write(content)
@@ -475,13 +579,32 @@ def handle_write_document_content(
 
         os.replace(temp_name, safe_path)
 
-        # 3. Trigger immediate re-index to update hash, tags, and links in SQLite
-        idx.index_document(safe_path)
+        # 4. Append new version snapshot in history (only after disk write succeeds)
+        warning_msg: Optional[str] = None
+        ver_num: Optional[int] = None
+        try:
+            ver_num = idx.append_document_version(
+                document_id=document_id,
+                content=content,
+                change_summary=change_summary or "Full document rewrite",
+                author="AI"
+            )
+        except Exception as ex:
+            warning_msg = f"File written to disk successfully, but history snapshot failed: {str(ex)}"
+            logger.warning("History snapshot failed for %s: %s", document_id, ex)
+
+        # 5. Trigger immediate re-index to update hash, tags, and links in SQLite (EC-2)
+        try:
+            idx.index_document(safe_path)
+        except Exception as ex:
+            logger.warning("Post-write re-indexing failed for %s: %s", safe_path, ex)
 
         return {
             "document_id": document_id,
             "path": safe_path,
             "bytes_written": len(content.encode("utf-8")),
+            "version": ver_num,
+            "warning": warning_msg,
             "backup_created": create_backup,
             "status": "success",
             "message": "File written atomically and indexed successfully."
@@ -494,6 +617,316 @@ def handle_write_document_content(
         }
 
 
+def handle_patch_document_content(
+    document_id: str,
+    target_content: str,
+    replacement_content: str,
+    change_summary: Optional[str] = None,
+    index: Optional[MetadataIndex] = None
+) -> Dict[str, Any]:
+    """
+    Safely patches a specific unique text block in a Markdown document.
+    Enforces strict single-match verification to eliminate silent wrong replace.
+    """
+    idx = index or MetadataIndex.get_instance()
+    if not is_valid_uuid(document_id):
+        return {
+            "error": "INVALID_UUID",
+            "message": f"Document ID '{document_id}' is not a valid UUID v4.",
+            "document_id": document_id
+        }
+
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    if not is_valid or not safe_path:
+        return {
+            "error": "DOCUMENT_NOT_FOUND",
+            "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
+            "document_id": document_id
+        }
+
+    try:
+        with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
+            current_content = f.read()
+
+        match_count = current_content.count(target_content)
+        if match_count == 0:
+            return {
+                "error": "TARGET_NOT_FOUND",
+                "message": "target_content was not found in document. Please call read_document to verify current content.",
+                "document_id": document_id
+            }
+        elif match_count > 1:
+            return {
+                "error": "MULTIPLE_MATCHES_FOUND",
+                "message": f"target_content matched {match_count} occurrences. Please provide a longer unique surrounding block to match exactly once.",
+                "match_count": match_count,
+                "document_id": document_id
+            }
+
+        patched_content = current_content.replace(target_content, replacement_content, 1)
+
+        # 1. Capture v0 baseline before mutating file
+        idx.ensure_baseline_version(document_id)
+
+        # 2. Atomic disk write
+        dir_name = os.path.dirname(safe_path)
+        with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8") as tf:
+            tf.write(patched_content)
+            temp_name = tf.name
+
+        os.replace(temp_name, safe_path)
+
+        # 3. Append history snapshot
+        warning_msg: Optional[str] = None
+        ver_num: Optional[int] = None
+        try:
+            ver_num = idx.append_document_version(
+                document_id=document_id,
+                content=patched_content,
+                change_summary=change_summary or "Applied text patch",
+                author="AI"
+            )
+        except Exception as ex:
+            warning_msg = f"Patch applied to disk successfully, but history snapshot failed: {str(ex)}"
+            logger.warning("History snapshot failed for %s: %s", document_id, ex)
+
+        # 4. Re-index
+        try:
+            idx.index_document(safe_path)
+        except Exception as ex:
+            logger.warning("Post-patch re-indexing failed for %s: %s", safe_path, ex)
+
+        return {
+            "document_id": document_id,
+            "path": safe_path,
+            "bytes_written": len(patched_content.encode("utf-8")),
+            "version": ver_num,
+            "warning": warning_msg,
+            "status": "success",
+            "message": "File patched atomically and indexed successfully."
+        }
+    except Exception as e:
+        return {
+            "error": "PATCH_ERROR",
+            "message": f"Failed to patch file content: {str(e)}",
+            "document_id": document_id
+        }
+
+
+def handle_get_document_history(
+    document_id: str,
+    limit: int = 20,
+    index: Optional[MetadataIndex] = None
+) -> Dict[str, Any]:
+    """
+    Retrieves version timeline metadata and change summaries for a document.
+    Does not load heavy full content bodies to conserve token bandwidth.
+    """
+    idx = index or MetadataIndex.get_instance()
+    if not is_valid_uuid(document_id):
+        return {
+            "error": "INVALID_UUID",
+            "message": f"Document ID '{document_id}' is not a valid UUID v4.",
+            "document_id": document_id
+        }
+
+    is_valid, safe_path, doc = resolve_safe_doc_path(document_id, idx)
+    if not is_valid or not safe_path:
+        return {
+            "error": "DOCUMENT_NOT_FOUND",
+            "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
+            "document_id": document_id
+        }
+
+    limit = max(1, min(limit or 20, 50))
+    total = idx.count_document_versions(document_id)
+    versions = idx.get_document_versions(document_id, limit=limit)
+
+    return {
+        "document_id": document_id,
+        "total_versions": total,
+        "returned_versions": len(versions),
+        "versions": versions
+    }
+
+
+def handle_rollback_document(
+    document_id: str,
+    target_version: int = 0,
+    index: Optional[MetadataIndex] = None
+) -> Dict[str, Any]:
+    """
+    Restores a document to a previous historical version (defaults to version 0 baseline).
+    Supports recreating physical files if accidentally deleted.
+    """
+    idx = index or MetadataIndex.get_instance()
+    if not is_valid_uuid(document_id):
+        return {
+            "error": "INVALID_UUID",
+            "message": f"Document ID '{document_id}' is not a valid UUID v4.",
+            "document_id": document_id
+        }
+
+    is_valid, safe_path, doc = resolve_doc_for_restore(document_id, idx)
+    if doc is None:
+        return {
+            "error": "DOCUMENT_NOT_FOUND",
+            "message": f"Document ID '{document_id}' not found in index.",
+            "document_id": document_id
+        }
+
+    if not is_valid or not safe_path:
+        return {
+            "error": "RESTORE_OUTSIDE_WORKSPACE",
+            "message": f"Document path is outside active workspace boundary.",
+            "document_id": document_id
+        }
+
+    target_content = idx.get_version_content(document_id, target_version)
+    if target_content is None:
+        return {
+            "error": "VERSION_NOT_FOUND",
+            "message": f"Version {target_version} not found in history for document '{document_id}'.",
+            "document_id": document_id,
+            "target_version": target_version
+        }
+
+    try:
+        # Recreate directory structure if needed (e.g. restoring deleted file)
+        dir_name = os.path.dirname(safe_path)
+        os.makedirs(dir_name, exist_ok=True)
+
+        # Atomic write
+        with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8") as tf:
+            tf.write(target_content)
+            temp_name = tf.name
+
+        os.replace(temp_name, safe_path)
+
+        # Append audit log entry
+        warning_msg: Optional[str] = None
+        new_ver: Optional[int] = None
+        try:
+            new_ver = idx.append_document_version(
+                document_id=document_id,
+                content=target_content,
+                change_summary=f"Rollback to version {target_version}",
+                author="SYSTEM"
+            )
+        except Exception as ex:
+            warning_msg = f"Rollback content written to disk, but audit logging failed: {str(ex)}"
+            logger.warning("Audit logging failed during rollback for %s: %s", document_id, ex)
+
+        # Re-index
+        try:
+            idx.index_document(safe_path)
+        except Exception as ex:
+            logger.warning("Post-rollback re-indexing failed for %s: %s", safe_path, ex)
+
+        return {
+            "document_id": document_id,
+            "path": safe_path,
+            "restored_version": target_version,
+            "new_version": new_ver,
+            "warning": warning_msg,
+            "status": "success",
+            "message": f"Document restored to version {target_version} successfully."
+        }
+    except Exception as e:
+        return {
+            "error": "ROLLBACK_ERROR",
+            "message": f"Failed to rollback document: {str(e)}",
+            "document_id": document_id
+        }
+
+
+def handle_cleanup_legacy_backups(
+    dry_run: bool = True,
+    confirm: bool = False,
+    index: Optional[MetadataIndex] = None
+) -> Dict[str, Any]:
+    """
+    Scans and safely cleans up legacy *.bak backup files in the active workspace.
+    Requires dry_run=False AND confirm=True to execute safe recycling.
+    """
+    ws = get_active_workspace_dir()
+    if not ws or not os.path.isdir(ws):
+        return {
+            "error": "WORKSPACE_NOT_FOUND",
+            "message": "No active workspace folder is configured or available."
+        }
+
+    # Anti-symlink safe traversal
+    candidate_files: List[Dict[str, Any]] = []
+    total_bytes = 0
+
+    for root, dirs, files in os.walk(ws, followlinks=False):
+        for fname in files:
+            if fname.endswith(".bak"):
+                full_p = os.path.normpath(os.path.join(root, fname))
+                if os.path.islink(full_p):
+                    continue
+                real_p = os.path.realpath(full_p)
+                if not is_path_in_workspace(real_p, ws):
+                    continue
+                try:
+                    f_size = os.path.getsize(real_p)
+                except OSError:
+                    f_size = 0
+                candidate_files.append({
+                    "path": real_p,
+                    "filename": fname,
+                    "bytes": f_size
+                })
+                total_bytes += f_size
+
+    if dry_run:
+        return {
+            "status": "preview",
+            "dry_run": True,
+            "workspace": ws,
+            "files_found_count": len(candidate_files),
+            "total_bytes": total_bytes,
+            "files": candidate_files,
+            "message": "Dry run preview: no files were deleted. Pass dry_run=false AND confirm=true to execute deletion."
+        }
+
+    if not confirm:
+        return {
+            "error": "CONFIRMATION_REQUIRED",
+            "message": "Cleanup is a destructive action. You must explicitly pass confirm=true alongside dry_run=false.",
+            "files_found_count": len(candidate_files),
+            "total_bytes": total_bytes
+        }
+
+    deleted_count = 0
+    failed_files = []
+    for item in candidate_files:
+        f_path = item["path"]
+        try:
+            safe_delete_to_recycle_bin(f_path)
+            deleted_count += 1
+        except Exception as ex:
+            failed_files.append({"path": f_path, "error": str(ex)})
+
+    if failed_files and deleted_count == 0:
+        return {
+            "error": "CLEANUP_FAILED",
+            "message": f"Failed to recycle backup files safely: {failed_files[0]['error']}",
+            "failed_files": failed_files
+        }
+
+    return {
+        "status": "success",
+        "dry_run": False,
+        "workspace": ws,
+        "deleted_count": deleted_count,
+        "total_bytes_reclaimed": total_bytes,
+        "failed_files": failed_files,
+        "message": f"Successfully moved {deleted_count} backup files to recycle bin."
+    }
+
+
 # ── Tool Dispatcher Map ──────────────────────────────────────────────────────
 
 TOOL_HANDLERS = {
@@ -502,5 +935,9 @@ TOOL_HANDLERS = {
     "convert_document": handle_convert_document,
     "tag_document": handle_tag_document,
     "list_backlinks": handle_list_backlinks,
-    "write_document_content": handle_write_document_content
+    "write_document_content": handle_write_document_content,
+    "patch_document_content": handle_patch_document_content,
+    "get_document_history": handle_get_document_history,
+    "rollback_document": handle_rollback_document,
+    "cleanup_legacy_backups": handle_cleanup_legacy_backups
 }

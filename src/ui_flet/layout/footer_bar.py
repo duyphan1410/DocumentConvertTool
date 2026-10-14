@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import flet as ft
 from src.i18n import t
 from src.ui_flet.theme import resolve_color, make_border
+from src.utils.flet_helpers import safe_page
 
 
 class FooterBar:
@@ -93,7 +94,7 @@ class FooterBar:
         """If an error occurred and user clicks the status bar, re-open the rich details modal."""
         doc_err = getattr(self, "_current_doc_err", None)
         if doc_err:
-            page = getattr(e, "page", None) or getattr(self.container, "page", None)
+            ppage = safe_page(e, self.container)
             if page:
                 from src.ui_flet.components.message_dialog import show_message_dialog
                 show_message_dialog(page, doc_err)

@@ -18,6 +18,8 @@ from typing import Optional, Callable
 import flet as ft
 from src.i18n import t
 
+from src.utils.flet_helpers import safe_page
+
 
 import threading
 from src.services.media_asset_manager import MediaAssetManager
@@ -1182,7 +1184,7 @@ class MarkdownPreview(ft.Container):
             if not hasattr(self.scroll_column, "scroll_to"):
                 return
 
-            page = getattr(self.scroll_column, "page", None) or getattr(self.markdown, "page", None)
+            page = safe_page(self.scroll_column, self.markdown)
             if not page:
                 return
 

@@ -14,6 +14,7 @@ from src.ui_flet.helpers.image_token_helper import (
     find_image_token_at_offset,
     generate_image_token,
 )
+from src.utils.flet_helpers import safe_page
 
 
 class EditorView:
@@ -271,12 +272,7 @@ class EditorView:
 
         file_path = None
         src_ctrl_id = getattr(e, "src_id", None)
-        page = (
-            getattr(self.container, "page", None)
-            or getattr(self.editor, "page", None)
-            or getattr(getattr(e, "control", None), "page", None)
-            or getattr(self, "page", None)
-        )
+        page = safe_page(self.container, self.editor, getattr(e, "control", None), self)
         if src_ctrl_id and page:
             try:
                 src_ctrl = page.get_control(src_ctrl_id)

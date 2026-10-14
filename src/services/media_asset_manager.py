@@ -1,10 +1,19 @@
 import os
 import hashlib
 import shutil
+import logging
 from typing import Callable
+
+logger = logging.getLogger("docconvert.media")
 
 PREVIEW_MEDIA_DIR_NAME = "preview_media"
 
+IMAGE_MIME = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".ico": "image/x-icon", ".svg": "image/svg+xml",
+}
+IMAGE_EXTS = set(IMAGE_MIME)
 
 class MediaAssetManager:
     _instance = None
@@ -147,7 +156,7 @@ class MediaAssetManager:
             return uri
 
         if uri.startswith("@media/"):
-            filename = uri[7:]
+            filename = os.path.basename(uri[7:])
             primary_path = os.path.normpath(os.path.join(self.get_session_dir(session_id=session_id), filename))
             return primary_path
 
@@ -168,28 +177,6 @@ class MediaAssetManager:
             if os.path.exists(session_cand) and os.path.isfile(session_cand):
                 return session_cand
 
-            # Priority 2: Smart Fallback: Check relative to CWD, Desktop, User home & their immediate subdirectories
-            clean_rel = uri.lstrip("./").lstrip(".\\")
-            search_bases = [
-                os.getcwd(),
-                os.path.dirname(os.getcwd()),
-                os.path.expanduser("~/Desktop"),
-            ]
-            for sbase in search_bases:
-                if sbase and os.path.exists(sbase):
-                    cand = os.path.normpath(os.path.join(sbase, clean_rel))
-                    if os.path.exists(cand) and os.path.isfile(cand):
-                        return cand
-                    try:
-                        for item in os.listdir(sbase):
-                            sub_dir = os.path.join(sbase, item)
-                            if os.path.isdir(sub_dir):
-                                cand_sub = os.path.normpath(os.path.join(sub_dir, clean_rel))
-                                if os.path.exists(cand_sub) and os.path.isfile(cand_sub):
-                                    return cand_sub
-                    except Exception:
-                        pass
-
         return uri
 
     def import_local_images(self, markdown_content: str, base_dir: str, session_id: str | None = None) -> str:
@@ -201,15 +188,18 @@ class MediaAssetManager:
             return markdown_content
 
         import re
-        image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
+        image_pattern = r"!\[([^\]]*)\]\(([^)\n]+)\)"
 
         def replacer(match):
             alt = match.group(1)
             src = match.group(2)
             if src.startswith(("http://", "https://", "data:")):
                 return match.group(0)
+            
+            if not src.startswith("@media/") and os.path.splitext(src)[1].lower() not in IMAGE_EXTS:
+                return match.group(0)
 
-            resolved = self.resolve_uri(src, session_id=session_id)
+            resolved = self.resolve_uri(src, base_dir=base_dir, session_id=session_id)
             if os.path.exists(resolved) and os.path.isfile(resolved):
                 abs_path = os.path.abspath(resolved).replace("\\", "/")
                 return f"![{alt}]({abs_path})"
@@ -217,23 +207,33 @@ class MediaAssetManager:
             local_path = src if os.path.isabs(src) else os.path.join(base_dir, src) if base_dir else src
             if os.path.exists(local_path) and os.path.isfile(local_path):
                 try:
+                    if os.path.getsize(local_path) > 10 * 1024 * 1024:
+                        logger.warning("MediaAssetManager: skip oversized image: %s", os.path.basename(local_path))
+                        return match.group(0)
                     with open(local_path, "rb") as f:
                         img_bytes = f.read()
                     filename = os.path.basename(local_path)
                     registered_path = self.register_image(img_bytes, filename, session_id=session_id)
                     return f"![{alt}]({registered_path})"
                 except Exception as e:
-                    print(f"[DEBUG] MediaAssetManager: Failed to import local image {local_path}: {e}")
+                    logger.warning("MediaAssetManager: failed to import image %s: %s", os.path.basename(local_path), e)
             return match.group(0)
 
         return re.sub(image_pattern, replacer, markdown_content)
 
-    def export_assets(self, markdown_content: str, target_markdown_path: str, session_id: str | None = None) -> str:
+    def export_assets(
+        self,
+        markdown_content: str,
+        target_markdown_path: str,
+        session_id: str | None = None,
+        session_only: bool = False
+    ) -> str:
         """
         Ensures all images referenced in Markdown content (both Markdown ![]() and HTML <img />)
         are copied into a relative `<doc_name>_assets` directory next to the target markdown file,
         rewriting image links to portable relative paths (`./<doc_name>_assets/filename.png`).
         Resolves both `@media/` cache URIs, session cache paths, and external absolute disk paths.
+        When session_only=True, strictly forbids copying files located outside the session cache directory.
         """
         if not markdown_content or ("![" not in markdown_content and "<img" not in markdown_content and "@media/" not in markdown_content):
             return markdown_content
@@ -247,6 +247,16 @@ class MediaAssetManager:
 
         assets_dir_name = f"{doc_stem}_assets"
         assets_dir = os.path.join(target_dir, assets_dir_name)
+
+        def _is_strictly_within_internal(file_path: str, base_dir: str) -> bool:
+            if not file_path or not base_dir:
+                return False
+            try:
+                norm_f = os.path.normcase(os.path.realpath(os.path.abspath(file_path)))
+                norm_b = os.path.normcase(os.path.realpath(os.path.abspath(base_dir)))
+                return os.path.commonpath([norm_f, norm_b]) == norm_b
+            except Exception:
+                return False
 
         def _get_file_hash(filepath: str) -> str:
             try:
@@ -264,13 +274,23 @@ class MediaAssetManager:
             if not src or src.startswith(("http://", "https://", "data:")):
                 return src
 
-            resolved = self.resolve_uri(src, session_id=session_id)
-            if not os.path.exists(resolved) and target_dir:
-                candidate = os.path.join(target_dir, src)
-                if os.path.exists(candidate):
-                    resolved = candidate
+            resolved = self.resolve_uri(src, base_dir=target_dir, session_id=session_id)
+            # if not os.path.exists(resolved) and target_dir:
+            #     candidate = os.path.join(target_dir, src)
+            #     if os.path.exists(candidate):
+            #         resolved = candidate
+
+            if session_only:
+                session_dir = self.get_session_dir(session_id=session_id)
+                if not _is_strictly_within_internal(resolved, session_dir):
+                    return src
+
+            if os.path.splitext(resolved)[1].lower() not in IMAGE_EXTS:
+                logger.debug("export_assets: skip non-image: %s", os.path.basename(resolved))
+                return src
 
             if os.path.exists(resolved) and os.path.isfile(resolved):
+
                 try:
                     os.makedirs(assets_dir, exist_ok=True)
                     src_hash = _get_file_hash(resolved)
@@ -304,7 +324,7 @@ class MediaAssetManager:
 
                     return f"./{assets_dir_name}/{final_filename}"
                 except Exception as e:
-                    print(f"[DEBUG] MediaAssetManager: Failed to export asset '{resolved}': {e}")
+                    logger.warning("export_assets failed for '%s': %s", os.path.basename(resolved), e)
                     return src
 
             return src
@@ -322,7 +342,7 @@ class MediaAssetManager:
             new_src = _copy_and_get_relative_path(src)
             return f"{prefix}{new_src}{suffix}"
 
-        image_pattern = r"!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)"
+        image_pattern = r"!\[([^\]]*)\]\(([^)\n]+)\)"
         result = re.sub(image_pattern, md_replacer, markdown_content)
 
         html_pattern = r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)'

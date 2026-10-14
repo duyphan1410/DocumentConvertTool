@@ -1,9 +1,13 @@
 import os
 import re
+import html
 import base64
-import mimetypes
+import logging
+from src.services.media_asset_manager import IMAGE_MIME, IMAGE_EXTS
 from src.core.base_module import BaseDocumentModule
 from src.core.registry import ModuleRegistry
+
+logger = logging.getLogger("docconvert.html")
 
 class HTMLModule(BaseDocumentModule):
     @property
@@ -39,8 +43,9 @@ class HTMLModule(BaseDocumentModule):
                 pass
 
             if not content:
+                soup = None
                 try:
-                    from bs4 import BeautifulSoup, NavigableString, Tag
+                    from bs4 import BeautifulSoup, NavigableString, Tag, Comment
                     with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                         soup = BeautifulSoup(f.read(), "html.parser")
 
@@ -51,6 +56,8 @@ class HTMLModule(BaseDocumentModule):
                     container = soup.find(class_="markdown-body") or soup.find("body") or soup
 
                     def parse_node(node, depth=0):
+                        if isinstance(node, Comment):
+                            return ""
                         if isinstance(node, NavigableString):
                             return str(node)
                         if not isinstance(node, Tag):
@@ -170,10 +177,12 @@ class HTMLModule(BaseDocumentModule):
                     else:
                         content = soup.get_text()
                 except Exception as bs_err:
-                    print(f"[DEBUG] HTMLModule: Structured BS4 parse failed: {bs_err}")
-                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                        content = f.read()
-
+                    logger.warning("HTMLModule: structured parse failed: %s", bs_err)
+                    try:
+                        content = soup.get_text() if soup else ""
+                    except Exception:
+                        content = ""
+                   
             if content:
                 return asset_mgr.import_local_images(content, base_dir)
             return ""
@@ -193,22 +202,26 @@ class HTMLModule(BaseDocumentModule):
 
             def resolve_to_base64(src: str) -> str:
                 """Resolve @media/ URI or local path to an inline base64 data URI.
-                Remote URLs (http/https) and existing data URIs are passed through unchanged.
-                Falls back to the original src string if the file cannot be found.
-                """
+                Remote URLs and data URIs pass through; falls back to src on any problem."""
                 if not src or src.startswith(("http://", "https://", "data:")):
                     return src
                 out_dir = os.path.dirname(out_path) if out_path else None
                 resolved = asset_mgr.resolve_uri(src, base_dir=out_dir)
-                if os.path.isfile(resolved):
-                    mime, _ = mimetypes.guess_type(resolved)
-                    if not mime:
-                        mime = "image/png"
+                if not os.path.isfile(resolved):
+                    logger.warning("HTMLModule: asset not found: %s", os.path.basename(src))
+                    return src
+                mime = IMAGE_MIME.get(os.path.splitext(resolved)[1].lower())
+                if not mime or os.path.getsize(resolved) > 10 * 1024 * 1024:
+                    logger.warning("HTMLModule: skip asset (type/size): %s", os.path.basename(resolved))
+                    return src
+                try:
                     with open(resolved, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                    return f"data:{mime};base64,{b64}"
-                print(f"[DEBUG] HTMLModule: Image not found, keeping original src: {src}")
-                return src
+                        b64 = base64.b64encode(f.read()).decode("ascii")
+                except OSError as e:
+                    logger.warning("HTMLModule: cannot read asset %s: %s", os.path.basename(resolved), e)
+                    return src
+                logger.debug("resolve_to_base64: %s -> %s (%d chars)", os.path.basename(resolved), mime, len(b64))
+                return f"data:{mime};base64,{b64}"
 
             def replace_md_image(match):
                 alt, src = match.group(1), match.group(2)
@@ -224,7 +237,7 @@ class HTMLModule(BaseDocumentModule):
             # Step 1: Base64 media resolution
             t1 = time.time()
             if "!" in markdown_content or "<img" in markdown_content:
-                processed_md = re.sub(r'!\[([^\]]*)\]\((.+?\.(?:png|jpg|jpeg|gif|svg|webp|bmp|ico)|https?://\S+|@media/\S+?|[^\n)]+)\)', replace_md_image, markdown_content, flags=re.IGNORECASE)
+                processed_md = re.sub(r'!\[([^\]]*)\]\(([^)\n]+)\)', replace_md_image, markdown_content, flags=re.IGNORECASE)
                 processed_md = re.sub(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'][^>]*?>)', replace_html_image, processed_md, flags=re.IGNORECASE)
             else:
                 processed_md = markdown_content
@@ -339,11 +352,12 @@ class HTMLModule(BaseDocumentModule):
 
             doc_title = os.path.basename(out_path)
             html_document = f"""<!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{doc_title}</title>
+    <title>{html.escape(doc_title)}</title>
     <style>
         :root {{
             --bg-color: #ffffff;
@@ -584,8 +598,8 @@ class HTMLModule(BaseDocumentModule):
                 f.write(html_document)
 
             t_total = time.time() - t0
-            print(f"[BENCHMARK] HTMLModule Export: total={t_total:.3f}s (base64={t_base64:.3f}s, repair={t_repair:.3f}s, md2html={t_md2html:.3f}s)")
-
+            logger.debug("HTMLModule export: total=%.3fs (base64=%.3fs, repair=%.3fs, md2html=%.3fs)", t_total, t_base64, t_repair, t_md2html)
+            
             return f"Exported successfully to HTML -> {os.path.basename(out_path)}"
         except Exception as e:
             raise RuntimeError(f"HTML Export Error: Failed to generate HTML document. Detail: {str(e)}")

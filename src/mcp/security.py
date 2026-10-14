@@ -66,18 +66,21 @@ def is_path_in_workspace(file_path: str, workspace_dir: Optional[str]) -> bool:
     Verifies if file_path is strictly contained within workspace_dir.
     Handles Windows cross-drive cases safely (returns False on ValueError).
     """
-    if not workspace_dir:
-        return True
+    return is_strictly_within(file_path, workspace_dir)
 
-    norm_file = os.path.normpath(os.path.abspath(file_path))
-    norm_ws = os.path.normpath(os.path.abspath(workspace_dir))
+
+def is_strictly_within(file_path: str, root_dir: Optional[str]) -> bool:
+    """Strictly contained within workspace_dir; False if workspace_dir is empty."""
+    if not file_path or not root_dir:
+        return False
 
     try:
-        common = os.path.commonpath([norm_file, norm_ws])
-        return common == norm_ws
-    except ValueError:
-        # Raised on Windows when paths are on different drive letters (e.g. C: vs D:)
+        norm_f = os.path.normcase(os.path.realpath(os.path.abspath(file_path)))
+        norm_r = os.path.normcase(os.path.realpath(os.path.abspath(root_dir)))
+        return os.path.commonpath([norm_f, norm_r]) == norm_r
+    except (ValueError, Exception):
         return False
+
 
 
 def is_valid_uuid(val: Any) -> bool:
@@ -123,7 +126,7 @@ def resolve_safe_doc_path(
 
     # Enforce active workspace boundary containment if configured
     ws = get_active_workspace_dir()
-    if ws and not is_path_in_workspace(norm_path, ws):
+    if not is_path_in_workspace(norm_path, ws):
         return False, None, doc
 
     return True, norm_path, doc
@@ -162,7 +165,7 @@ def resolve_doc_for_restore(
 
     # Enforce workspace boundary check even if the physical file does not exist on disk
     ws = get_active_workspace_dir()
-    if ws and not is_path_in_workspace(norm_path, ws):
+    if not is_path_in_workspace(norm_path, ws):
         return False, norm_path, doc
 
     return True, norm_path, doc

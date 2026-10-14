@@ -1,17 +1,23 @@
 """
 Core Tool Implementations and Schema Definitions for DocConvert MCP Server.
-Provides 6 standardized tools: search_documents, read_document, convert_document,
-tag_document, list_backlinks, write_document_content.
+Provides 11 standardized tools: search_documents, read_document, convert_document,
+tag_document, list_backlinks, write_document_content, patch_document_content,
+get_document_history, rollback_document, cleanup_legacy_backups,
+import_document_to_markdown.
 """
 from __future__ import annotations
 import os
+import re
 import json
+import uuid
 import shutil
+import zipfile
 import logging
 import tempfile
 from typing import Any, Dict, List, Optional
 from src.mcp.security import (
     is_valid_uuid,
+    is_strictly_within,
     resolve_safe_doc_path,
     resolve_doc_for_restore,
     sanitize_target_format,
@@ -22,6 +28,9 @@ from src.utils.file_ops import safe_delete_to_recycle_bin
 from src.services.metadata_index import MetadataIndex
 from src.services.fuzzy_matcher import calculate_similarity
 from src.services.conversion_service import convert_content
+from src.services.file_loader import load_document, LoadResult
+from src.services.media_asset_manager import MediaAssetManager
+
 
 logger = logging.getLogger("docconvert.mcp.tools")
 
@@ -241,8 +250,27 @@ MCP_TOOLS_MANIFEST: List[Dict[str, Any]] = [
             },
             "required": []
         }
+    },
+    {
+        "name": "import_document_to_markdown",
+        "description": "Imports a raw document (docx, pdf, xlsx, csv, html) located inside workspace into a structured Markdown document and indexes it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source_path": {
+                    "type": "string",
+                    "description": "Relative or absolute path of the source file within active workspace boundary."
+                },
+                "output_filename": {
+                    "type": "string",
+                    "description": "Optional output markdown filename (e.g. 'summary.md'). If omitted, uses source basename with .md extension."
+                }
+            },
+            "required": ["source_path"]
+        }
     }
 ]
+
 
 
 # ── Tool Handlers ────────────────────────────────────────────────────────────
@@ -309,7 +337,7 @@ def handle_search_documents(
         results.append({
             "document_id": doc_id,
             "title": title,
-            "path": doc_path,
+            "path": _rel(doc_path),
             "tags": doc_tags,
             "updated_at": row["updated_at"],
             "relevance_score": round(score, 3)
@@ -351,7 +379,7 @@ def handle_read_document(
         return {
             "document_id": document_id,
             "title": doc.get("title", os.path.basename(safe_path)) if doc else os.path.basename(safe_path),
-            "path": safe_path,
+            "path": _rel(safe_path),
             "tags": tags,
             "updated_at": doc.get("updated_at") if doc else None,
             "content": content
@@ -359,7 +387,7 @@ def handle_read_document(
     except Exception as e:
         return {
             "error": "READ_ERROR",
-            "message": f"Failed to read file: {str(e)}",
+            "message": f"Failed to read file: {_sanitize_error_message(e)}",
             "document_id": document_id
         }
 
@@ -411,16 +439,16 @@ def handle_convert_document(
 
         return {
             "document_id": document_id,
-            "source_path": safe_path,
+            "source_path": _rel(safe_path),
             "target_format": clean_fmt,
-            "output_path": out_path,
+            "output_path": _rel(out_path),
             "result_message": result_msg,
             "status": "success"
         }
     except Exception as e:
         return {
             "error": "CONVERSION_ERROR",
-            "message": f"Conversion failed: {str(e)}",
+            "message": f"Conversion failed: {_sanitize_error_message(e)}",
             "document_id": document_id,
             "target_format": target_format
         }
@@ -501,7 +529,7 @@ def handle_list_backlinks(
             linked_refs.append({
                 "source_id": r["source_id"],
                 "source_title": r["source_title"],
-                "source_path": source_path,
+                "source_path": _rel(source_path), 
                 "snippet": r["snippet"],
                 "display_text": r["display_text"]
             })
@@ -517,13 +545,13 @@ def handle_list_backlinks(
                 if ws and item_path and not is_path_in_workspace(item_path, ws):
                     continue
                 unlinked_mentions.append({
-                    "source_path": item_path,
+                    "source_path": _rel(item_path) if item_path else None,
                     "source_title": item.get("source_title"),
                     "snippet": item.get("snippet"),
                     "matched_text": item.get("matched_text")
                 })
-        except Exception:
-            pass
+        except Exception as ex:
+            logger.warning("Unlinked mentions scan failed for %s: %s", document_id, ex)
 
     return {
         "document_id": document_id,
@@ -561,10 +589,14 @@ def handle_write_document_content(
             "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
             "document_id": document_id
         }
-
+    temp_name = None 
     try:
+        if len(content.encode("utf-8")) > 5 * 1024 * 1024:     
+            return {"error": "CONTENT_TOO_LARGE", "message": "Content exceeds 5MB limit.", "document_id": document_id}
+
         # 1. Capture v0 baseline before mutating file (safe & idempotent)
-        idx.ensure_baseline_version(document_id)
+        if not idx.ensure_baseline_version(document_id):
+            return {"error": "BASELINE_FAILED", "message": "Cannot snapshot original version; write aborted.", "document_id": document_id}
 
         # 2. Optional legacy .bak backup
         if create_backup and os.path.exists(safe_path):
@@ -590,7 +622,7 @@ def handle_write_document_content(
                 author="AI"
             )
         except Exception as ex:
-            warning_msg = f"File written to disk successfully, but history snapshot failed: {str(ex)}"
+            warning_msg = f"File written to disk successfully, but history snapshot failed: {_sanitize_error_message(ex)}"
             logger.warning("History snapshot failed for %s: %s", document_id, ex)
 
         # 5. Trigger immediate re-index to update hash, tags, and links in SQLite (EC-2)
@@ -601,7 +633,7 @@ def handle_write_document_content(
 
         return {
             "document_id": document_id,
-            "path": safe_path,
+            "path": _rel(safe_path),
             "bytes_written": len(content.encode("utf-8")),
             "version": ver_num,
             "warning": warning_msg,
@@ -610,9 +642,14 @@ def handle_write_document_content(
             "message": "File written atomically and indexed successfully."
         }
     except Exception as e:
+        if temp_name and os.path.exists(temp_name):      
+            try:
+                os.remove(temp_name)
+            except OSError:
+                pass
         return {
             "error": "WRITE_ERROR",
-            "message": f"Failed to write file content: {str(e)}",
+            "message": f"Failed to write file content: {_sanitize_error_message(e)}",
             "document_id": document_id
         }
 
@@ -643,7 +680,7 @@ def handle_patch_document_content(
             "message": f"Document ID '{document_id}' not found in index, file does not exist, or outside workspace boundary.",
             "document_id": document_id
         }
-
+    temp_name = None
     try:
         with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
             current_content = f.read()
@@ -666,7 +703,8 @@ def handle_patch_document_content(
         patched_content = current_content.replace(target_content, replacement_content, 1)
 
         # 1. Capture v0 baseline before mutating file
-        idx.ensure_baseline_version(document_id)
+        if not idx.ensure_baseline_version(document_id):
+            return {"error": "BASELINE_FAILED", "message": "Cannot snapshot original version; write aborted.", "document_id": document_id}
 
         # 2. Atomic disk write
         dir_name = os.path.dirname(safe_path)
@@ -687,7 +725,7 @@ def handle_patch_document_content(
                 author="AI"
             )
         except Exception as ex:
-            warning_msg = f"Patch applied to disk successfully, but history snapshot failed: {str(ex)}"
+            warning_msg = f"Patch applied to disk successfully, but history snapshot failed: {_sanitize_error_message(ex)}"
             logger.warning("History snapshot failed for %s: %s", document_id, ex)
 
         # 4. Re-index
@@ -698,7 +736,7 @@ def handle_patch_document_content(
 
         return {
             "document_id": document_id,
-            "path": safe_path,
+            "path": _rel(safe_path),
             "bytes_written": len(patched_content.encode("utf-8")),
             "version": ver_num,
             "warning": warning_msg,
@@ -706,9 +744,14 @@ def handle_patch_document_content(
             "message": "File patched atomically and indexed successfully."
         }
     except Exception as e:
+        if temp_name and os.path.exists(temp_name):     
+            try:
+                os.remove(temp_name)
+            except OSError:
+                pass
         return {
             "error": "PATCH_ERROR",
-            "message": f"Failed to patch file content: {str(e)}",
+            "message": f"Failed to patch file content: {_sanitize_error_message(e)}",
             "document_id": document_id
         }
 
@@ -791,6 +834,8 @@ def handle_rollback_document(
             "target_version": target_version
         }
 
+    temp_name = None
+
     try:
         # Recreate directory structure if needed (e.g. restoring deleted file)
         dir_name = os.path.dirname(safe_path)
@@ -814,7 +859,7 @@ def handle_rollback_document(
                 author="SYSTEM"
             )
         except Exception as ex:
-            warning_msg = f"Rollback content written to disk, but audit logging failed: {str(ex)}"
+            warning_msg = f"Rollback content written to disk, but audit logging failed: {_sanitize_error_message(ex)}"
             logger.warning("Audit logging failed during rollback for %s: %s", document_id, ex)
 
         # Re-index
@@ -825,7 +870,7 @@ def handle_rollback_document(
 
         return {
             "document_id": document_id,
-            "path": safe_path,
+            "path": _rel(safe_path),
             "restored_version": target_version,
             "new_version": new_ver,
             "warning": warning_msg,
@@ -833,9 +878,14 @@ def handle_rollback_document(
             "message": f"Document restored to version {target_version} successfully."
         }
     except Exception as e:
+        if temp_name and os.path.exists(temp_name):
+            try:
+                os.remove(temp_name)
+            except OSError:
+                pass
         return {
             "error": "ROLLBACK_ERROR",
-            "message": f"Failed to rollback document: {str(e)}",
+            "message": f"Failed to rollback document: {_sanitize_error_message(e)}",
             "document_id": document_id
         }
 
@@ -884,10 +934,10 @@ def handle_cleanup_legacy_backups(
         return {
             "status": "preview",
             "dry_run": True,
-            "workspace": ws,
+            "workspace": os.path.basename(ws),
             "files_found_count": len(candidate_files),
             "total_bytes": total_bytes,
-            "files": candidate_files,
+            "files": [{"path": _rel(i["path"]), "filename": i["filename"], "bytes": i["bytes"]} for i in candidate_files],
             "message": "Dry run preview: no files were deleted. Pass dry_run=false AND confirm=true to execute deletion."
         }
 
@@ -907,7 +957,7 @@ def handle_cleanup_legacy_backups(
             safe_delete_to_recycle_bin(f_path)
             deleted_count += 1
         except Exception as ex:
-            failed_files.append({"path": f_path, "error": str(ex)})
+            failed_files.append({"path": _rel(f_path), "error": _sanitize_error_message(ex)})
 
     if failed_files and deleted_count == 0:
         return {
@@ -919,12 +969,330 @@ def handle_cleanup_legacy_backups(
     return {
         "status": "success",
         "dry_run": False,
-        "workspace": ws,
+        "workspace": os.path.basename(ws),
         "deleted_count": deleted_count,
         "total_bytes_reclaimed": total_bytes,
         "failed_files": failed_files,
         "message": f"Successfully moved {deleted_count} backup files to recycle bin."
     }
+
+
+# ── Import Raw Document Helpers & Handler ────────────────────────────────────
+
+WINDOWS_RESERVED_NAMES = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+})
+
+
+def _sanitize_filename_stem(raw_name: Optional[str], fallback_stem: str) -> str:
+    """Sanitizes filename stem, blocking Windows device names (including NUL.tar.gz), ADS colons, and illegal characters."""
+    if not raw_name:
+        return fallback_stem
+    base = os.path.basename(raw_name)
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', base).strip('. ')
+    if not clean or clean.startswith('.'):
+        return fallback_stem
+    first_part = clean.split('.')[0].strip().upper()
+    if first_part in WINDOWS_RESERVED_NAMES:
+        return fallback_stem
+    stem = os.path.splitext(clean)[0].strip('. ')
+    if not stem or stem.upper() in WINDOWS_RESERVED_NAMES:
+        return fallback_stem
+    return stem[:100]
+
+
+def _sanitize_error_message(err: Exception | str) -> str:
+    """Sanitizes error messages, removing Windows absolute drive paths and UNC network paths."""
+    raw = str(err)
+    clean = re.sub(r'[a-zA-Z]:[/\\][^:\n\r]+', '<path>', raw)
+    clean = re.sub(r'(?<!\w)/(?:[\w.\-]+/)+[\w.\-]*', '<path>', clean)
+    clean = re.sub(r'\\\\[^:\n\r]+', '<path>', clean)
+    return clean[:300]
+
+def _rel(p: str) -> str:
+    ws = get_active_workspace_dir()
+    try:
+        return os.path.relpath(p, ws).replace("\\", "/") if ws else os.path.basename(p)
+    except ValueError:
+        return os.path.basename(p)
+
+def _check_office_zip_safety(file_path: str, max_uncompressed_bytes: int = 50 * 1024 * 1024, max_entries: int = 2000) -> Optional[str]:
+    """Inspects docx/xlsx zip container safety. Returns error code if unsafe or corrupt."""
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            infolist = z.infolist()
+            if len(infolist) > max_entries:
+                return "ZIP_BOMB_DETECTED"
+            total_size = sum(info.file_size for info in infolist)
+            if total_size > max_uncompressed_bytes:
+                return "ZIP_BOMB_DETECTED"
+            compressed_size = sum(info.compress_size for info in infolist)
+
+            ratio = (total_size / compressed_size) if compressed_size > 0 else 0
+            logger.debug("Office zip safety check for %s: ratio=%.2f (compressed=%d, uncompressed=%d)", 
+                         os.path.basename(file_path), ratio, compressed_size, total_size)
+                         
+            if compressed_size > 0 and (total_size / compressed_size) > 100:
+                return "ZIP_BOMB_DETECTED"
+            return None
+    except PermissionError as pe:
+        logger.warning("Permission denied checking office zip: %s", pe)
+        raise pe
+    except zipfile.BadZipFile:
+        return "CORRUPTED_ARCHIVE"
+    except Exception:
+        return "CORRUPTED_ARCHIVE"
+
+
+def handle_import_document_to_markdown(
+    source_path: str,
+    output_filename: Optional[str] = None,
+    index: Optional[MetadataIndex] = None
+) -> Dict[str, Any]:
+    """Imports raw document (docx, pdf, xlsx, csv, html) into indexed Markdown document."""
+    idx = index or MetadataIndex.get_instance()
+
+    ws_dir = get_active_workspace_dir()
+    
+    if not ws_dir or not os.path.isdir(ws_dir):
+        logger.warning("import_document_to_markdown: WORKSPACE_NOT_INITIALIZED")
+        return {
+            "error": "WORKSPACE_NOT_INITIALIZED",
+            "message": "No active workspace folder is configured."
+        }
+
+    raw_path = source_path if os.path.isabs(source_path) else os.path.join(ws_dir, source_path)
+    real_src_path = os.path.realpath(raw_path)
+
+    logger.info("Executing tool 'import_document_to_markdown' for file: %s", os.path.basename(real_src_path))
+
+    if not is_strictly_within(real_src_path, ws_dir):
+        return {
+            "error": "PATH_OUTSIDE_WORKSPACE",
+            "message": "Source path is outside workspace boundary."
+        }
+
+    if not os.path.isfile(real_src_path):
+        return {
+            "error": "FILE_NOT_FOUND",
+            "message": "Source file not found on disk."
+        }
+
+    ext = os.path.splitext(real_src_path)[1].lower()
+    ALLOWED_EXTENSIONS = {".docx", ".pdf", ".xlsx", ".csv", ".html"}
+    if ext not in ALLOWED_EXTENSIONS:
+        return {
+            "error": "UNSUPPORTED_FORMAT",
+            "message": f"Extension '{ext}' is not supported in Phase 1 (allowed: {sorted(list(ALLOWED_EXTENSIONS))})."
+        }
+
+    MAX_INPUT_SIZE = 10 * 1024 * 1024
+    if os.path.getsize(real_src_path) > MAX_INPUT_SIZE:
+        return {
+            "error": "FILE_TOO_LARGE_FOR_SYNC",
+            "message": "File exceeds 10MB limit for synchronous import."
+        }
+
+    if ext in {".docx", ".xlsx"}:
+        try:
+            zip_err = _check_office_zip_safety(real_src_path)
+        except PermissionError:
+            logger.warning("import_document_to_markdown: ACCESS_DENIED — %s", os.path.basename(real_src_path))
+            return {"error": "ACCESS_DENIED", "message": "Cannot read source file (locked or no permission)."}
+        if zip_err == "ZIP_BOMB_DETECTED":
+            return {
+                "error": "ZIP_BOMB_DETECTED",
+                "message": "Uncompressed content exceeds safety limits."
+            }
+        elif zip_err == "CORRUPTED_ARCHIVE":
+            return {
+                "error": "IMPORT_FAILED",
+                "message": "Corrupted or invalid Office zip package."
+            }
+
+    if ext == ".pdf":
+        try:
+            import fitz
+            with fitz.open(real_src_path) as pdf_doc:
+                # Only reject when a user password is required (needs_pass).
+                # owner_pw-only PDFs are readable and should not be blocked.
+                if getattr(pdf_doc, "needs_pass", False):
+                    logger.warning("import_document_to_markdown: ENCRYPTED_DOCUMENT — %s", os.path.basename(real_src_path))
+                    return {
+                        "error": "ENCRYPTED_DOCUMENT",
+                        "message": "PDF is password-protected (user password required)."
+                    }
+                if len(pdf_doc) == 0:
+                    logger.warning("import_document_to_markdown: EMPTY_DOCUMENT — %s", os.path.basename(real_src_path))
+                    return {
+                        "error": "EMPTY_DOCUMENT",
+                        "message": "PDF has 0 pages."
+                    }
+                if len(pdf_doc) > 30:
+                    logger.warning("import_document_to_markdown: PDF_PAGE_LIMIT_EXCEEDED (%d pages) — %s", len(pdf_doc), os.path.basename(real_src_path))
+                    return {
+                        "error": "PDF_PAGE_LIMIT_EXCEEDED",
+                        "message": f"PDF has {len(pdf_doc)} pages (max 30 for sync import)."
+                    }
+        except ImportError:
+            return {
+                "error": "MISSING_DEPENDENCIES",
+                "message": "PyMuPDF (fitz) is not installed."
+            }
+        except Exception as ex:
+            logger.warning("import_document_to_markdown: IMPORT_FAILED (PDF open) — %s", os.path.basename(real_src_path))
+            return {
+                "error": "IMPORT_FAILED",
+                "message": f"Invalid PDF structure: {_sanitize_error_message(ex)}"
+            }
+
+    session_id = f"mcp_import_{uuid.uuid4().hex[:12]}"
+    asset_mgr = MediaAssetManager()
+
+    reservation_token = None
+    target_md_path = None
+    temp_write_path = None
+    doc_id = None
+
+    assets_dir = None
+    assets_pre_existed = True
+    import_ok = False
+
+    try:
+        load_res: LoadResult = load_document(real_src_path, session_id=session_id)
+
+        if load_res.missing_dependencies:
+            return {
+                "error": "MISSING_DEPENDENCIES",
+                "message": f"Missing required dependencies: {', '.join(load_res.missing_dependencies)}"
+            }
+
+        if not load_res.success:
+            return {
+                "error": "IMPORT_FAILED",
+                "message": _sanitize_error_message(load_res.error_detail or load_res.error_short or "Extraction failed.")
+            }
+
+        # For PDF: use strict clean-text threshold (image-only scans produce < 10 chars).
+        # For other formats (docx/xlsx/csv/html): reject only when content is completely empty.
+        if ext == ".pdf":
+            clean_text = re.sub(r'!\[.*?\]\(.*?\)|<img.*?>|\*\(Empty PDF\)\*|[#\s\-_*`>=|:]', '', load_res.content or '')
+            if len(clean_text) < 10:
+                logger.warning("import_document_to_markdown: EMPTY_CONTENT (scanned PDF) — %s", os.path.basename(real_src_path))
+                return {
+                    "error": "EMPTY_CONTENT",
+                    "message": "Document contains no extractable text (e.g. image-only scanned PDF). OCR engine is required."
+                }
+        else:
+            if not (load_res.content or "").strip():
+                logger.warning("import_document_to_markdown: EMPTY_CONTENT — %s", os.path.basename(real_src_path))
+                return {
+                    "error": "EMPTY_CONTENT",
+                    "message": "Document contains no extractable text."
+                }
+
+        MAX_OUTPUT_BYTES = 5 * 1024 * 1024
+        content_bytes = load_res.content.encode("utf-8")
+        if len(content_bytes) > MAX_OUTPUT_BYTES:
+            logger.warning("import_document_to_markdown: OUTPUT_TOO_LARGE (%d chars) — %s", len(content_bytes), os.path.basename(real_src_path))
+            return {
+                "error": "OUTPUT_TOO_LARGE",
+                "message": "Extracted Markdown content exceeds 5MB limit. Consider splitting the document."
+            }
+
+        src_stem = os.path.splitext(os.path.basename(real_src_path))[0]
+        safe_stem = _sanitize_filename_stem(output_filename, fallback_stem=src_stem)
+        target_dir = os.path.dirname(real_src_path)
+
+        counter = 0
+        while True:
+            cand_stem = safe_stem if counter == 0 else f"{safe_stem}_{counter}"
+            cand_md = os.path.join(target_dir, f"{cand_stem}.md")
+            cand_res = os.path.join(target_dir, f".{cand_stem}.md.reserve")
+            try:
+                if not os.path.exists(cand_md):
+                    fd = os.open(cand_res, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    os.close(fd)
+                    reservation_token = cand_res
+                    target_md_path = cand_md
+                    break
+            except FileExistsError:
+                pass
+            counter += 1
+        assets_dir = os.path.join(target_dir, f"{os.path.splitext(os.path.basename(target_md_path))[0]}_assets")
+        assets_pre_existed = os.path.exists(assets_dir)
+
+        final_markdown = asset_mgr.export_assets(
+            load_res.content,
+            target_md_path,
+            session_id=session_id,
+            session_only=True
+        )
+
+        with tempfile.NamedTemporaryFile("w", dir=target_dir, suffix=".tmp", delete=False, encoding="utf-8") as tf:
+            tf.write(final_markdown)
+            temp_write_path = tf.name
+
+        try:
+            os.rename(temp_write_path, target_md_path)
+            temp_write_path = None
+        except FileExistsError:
+            return {
+                "error": "TARGET_FILE_CONFLICT",
+                "message": "Target file was created concurrently. Please retry."
+            }
+
+        doc_id = idx.index_document(target_md_path)
+        if not doc_id:
+            raise RuntimeError("MetadataIndex failed to index the generated Markdown file.")
+
+        warning_msg: Optional[str] = None
+        try:
+            if not idx.ensure_baseline_version(doc_id):
+                warning_msg = "Version snapshot warning: baseline not created."
+        except Exception as ex:
+            warning_msg = f"Version snapshot warning: {_sanitize_error_message(ex)}"
+            logger.warning("Version baseline creation failed for %s: %s", doc_id, ex)
+
+        import_ok = True
+
+        res_dict = {
+            "status": "success",
+            "document_id": doc_id,
+            "relative_path": os.path.relpath(target_md_path, os.path.realpath(ws_dir)).replace("\\", "/"),
+            "message": f"Successfully imported '{os.path.basename(real_src_path)}' to Markdown."
+        }
+        if warning_msg:
+            res_dict["warning"] = warning_msg
+        return res_dict
+
+    except Exception as exc:
+        if target_md_path and os.path.exists(target_md_path) and not doc_id:
+            try:
+                os.remove(target_md_path)
+            except Exception:
+                pass
+        return {
+            "error": "IMPORT_FAILED",
+            "message": _sanitize_error_message(exc)
+        }
+
+    finally:
+        if not import_ok and assets_dir and not assets_pre_existed and os.path.isdir(assets_dir):
+            shutil.rmtree(assets_dir, ignore_errors=True)
+        if reservation_token and os.path.exists(reservation_token):
+            try:
+                os.remove(reservation_token)
+            except Exception:
+                pass
+        if temp_write_path and os.path.exists(temp_write_path):
+            try:
+                os.remove(temp_write_path)
+            except Exception:
+                pass
+        asset_mgr.clear_session(session_id)
 
 
 # ── Tool Dispatcher Map ──────────────────────────────────────────────────────
@@ -939,5 +1307,7 @@ TOOL_HANDLERS = {
     "patch_document_content": handle_patch_document_content,
     "get_document_history": handle_get_document_history,
     "rollback_document": handle_rollback_document,
-    "cleanup_legacy_backups": handle_cleanup_legacy_backups
+    "cleanup_legacy_backups": handle_cleanup_legacy_backups,
+    "import_document_to_markdown": handle_import_document_to_markdown,
 }
+

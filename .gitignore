@@ -16,3 +16,5 @@ agent_instructions.md
 scratch/
 .vscode
 assets/tesseract/
+.cursor/
+.kiro/

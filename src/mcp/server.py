@@ -132,11 +132,11 @@ class MCPServer:
                 "isError": is_error
             })
         except TypeError as te:
-            logger.error("Invalid arguments for tool %s: %s", tool_name, str(te))
-            self.send_error(req_id, -32602, f"Invalid tool arguments: {str(te)}")
-        except Exception as e:
+            logger.error("Invalid arguments for tool %s: %s", tool_name, te)
+            self.send_error(req_id, -32602, "Invalid tool arguments.")
+        except Exception:
             logger.exception("Internal error in tool %s", tool_name)
-            self.send_error(req_id, -32603, f"Internal tool execution error: {str(e)}")
+            self.send_error(req_id, -32603, "Internal tool execution error.")
 
     def handle_request(self, request: Dict[str, Any]) -> None:
         """Processes a single parsed JSON-RPC request/notification."""
@@ -275,6 +275,12 @@ def main():
 
     # 1. Protect stdout: redirect standard sys.stdout to sys.stderr
     real_stdout = _REAL_STDOUT or sys.__stdout__ or sys.stdout
+
+    try:
+        real_stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
     sys.stdout = sys.stderr
 
     # 2. Initialize index and trigger background sync

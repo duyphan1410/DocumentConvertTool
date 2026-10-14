@@ -241,7 +241,15 @@ def validate_file_pipeline(path: str) -> str:
 
         try:
             with zipfile.ZipFile(clean_path) as zf:
-                if zf.testzip() is not None:
+                infos = zf.infolist()
+                if len(infos) > 20000 or sum(i.file_size for i in infos) > 2 * 1024**3:
+                    raise DocumentError(
+                        code=ErrorCode.FILE_TOO_LARGE,
+                        title=t("validator.file_too_large_title"),
+                        message=t("validator.file_too_large_msg", filename=os.path.basename(clean_path)),
+                        suggestion=t("validator.file_too_large_sug"),
+                    )
+                if file_size <= 100 * 1024 * 1024 and zf.testzip() is not None:
                     raise DocumentError(
                         code=ErrorCode.CORRUPTED_STRUCTURE,
                         title=t("validator.corrupted_zip_structure_title"),
@@ -296,7 +304,7 @@ def validate_file_pipeline(path: str) -> str:
                 suggestion=t("validator.bad_pdf_sug"),
             )
 
-    elif ext == ".json":
+    elif ext == ".json" and file_size <= 50 * 1024 * 1024:
         import json
         try:
             with open(clean_path, "r", encoding="utf-8-sig") as f:
@@ -310,7 +318,7 @@ def validate_file_pipeline(path: str) -> str:
                 detail=str(exc),
             )
 
-    elif ext in (".yaml", ".yml"):
+    elif ext in (".yaml", ".yml") and file_size <= 50 * 1024 * 1024:
         try:
             import yaml
             with open(clean_path, "r", encoding="utf-8-sig") as f:

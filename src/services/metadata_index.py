@@ -10,9 +10,12 @@ import sqlite3
 import hashlib
 import threading
 import uuid
+import logging
 from typing import Optional, Callable, Any
 from contextlib import contextmanager
 from src.services.link_parser import WikilinkToken, extract_wikilinks, extract_tags, find_unlinked_mentions
+
+logger = logging.getLogger(__name__)
 
 # SQLite DB Path in AppData / Custom Env
 _appdata = os.getenv("APPDATA", os.path.expanduser("~"))
@@ -985,7 +988,8 @@ class MetadataIndex:
                         """, (document_id, current_disk_content))
                         conn.commit()
                         return True
-                    except Exception:
+                    except Exception as ex:
+                        logger.warning("Baseline read failed for %s: %s", document_id, ex)
                         return False
                 return False
 

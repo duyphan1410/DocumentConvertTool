@@ -4,6 +4,7 @@ Verifies search_documents, read_document, convert_document, tag_document,
 list_backlinks, and write_document_content handlers with workspace containment and atomic backups.
 """
 import os
+import sys
 import unittest
 import tempfile
 import uuid
@@ -18,6 +19,7 @@ from src.mcp.tools import (
     MCP_TOOLS_MANIFEST,
 )
 from src.services.metadata_index import MetadataIndex
+from src.mcp.security import get_active_workspace_dir
 
 
 class TestMCPTools(unittest.TestCase):
@@ -63,8 +65,8 @@ class TestMCPTools(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_manifest_schema(self):
-        """Verifies tool manifest contains all 10 tools and valid schemas."""
-        self.assertEqual(len(MCP_TOOLS_MANIFEST), 10)
+        """Verifies tool manifest contains all 11 tools and valid schemas."""
+        self.assertEqual(len(MCP_TOOLS_MANIFEST), 11)
         names = {t["name"] for t in MCP_TOOLS_MANIFEST}
         expected = {
             "search_documents",
@@ -76,9 +78,11 @@ class TestMCPTools(unittest.TestCase):
             "patch_document_content",
             "get_document_history",
             "rollback_document",
-            "cleanup_legacy_backups"
+            "cleanup_legacy_backups",
+            "import_document_to_markdown"
         }
         self.assertEqual(names, expected)
+
         for t in MCP_TOOLS_MANIFEST:
             self.assertIn("name", t)
             self.assertIn("description", t)
@@ -191,16 +195,21 @@ class TestMCPTools(unittest.TestCase):
         with self.assertRaises(TypeError):
             handle_write_document_content(self.doc1_id, content="test", index=self.index, workspace_dir="C:\\")  # type: ignore
 
+    def _abs_out(self, rel_path):
+        """output_path trả về dạng tương đối theo workspace; ghép lại để kiểm tra file thật."""
+        self.assertFalse(os.path.isabs(rel_path), "output_path must not leak absolute path")
+        return os.path.join(get_active_workspace_dir(), rel_path)
+
     def test_convert_document_txt_and_html(self):
         """Test converting Markdown document to TXT and HTML format."""
         res_txt = handle_convert_document(self.doc1_id, target_format="txt", index=self.index)
         self.assertEqual(res_txt["status"], "success")
-        self.assertTrue(os.path.exists(res_txt["output_path"]))
+        self.assertTrue(os.path.exists(self._abs_out(res_txt["output_path"])))
         self.assertTrue(res_txt["output_path"].endswith(".txt"))
 
         res_html = handle_convert_document(self.doc1_id, target_format="html", index=self.index)
         self.assertEqual(res_html["status"], "success")
-        self.assertTrue(os.path.exists(res_html["output_path"]))
+        self.assertTrue(os.path.exists(self._abs_out(res_html["output_path"])))
         self.assertTrue(res_html["output_path"].endswith(".html"))
 
     def test_convert_document_docx_pptx_xlsx(self):
@@ -208,7 +217,7 @@ class TestMCPTools(unittest.TestCase):
         for fmt in ["docx", "pptx", "xlsx"]:
             res = handle_convert_document(self.doc1_id, target_format=fmt, index=self.index)
             self.assertEqual(res.get("status"), "success", f"Failed for format: {fmt}")
-            self.assertTrue(os.path.exists(res["output_path"]), f"File not found for format: {fmt}")
+            self.assertTrue(os.path.exists(self._abs_out(res["output_path"])), f"File not found for format: {fmt}")
             self.assertTrue(res["output_path"].endswith(f".{fmt}"))
 
     def test_write_document_content_single_backup_and_atomic_reindex(self):

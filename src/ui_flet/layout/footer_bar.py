@@ -94,7 +94,7 @@ class FooterBar:
         """If an error occurred and user clicks the status bar, re-open the rich details modal."""
         doc_err = getattr(self, "_current_doc_err", None)
         if doc_err:
-            ppage = safe_page(e, self.container)
+            page = safe_page(e, self.container)
             if page:
                 from src.ui_flet.components.message_dialog import show_message_dialog
                 show_message_dialog(page, doc_err)

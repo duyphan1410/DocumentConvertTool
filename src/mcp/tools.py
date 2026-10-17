@@ -1208,6 +1208,8 @@ def handle_import_document_to_markdown(
 
         counter = 0
         while True:
+            if counter > 1000:
+                raise RuntimeError("Too many files with the same name in the workspace.")
             cand_stem = safe_stem if counter == 0 else f"{safe_stem}_{counter}"
             cand_md = os.path.join(target_dir, f"{cand_stem}.md")
             cand_res = os.path.join(target_dir, f".{cand_stem}.md.reserve")

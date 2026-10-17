@@ -3,6 +3,7 @@ import hashlib
 import shutil
 import logging
 from typing import Callable
+from src.mcp.security import is_strictly_within
 
 logger = logging.getLogger("docconvert.media")
 
@@ -248,16 +249,6 @@ class MediaAssetManager:
         assets_dir_name = f"{doc_stem}_assets"
         assets_dir = os.path.join(target_dir, assets_dir_name)
 
-        def _is_strictly_within_internal(file_path: str, base_dir: str) -> bool:
-            if not file_path or not base_dir:
-                return False
-            try:
-                norm_f = os.path.normcase(os.path.realpath(os.path.abspath(file_path)))
-                norm_b = os.path.normcase(os.path.realpath(os.path.abspath(base_dir)))
-                return os.path.commonpath([norm_f, norm_b]) == norm_b
-            except Exception:
-                return False
-
         def _get_file_hash(filepath: str) -> str:
             try:
                 hasher = hashlib.md5()
@@ -282,7 +273,7 @@ class MediaAssetManager:
 
             if session_only:
                 session_dir = self.get_session_dir(session_id=session_id)
-                if not _is_strictly_within_internal(resolved, session_dir):
+                if not is_strictly_within(resolved, session_dir):
                     return src
 
             if os.path.splitext(resolved)[1].lower() not in IMAGE_EXTS:
